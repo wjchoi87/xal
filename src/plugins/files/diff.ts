@@ -1,6 +1,7 @@
 const CONTEXT = 3
 const MAX_DIFF_INPUT_LINES = 2000
 const MAX_EDIT_DEPTH = 1000
+const MAX_DIFF_LINES = 200
 
 export interface UnifiedDiff {
   hunks: string
@@ -152,4 +153,17 @@ export function unifiedDiff(oldText: string, newText: string): UnifiedDiff {
     ...oldLines.slice(oldLines.length - suffix).map((text): DiffOp => ({ kind: "same", text })),
   ]
   return renderHunks(ops)
+}
+
+export function capDiff(hunks: string): string {
+  if (!hunks) return ""
+  const lines = hunks.split("\n")
+  if (lines.length <= MAX_DIFF_LINES) return hunks
+  const visible = lines.slice(0, MAX_DIFF_LINES)
+  return [...visible, `… ${lines.length - visible.length} more diff lines`].join("\n")
+}
+
+export function withDiff(header: string, hunks: string): string {
+  const diff = capDiff(hunks)
+  return diff ? `${header}\n${diff}` : header
 }

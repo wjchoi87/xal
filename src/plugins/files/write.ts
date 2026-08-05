@@ -1,23 +1,8 @@
 import { stat } from "node:fs/promises"
 import { asString } from "../../lib/json"
 import type { Tool } from "../../tools/types"
-import { unifiedDiff } from "./diff"
-import { displayPath, resolveFilePath } from "./path"
-
-const MAX_DIFF_LINES = 200
-
-function capDiff(hunks: string): string {
-  if (!hunks) return ""
-  const lines = hunks.split("\n")
-  if (lines.length <= MAX_DIFF_LINES) return hunks
-  const visible = lines.slice(0, MAX_DIFF_LINES)
-  return [...visible, `… ${lines.length - visible.length} more diff lines`].join("\n")
-}
-
-function withDiff(header: string, hunks: string): string {
-  const diff = capDiff(hunks)
-  return diff ? `${header}\n${diff}` : header
-}
+import { unifiedDiff, withDiff } from "./diff"
+import { displayPath, resolveFilePath } from "../../lib/path"
 
 export const writeTool: Tool = {
   name: "write",
@@ -39,7 +24,7 @@ export const writeTool: Tool = {
     additionalProperties: false,
   },
   prompt:
-    "Use write to create or replace files with complete content. Read a file before overwriting it. Content is raw file text; never include read's line-number prefixes.",
+    "Use write to create or replace files with complete content. Read a file before overwriting it. Content is raw file text; never include read's line-number prefixes. Prefer edit for modifying parts of an existing file.",
   title(args) {
     return displayPath(asString(args.file_path) ?? "")
   },

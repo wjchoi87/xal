@@ -1,7 +1,7 @@
 import { stat } from "node:fs/promises"
 import { asNumber, asString } from "../../lib/json"
 import type { Tool } from "../../tools/types"
-import { displayPath, resolveFilePath } from "./path"
+import { displayPath, resolveFilePath } from "../../lib/path"
 
 const DEFAULT_LIMIT = 2000
 const MAX_OUTPUT_CHARS = 50_000
