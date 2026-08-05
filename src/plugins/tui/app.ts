@@ -1,15 +1,13 @@
-import { BoxRenderable, createCliRenderer, RenderableEvents } from "@opentui/core"
+import { createCliRenderer, RenderableEvents } from "@opentui/core"
 import { createSession } from "../../agent/compose"
-import type { AgentEvent } from "../../agent/events"
 import { appInfo } from "../../app-info"
-import type { AppEvent, EventService } from "../../events"
-import { ChatLog, type StreamingText } from "./chat-log"
-import { Composer } from "./composer"
-import { PermissionPopover } from "./permission-popover"
-import { StatusBar } from "./status-bar"
-import { compactPath } from "./text"
-import { COLORS } from "./theme"
-import type { ToolCell } from "./tool-cell"
+import type { EventService } from "../../events"
+import { AgentEventController } from "./controllers/agent-events"
+import { AppEventController, InputQueue } from "./controllers/app-events"
+import { bindKeys } from "./controllers/keymap"
+import { compactPath } from "./lib/format"
+import { Screen } from "./screen"
+import { COLORS } from "./theme/colors"
 
 export async function startTui(events: EventService): Promise<void> {
   const { session, provider, model } = await createSession()
@@ -18,206 +16,39 @@ export async function startTui(events: EventService): Promise<void> {
     process.exit(1)
   }
 
-  const cwd = process.cwd()
   const renderer = await createCliRenderer({
     exitOnCtrlC: false,
     useMouse: true,
     backgroundColor: COLORS.background,
   })
-  renderer.setTerminalTitle(`${appInfo.name} — ${compactPath(cwd)}`)
+  renderer.setTerminalTitle(`${appInfo.name} — ${compactPath(process.cwd())}`)
 
-  const root = new BoxRenderable(renderer, {
-    flexDirection: "column",
-    width: "100%",
-    height: "100%",
-  })
-  renderer.root.add(root)
-
-  let bootstrapped = false
-  let queued: string | undefined
-
-  const chatLog = new ChatLog(renderer)
-  const composer = new Composer(renderer, (text) => {
-    if (bootstrapped) return session.send(text)
-    queued = text
-    return true
-  })
-  const statusBar = new StatusBar(renderer, model)
-  const permission = new PermissionPopover(renderer, {
+  const input = new InputQueue((text) => session.send(text))
+  const screen = new Screen(renderer, model, {
+    submit: (text) => input.submit(text),
     approve: () => session.approve(),
     deny: () => session.deny(),
     cancel: () => session.interrupt(),
   })
+  renderer.root.add(screen.root)
 
-  root.add(chatLog.view)
-  root.add(permission.view)
-  root.add(composer.view)
-  root.add(statusBar.view)
+  const agentEvents = new AgentEventController(screen)
+  session.subscribe((event) => agentEvents.handle(event))
 
-  function handleAppEvent(event: AppEvent): void {
-    switch (event.type) {
-      case "plugin_registration_finished": {
-        const failures = event.status.failures
-        const registered = event.status.total - failures.length
-        if (failures.length === 0) {
-          chatLog.addInfo(`plugins: ${registered}/${event.status.total} registered`)
-          break
-        }
-        chatLog.addCollapsible(
-          `plugins: ${registered}/${event.status.total} registered — ctrl+o to see failures`,
-          failures.map((failure) => `${failure.plugin}: ${failure.reason}`),
-        )
-        break
-      }
-      case "plugin_bootstrap_started":
-        statusBar.setLoading("Bootstrapping plugins")
-        break
-      case "plugin_bootstrap_finished": {
-        statusBar.setLoading(undefined)
-        const failures = event.status.failures.filter((failure) => failure.phase === "bootstrap")
-        if (failures.length > 0) {
-          chatLog.addCollapsible(
-            `plugins: ${failures.length} failed to initialize — ctrl+o to see failures`,
-            failures.map((failure) => `${failure.plugin}: ${failure.reason}`),
-          )
-        }
-        bootstrapped = true
-        if (queued !== undefined) {
-          session.send(queued)
-          queued = undefined
-        }
-        composer.focus()
-        break
-      }
-    }
-  }
+  const appEvents = new AppEventController(screen, input)
+  const unsubscribe = events.subscribe((event) => appEvents.handle(event), true)
+  screen.root.on(RenderableEvents.DESTROYED, unsubscribe)
 
-  let assistant: StreamingText | undefined
-  let reasoningSummary: StreamingText | undefined
-  const toolCells = new Map<string, ToolCell>()
-  let lastCtrlC = 0
-
-  function quit(): void {
-    try {
-      renderer.destroy()
-    } catch {}
-    process.exit(0)
-  }
-
-  function handleEvent(event: AgentEvent): void {
-    switch (event.type) {
-      case "state_changed":
-        statusBar.setState(event.state)
-        if (event.state === "awaiting_approval") composer.blur()
-        else composer.focus()
-        if (event.state === "idle") {
-          permission.hide()
-          composer.setPopoverVisible(false)
-          assistant = undefined
-          reasoningSummary = undefined
-          toolCells.clear()
-        }
-        break
-      case "user_message":
-        chatLog.addUser(event.text, event.sentAt)
-        break
-      case "text_delta":
-        reasoningSummary = undefined
-        assistant ??= chatLog.startAssistant()
-        assistant.append(event.text)
-        break
-      case "reasoning_summary_delta":
-        reasoningSummary ??= chatLog.startReasoningSummary()
-        reasoningSummary.append(event.text)
-        break
-      case "reasoning_delta":
-        break
-      case "approval_requested": {
-        const cell = chatLog.addToolCell(event.tool, event.title, event.readOnly)
-        toolCells.set(event.callId, cell)
-        permission.show(event.title)
-        composer.setPopoverVisible(true)
-        break
-      }
-      case "tool_started": {
-        permission.hide()
-        composer.setPopoverVisible(false)
-        const cell = toolCells.get(event.callId) ?? chatLog.addToolCell(event.tool, event.title, event.readOnly)
-        toolCells.set(event.callId, cell)
-        cell.markRunning()
-        assistant = undefined
-        reasoningSummary = undefined
-        break
-      }
-      case "tool_finished": {
-        permission.hide()
-        composer.setPopoverVisible(false)
-        const cell = toolCells.get(event.callId) ?? chatLog.addToolCell(event.tool, event.title, false)
-        if (event.denied) cell.markDenied(event.output)
-        else cell.setOutput(event.output)
-        toolCells.delete(event.callId)
-        assistant = undefined
-        reasoningSummary = undefined
-        break
-      }
-      case "turn_interrupted":
-        chatLog.addInfo("Interrupted")
-        break
-      case "turn_ended":
-        composer.setUsage(event.usage)
-        break
-      case "error":
-        chatLog.addError(event.message)
-        break
-    }
-  }
-
-  session.subscribe(handleEvent)
-
-  function handleCtrlC(): void {
-    if (session.currentState !== "idle") {
-      session.interrupt()
-      return
-    }
-    const now = Date.now()
-    if (now - lastCtrlC < 2000) {
-      quit()
-      return
-    }
-    lastCtrlC = now
-    statusBar.setNotice("Ctrl+C again to quit")
-    setTimeout(() => {
-      if (session.currentState === "idle") statusBar.clearNotice()
-    }, 2000)
-  }
-
-  renderer.keyInput.on("keypress", (key) => {
-    if (key.ctrl && key.name === "c") {
-      key.preventDefault()
-      handleCtrlC()
-      return
-    }
-    if (key.ctrl && key.name === "o") {
-      key.preventDefault()
-      chatLog.toggleToolOutput()
-      return
-    }
-    if (permission.handleKey(key.name)) {
-      key.preventDefault()
-      composer.setPopoverVisible(permission.visible)
-      return
-    }
-    if (key.name === "pageup" || key.name === "pagedown") {
-      key.preventDefault()
-      chatLog.scrollPage(key.name === "pageup" ? -1 : 1)
-      return
-    }
-    if (key.name === "escape") {
-      if (session.currentState !== "idle") session.interrupt()
-    }
+  bindKeys(renderer, {
+    session,
+    screen,
+    quit: () => {
+      try {
+        renderer.destroy()
+      } catch {}
+      process.exit(0)
+    },
   })
 
-  const unsubscribeEvents = events.subscribe(handleAppEvent, true)
-  root.on(RenderableEvents.DESTROYED, unsubscribeEvents)
-  composer.focus()
+  screen.composer.focus()
 }
