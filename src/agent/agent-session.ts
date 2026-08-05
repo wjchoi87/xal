@@ -1,13 +1,14 @@
-import type { PermissionPolicy } from "../permissions/service"
+import { release } from "node:os"
+import { appInfo } from "../app-info"
+import { evaluatePolicy } from "../permissions/service"
 import type { ConversationItem, Provider, Usage } from "../providers/types"
 import { getTool, listTools } from "../tools/registry"
 import type { AgentEvent, AgentState } from "./events"
-import { systemPrompt } from "./system-prompt"
+import { composeSystemPrompt } from "./prompt"
 
 export interface AgentSessionDeps {
   provider: Provider
   model: string
-  policy: PermissionPolicy
 }
 
 interface PendingToolCall {
@@ -101,7 +102,12 @@ export class AgentSession {
       try {
         for await (const event of this.deps.provider.stream({
           model: this.deps.model,
-          instructions: systemPrompt(),
+          instructions: composeSystemPrompt({
+            appName: appInfo.name,
+            platform: `${process.platform} ${release()}`,
+            cwd: process.cwd(),
+            tools: listTools(),
+          }),
           input: this.items,
           tools: listTools().map(({ name, description, parameters }) => ({ name, description, parameters })),
           sessionId: this.id,
@@ -161,34 +167,35 @@ export class AgentSession {
       return
     }
 
-    const title = call.name === "bash" ? String(call.args.command ?? "") : JSON.stringify(call.args)
     const tool = getTool(call.name)
+    const title = tool?.title(call.args) ?? JSON.stringify(call.args)
     if (!tool) {
       const message = `Unknown tool: ${call.name}`
       this.addToolOutput(call.callId, message)
-      this.emit({ type: "tool_finished", callId: call.callId, title, output: message, denied: true })
+      this.emit({ type: "tool_finished", callId: call.callId, tool: call.name, title, output: message, denied: true })
       return
     }
 
-    let decision = this.deps.policy.evaluate({ tool: call.name, title })
+    const readOnly = tool.readOnly?.(call.args) ?? false
+    let decision = evaluatePolicy({ tool: call.name, title, args: call.args, readOnly })
     if (decision === "ask") {
       const asked = new Promise<"allow" | "deny">((resolve) => {
         this.pendingApproval = resolve
       })
       this.setState("awaiting_approval")
-      this.emit({ type: "approval_requested", callId: call.callId, tool: call.name, title })
+      this.emit({ type: "approval_requested", callId: call.callId, tool: call.name, title, readOnly })
       decision = await asked
     }
 
     if (decision === "deny") {
       const message = "User denied permission to run this command."
       this.addToolOutput(call.callId, message)
-      this.emit({ type: "tool_finished", callId: call.callId, title, output: message, denied: true })
+      this.emit({ type: "tool_finished", callId: call.callId, tool: call.name, title, output: message, denied: true })
       return
     }
 
     this.setState("running_tool")
-    this.emit({ type: "tool_started", callId: call.callId, title })
+    this.emit({ type: "tool_started", callId: call.callId, tool: call.name, title, readOnly })
     let output: string
     try {
       output = (await tool.execute(call.args, signal)).output
@@ -196,6 +203,6 @@ export class AgentSession {
       output = `Tool failed: ${error instanceof Error ? error.message : String(error)}`
     }
     this.addToolOutput(call.callId, output)
-    this.emit({ type: "tool_finished", callId: call.callId, title, output, denied: false })
+    this.emit({ type: "tool_finished", callId: call.callId, tool: call.name, title, output, denied: false })
   }
 }

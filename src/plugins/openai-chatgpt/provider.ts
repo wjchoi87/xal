@@ -1,4 +1,4 @@
-import type { Provider } from "../types"
+import type { Provider } from "../../providers/types"
 import { isLoggedIn, login, PROVIDER_ID } from "./oauth"
 import { defaultModel, listModels } from "./models"
 import { streamResponse } from "./transport"

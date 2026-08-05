@@ -8,7 +8,7 @@ Customizable and extensible full coding harness that remains as small as possibl
 
 ## Architecture
 
-One sentence: **a headless agent core emits a typed, serializable, unidirectional event stream per session; UIs are subscribers; commands flow in through a narrow typed surface.**
+One sentence: **a headless agent core emits a typed, serializable, unidirectional event stream per session; UIs are subscribers; commands flow in through a narrow typed surface; every feature — tools, providers, commands, prompt, policy, the TUI itself — is contributed through plugin registration.**
 
 ```mermaid
 sequenceDiagram
@@ -27,7 +27,7 @@ sequenceDiagram
         Model-->>Core: Streamed reply / tool request
         Core-->>Screen: AgentEvent stream (deltas, state changes)
         opt A tool is requested
-            Core->>Core: Permission policy (mode)
+            Core->>Core: Policy rules (allow / deny / ask)
             opt Policy says ask
                 Core-->>Screen: approval_requested event
                 Engineer->>Screen: y / n
@@ -41,6 +41,33 @@ sequenceDiagram
 
     Core-->>Screen: turn_ended event
     Core->>Memory: Turn committed (persistable later)
+```
+
+### Plugins
+
+A plugin is a folder with a `plugin.ts` default-exporting the contract in `src/plugins/types.ts`; its `register(ctx)` introduces contributions through the per-module registries. Built-ins (`src/plugins/builtins.ts`) register first, then external plugins from `~/.config/agent/config.json` in order; later plugins can extend or replace anything. A failing plugin is skipped and reported, never fatal. `examples/plugins/demo/plugin.ts` is the living example.
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant Entry as index.ts (single entry)
+    participant Discover as plugins/discover
+    participant P as each Plugin (builtins first, then config order)
+    participant Reg as per-module registries
+
+    User->>Entry: agent [command]
+    Entry->>Entry: loadSettings()
+    Entry->>Discover: registerPlugins(settings)
+    loop builtinPlugins, then settings.plugins
+        Discover->>P: import <root>/plugin.ts, validate contract
+        Discover->>P: plugin.register(ctx)
+        P->>Reg: ctx.registerTool / registerProvider / registerCommand / registerUi / ...
+    end
+    alt args given
+        Entry->>Reg: getCommand(args[0]).run(args, ctx)
+    else no args
+        Entry->>Reg: getUi(settings.ui ?? "tui").start()
+    end
 ```
 
 ### Principles

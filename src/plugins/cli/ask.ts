@@ -1,10 +1,8 @@
-import { AgentSession } from "../agent/agent-session"
-import { appInfo } from "../app-info"
-import { askPolicy } from "../permissions/service"
-import { getProvider } from "../providers/registry"
-import { registerCommand } from "./registry"
+import { createSession } from "../../agent/compose"
+import { appInfo } from "../../app-info"
+import type { Command } from "../../commands/registry"
 
-registerCommand({
+export const askCommand: Command = {
   name: "ask",
   hidden: true,
   describe: "one-shot debug prompt streamed to stdout",
@@ -12,9 +10,7 @@ registerCommand({
     const text = args.join(" ").trim()
     if (!text) throw new Error(`usage: ${appInfo.name} ask <prompt>`)
 
-    const provider = getProvider("chatgpt")!
-    const model = await provider.defaultModel()
-    const session = new AgentSession({ provider, model, policy: askPolicy })
+    const { session } = await createSession()
 
     await new Promise<void>((resolve) => {
       session.subscribe((event) => {
@@ -50,4 +46,4 @@ registerCommand({
     })
     ctx.print("")
   },
-})
+}

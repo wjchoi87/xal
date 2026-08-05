@@ -3,7 +3,7 @@ import { join } from "node:path"
 import { appInfo } from "../../app-info"
 import { cacheDir } from "../../config/paths"
 import { asBoolean, asNumber, asString, isRecord } from "../../lib/json"
-import type { ModelInfo } from "../types"
+import type { ModelInfo } from "../../providers/types"
 
 const MODELS_URL = "https://models.dev/api.json"
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000

@@ -6,7 +6,7 @@ import {
   TextRenderable,
   type CliRenderer,
 } from "@opentui/core"
-import type { AgentState } from "../agent/events"
+import type { AgentState } from "../../agent/events"
 import { COLORS, muted, paint, textColors } from "./theme"
 import { terminalGlyph } from "./text"
 

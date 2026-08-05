@@ -1,9 +1,8 @@
 import { BoxRenderable, createCliRenderer } from "@opentui/core"
-import { AgentSession } from "../agent/agent-session"
-import type { AgentEvent } from "../agent/events"
-import { appInfo } from "../app-info"
-import { askPolicy } from "../permissions/service"
-import { getProvider } from "../providers/registry"
+import { createSession } from "../../agent/compose"
+import type { AgentEvent } from "../../agent/events"
+import { appInfo } from "../../app-info"
+import { pluginStatus } from "../../plugins/discover"
 import { ChatLog, type StreamingText } from "./chat-log"
 import { Composer } from "./composer"
 import { PermissionPopover } from "./permission-popover"
@@ -13,15 +12,13 @@ import { COLORS } from "./theme"
 import type { ToolCell } from "./tool-cell"
 
 export async function startTui(): Promise<void> {
-  const provider = getProvider("chatgpt")!
+  const { session, provider, model } = await createSession()
   if (!(await provider.isLoggedIn())) {
-    console.log(`not logged in — run: ${appInfo.name} login chatgpt`)
+    console.log(`not logged in — run: ${appInfo.name} login ${provider.aliases[0] ?? provider.id}`)
     process.exit(1)
   }
 
   const cwd = process.cwd()
-  const model = await provider.defaultModel()
-  const session = new AgentSession({ provider, model, policy: askPolicy })
   const renderer = await createCliRenderer({
     exitOnCtrlC: false,
     useMouse: true,
@@ -49,6 +46,17 @@ export async function startTui(): Promise<void> {
   root.add(permission.view)
   root.add(composer.view)
   root.add(statusBar.view)
+
+  const plugins = pluginStatus()
+  const loaded = plugins.total - plugins.failures.length
+  if (plugins.failures.length === 0) {
+    chatLog.addInfo(`plugins: ${loaded}/${plugins.total} registered`)
+  } else {
+    chatLog.addCollapsible(
+      `plugins: ${loaded}/${plugins.total} registered — ctrl+o to see failures`,
+      plugins.failures.map((failure) => `${failure.plugin}: ${failure.reason}`),
+    )
+  }
 
   let assistant: StreamingText | undefined
   let reasoningSummary: StreamingText | undefined
@@ -91,7 +99,7 @@ export async function startTui(): Promise<void> {
       case "reasoning_delta":
         break
       case "approval_requested": {
-        const cell = chatLog.addToolCell(event.tool, event.title)
+        const cell = chatLog.addToolCell(event.tool, event.title, event.readOnly)
         toolCells.set(event.callId, cell)
         permission.show(event.title)
         composer.setPopoverVisible(true)
@@ -100,7 +108,7 @@ export async function startTui(): Promise<void> {
       case "tool_started": {
         permission.hide()
         composer.setPopoverVisible(false)
-        const cell = toolCells.get(event.callId) ?? chatLog.addToolCell("bash", event.title)
+        const cell = toolCells.get(event.callId) ?? chatLog.addToolCell(event.tool, event.title, event.readOnly)
         toolCells.set(event.callId, cell)
         cell.markRunning()
         assistant = undefined
@@ -110,7 +118,7 @@ export async function startTui(): Promise<void> {
       case "tool_finished": {
         permission.hide()
         composer.setPopoverVisible(false)
-        const cell = toolCells.get(event.callId) ?? chatLog.addToolCell("tool", event.title)
+        const cell = toolCells.get(event.callId) ?? chatLog.addToolCell(event.tool, event.title, false)
         if (event.denied) cell.markDenied(event.output)
         else cell.setOutput(event.output)
         toolCells.delete(event.callId)

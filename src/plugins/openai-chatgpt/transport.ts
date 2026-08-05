@@ -1,5 +1,5 @@
 import { appInfo } from "../../app-info"
-import type { StreamEvent, StreamRequest } from "../types"
+import type { StreamEvent, StreamRequest } from "../../providers/types"
 import { ensureAccessToken } from "./oauth"
 import { parseErrorDetail, parseFunctionCall, parseSseEvent } from "./wire"
 

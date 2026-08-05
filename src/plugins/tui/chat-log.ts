@@ -1,4 +1,5 @@
 import {
+  BorderChars,
   BoxRenderable,
   ScrollBoxRenderable,
   StyledText,
@@ -8,8 +9,8 @@ import {
   type TextChunk,
 } from "@opentui/core"
 import { ToolCell } from "./tool-cell"
-import { formatTimestamp } from "./text"
-import { background, COLORS, textColors } from "./theme"
+import { formatTimestamp, terminalGlyph } from "./text"
+import { background, border, COLORS, textColors } from "./theme"
 
 function formatReasoningSummary(content: string): StyledText {
   const chunks: TextChunk[] = []
@@ -48,9 +49,13 @@ export class StreamingText {
   }
 }
 
+interface Collapsible {
+  setExpanded(expanded: boolean): void
+}
+
 export class ChatLog {
   readonly view: ScrollBoxRenderable
-  private readonly tools: ToolCell[] = []
+  private readonly tools: Collapsible[] = []
   private toolsExpanded = false
 
   constructor(private readonly renderer: CliRenderer) {
@@ -148,9 +153,43 @@ export class ChatLog {
     })
   }
 
-  addToolCell(tool: string, command: string): ToolCell {
+  addCollapsible(summary: string, details: string[]): void {
+    const box = this.cell()
+    box.add(
+      new TextRenderable(this.renderer, {
+        content: summary,
+        wrapMode: "word",
+        ...textColors(COLORS.warning),
+      }),
+    )
+    const body = new BoxRenderable(this.renderer, {
+      visible: this.toolsExpanded,
+      flexDirection: "column",
+      border: ["left"],
+      customBorderChars: { ...BorderChars.single, vertical: terminalGlyph("│", "|") },
+      paddingLeft: 1,
+      ...border(COLORS.border),
+    })
+    for (const detail of details) {
+      body.add(
+        new TextRenderable(this.renderer, {
+          content: detail,
+          wrapMode: "word",
+          ...textColors(COLORS.error),
+        }),
+      )
+    }
+    box.add(body)
+    this.tools.push({
+      setExpanded(expanded) {
+        body.visible = expanded
+      },
+    })
+  }
+
+  addToolCell(tool: string, command: string, readOnly: boolean): ToolCell {
     const box = this.cell(0)
-    const cell = new ToolCell(this.renderer, tool, command, this.toolsExpanded)
+    const cell = new ToolCell(this.renderer, tool, command, readOnly, this.toolsExpanded)
     cell.addTo(box)
     this.tools.push(cell)
     return cell

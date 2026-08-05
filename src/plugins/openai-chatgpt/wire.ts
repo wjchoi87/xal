@@ -1,5 +1,5 @@
 import { asNumber, asString, isRecord } from "../../lib/json"
-import type { ConversationItem, Usage } from "../types"
+import type { ConversationItem, Usage } from "../../providers/types"
 
 export type WireSseEvent =
   | { type: "output_text_delta"; delta: string }

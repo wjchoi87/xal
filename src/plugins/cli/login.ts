@@ -1,8 +1,8 @@
-import { appInfo } from "../app-info"
-import { getProvider, listProviders } from "../providers/registry"
-import { registerCommand } from "./registry"
+import { appInfo } from "../../app-info"
+import type { Command } from "../../commands/registry"
+import { getProvider, listProviders } from "../../providers/registry"
 
-registerCommand({
+export const loginCommand: Command = {
   name: "login",
   usage: "login chatgpt",
   describe: "sign in to a provider",
@@ -18,4 +18,4 @@ registerCommand({
     }
     await provider.login(ctx.print)
   },
-})
+}

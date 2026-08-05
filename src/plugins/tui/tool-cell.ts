@@ -1,4 +1,5 @@
 import { BorderChars, BoxRenderable, StyledText, TextRenderable, type CliRenderer } from "@opentui/core"
+import { getToolRenderer, type ToolRenderer } from "../../ui/extension"
 import { border, COLORS, muted, paint, textColors } from "./theme"
 import { displayWidth, firstLine, formatDuration, terminalGlyph, truncateToWidth } from "./text"
 import { renderToolOutput, summarizeToolOutput, toolOutputFailed } from "./tool-output"
@@ -7,28 +8,10 @@ type ToolPhase = "requested" | "running" | "settled"
 type ToolOutcome = "success" | "failure" | "denied"
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
-const READ_ONLY_BASH = /^(?:cat|find|grep|head|ls|pwd|rg|tail|wc)(?:\s|$)|^(?:git\s+(?:diff|log|show|status))(?:\s|$)|^(?:bun|cargo|npm|pnpm|yarn)\s+(?:run\s+)?test(?:\s|$)|^sed\s+(?!.*(?:\s-i|--in-place))|^git\s+branch\s+--show-current(?:\s|$)/
-const READ_ONLY_TOOLS = new Set(["read", "grep", "find", "list", "search"])
-
-function isReadOnly(tool: string, title: string): boolean {
-  if (READ_ONLY_TOOLS.has(tool)) return true
-  if (tool !== "bash") return false
-  return READ_ONLY_BASH.test(title.trim())
-}
 
 function commandLabel(tool: string, title: string): string {
   const task = firstLine(title)
   return task ? `${tool} ${task}` : tool
-}
-
-function waitingLabel(tool: string, title: string): string {
-  if (tool !== "bash") return `Waiting for ${tool}`
-  if (/\b(?:bun|cargo|npm|pnpm|yarn)?\s*(?:run\s+)?(?:test|pytest|jest|vitest)\b/i.test(title)) {
-    return "Waiting for tests"
-  }
-  if (/\b(?:build|compile|tsc)\b/i.test(title)) return "Waiting for build"
-  if (/\b(?:install|add)\b/i.test(title)) return "Waiting for install"
-  return "Waiting for command"
 }
 
 export class ToolCell {
@@ -41,6 +24,7 @@ export class ToolCell {
   private readonly createdAt = Date.now()
   private readonly label: string
   private readonly waiting: string
+  private readonly toolRenderer: ToolRenderer | undefined
   private phase: ToolPhase = "requested"
   private outcome: ToolOutcome = "success"
   private summary = ""
@@ -54,18 +38,20 @@ export class ToolCell {
     private readonly renderer: CliRenderer,
     tool: string,
     title: string,
+    readOnly: boolean,
     expanded: boolean,
   ) {
     this.expanded = expanded
+    this.toolRenderer = getToolRenderer(tool)
     this.label = commandLabel(tool, title)
-    this.waiting = waitingLabel(tool, title)
+    this.waiting = this.toolRenderer?.waitingLabel?.(title) ?? `Waiting for ${tool}`
     this.row = new BoxRenderable(renderer, {
       height: 1,
       minWidth: 0,
       flexDirection: "row",
       alignItems: "center",
     })
-    const glyph = isReadOnly(tool, title) ? ">" : "*"
+    const glyph = readOnly ? ">" : "*"
     const kind = new TextRenderable(renderer, {
       content: glyph,
       width: 2,
@@ -145,7 +131,8 @@ export class ToolCell {
   }
 
   setOutput(output: string): void {
-    this.settle(toolOutputFailed(output) ? "failure" : "success", output)
+    const failed = this.toolRenderer?.failed?.(output) ?? toolOutputFailed(output)
+    this.settle(failed ? "failure" : "success", output)
   }
 
   setExpanded(expanded: boolean): void {
@@ -158,7 +145,8 @@ export class ToolCell {
     this.phase = "settled"
     this.outcome = outcome
     this.output = output
-    this.summary = outcome === "denied" ? "denied" : summarizeToolOutput(output)
+    this.summary =
+      outcome === "denied" ? "denied" : (this.toolRenderer?.summarize?.(output) ?? summarizeToolOutput(output))
     this.settledAt = Date.now()
     this.activity.visible = false
     if (this.timer) clearInterval(this.timer)
@@ -223,7 +211,7 @@ export class ToolCell {
   private renderBody(): void {
     if (!this.output) return
     const width = Math.max(1, (this.body.width || this.row.width) - 2)
-    const rendered = renderToolOutput(this.output, width)
+    const rendered = this.toolRenderer?.renderOutput?.(this.output, width) ?? renderToolOutput(this.output, width)
     this.bodyText.content = rendered.content
     this.bodyText.height = rendered.rows
   }

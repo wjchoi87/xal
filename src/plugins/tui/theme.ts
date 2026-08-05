@@ -1,6 +1,7 @@
 import { dim, fg, RGBA, type StylableInput, type TextChunk } from "@opentui/core"
+import { themeOverrides, type ThemeColors } from "../../ui/extension"
 
-export const COLORS = {
+export const COLORS: ThemeColors = {
   foreground: RGBA.defaultForeground(),
   background: RGBA.defaultBackground(),
   userBackground: RGBA.fromIndex(8),
@@ -13,6 +14,7 @@ export const COLORS = {
   warning: RGBA.fromIndex(11),
   border: RGBA.fromIndex(8),
   selection: RGBA.fromIndex(4),
+  ...themeOverrides(),
 }
 
 export const colorsEnabled = process.env.NO_COLOR === undefined

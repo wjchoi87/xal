@@ -1,6 +1,8 @@
 import { appInfo } from "./app-info"
 import { getCommand, listCommands, type CommandContext } from "./commands/registry"
-import "./commands/register-all"
+import { loadSettings } from "./config/settings"
+import { registerPlugins } from "./plugins/discover"
+import { getUi } from "./ui/registry"
 
 const ctx: CommandContext = {
   print(line) {
@@ -21,10 +23,22 @@ function printHelp(): void {
 }
 
 async function main(args: string[]): Promise<void> {
+  const settings = await loadSettings()
+  const plugins = await registerPlugins(settings)
+
   if (args.length === 0) {
-    const { startTui } = await import("./tui/app")
-    await startTui()
+    const uiId = settings.ui ?? "tui"
+    const ui = getUi(uiId)
+    if (!ui) {
+      ctx.print(`unknown ui: ${uiId}`)
+      process.exit(1)
+    }
+    await ui.start()
     return
+  }
+
+  for (const failure of plugins.failures) {
+    ctx.print(`plugin failed: ${failure.plugin}: ${failure.reason}`)
   }
 
   const first = args[0]!

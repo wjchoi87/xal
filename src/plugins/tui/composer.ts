@@ -7,8 +7,8 @@ import {
   TextRenderable,
   type CliRenderer,
 } from "@opentui/core"
-import { appInfo } from "../app-info"
-import type { Usage } from "../providers/types"
+import { appInfo } from "../../app-info"
+import type { Usage } from "../../providers/types"
 import { border, COLORS, inputColors, muted, paint, textColors } from "./theme"
 
 function tokenCount(tokens: number): string {
