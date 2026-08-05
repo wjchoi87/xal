@@ -42,7 +42,7 @@ export class AgentSession {
   send(text: string): boolean {
     if (this.state !== "idle") return false
     this.items.push({ role: "user", content: [{ type: "input_text", text }] })
-    this.emit({ type: "user_message", text })
+    this.emit({ type: "user_message", text, sentAt: Date.now() })
     const controller = new AbortController()
     this.abortController = controller
     void this.runTurn(controller.signal)
@@ -111,8 +111,11 @@ export class AgentSession {
             case "text_delta":
               this.emit({ type: "text_delta", text: event.text })
               break
-            case "thinking_delta":
-              this.emit({ type: "thinking_delta", text: event.text })
+            case "reasoning_summary_delta":
+              this.emit({ type: "reasoning_summary_delta", text: event.text })
+              break
+            case "reasoning_delta":
+              this.emit({ type: "reasoning_delta", text: event.text })
               break
             case "item_done":
               pendingItems.push(event.item)

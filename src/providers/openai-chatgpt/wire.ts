@@ -3,7 +3,8 @@ import type { ConversationItem, Usage } from "../types"
 
 export type WireSseEvent =
   | { type: "output_text_delta"; delta: string }
-  | { type: "thinking_delta"; delta: string }
+  | { type: "reasoning_summary_delta"; delta: string }
+  | { type: "reasoning_delta"; delta: string }
   | { type: "item_done"; item: ConversationItem }
   | { type: "terminal"; usage?: Usage }
   | { type: "failure"; message: string }
@@ -19,11 +20,15 @@ export function parseSseEvent(raw: unknown): WireSseEvent | undefined {
       if (!delta) return undefined
       return { type: "output_text_delta", delta }
     }
-    case "response.reasoning_summary_text.delta":
+    case "response.reasoning_summary_text.delta": {
+      const delta = asString(raw.delta)
+      if (!delta) return undefined
+      return { type: "reasoning_summary_delta", delta }
+    }
     case "response.reasoning_text.delta": {
       const delta = asString(raw.delta)
       if (!delta) return undefined
-      return { type: "thinking_delta", delta }
+      return { type: "reasoning_delta", delta }
     }
     case "response.output_item.done": {
       if (!isRecord(raw.item)) return undefined

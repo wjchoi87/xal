@@ -21,7 +21,8 @@ export interface ToolDefinition {
 
 export type StreamEvent =
   | { type: "text_delta"; text: string }
-  | { type: "thinking_delta"; text: string }
+  | { type: "reasoning_summary_delta"; text: string }
+  | { type: "reasoning_delta"; text: string }
   | { type: "tool_call"; callId: string; name: string; args: Record<string, unknown> }
   | { type: "item_done"; item: ConversationItem }
   | { type: "done"; usage?: Usage }

@@ -4,9 +4,10 @@ export type AgentState = "idle" | "streaming" | "awaiting_approval" | "running_t
 
 export type AgentEvent =
   | { type: "state_changed"; state: AgentState }
-  | { type: "user_message"; text: string }
+  | { type: "user_message"; text: string; sentAt: number }
   | { type: "text_delta"; text: string }
-  | { type: "thinking_delta"; text: string }
+  | { type: "reasoning_summary_delta"; text: string }
+  | { type: "reasoning_delta"; text: string }
   | { type: "approval_requested"; callId: string; tool: string; title: string }
   | { type: "tool_started"; callId: string; title: string }
   | { type: "tool_finished"; callId: string; title: string; output: string; denied: boolean }

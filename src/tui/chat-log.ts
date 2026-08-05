@@ -1,124 +1,177 @@
 import {
   BoxRenderable,
   ScrollBoxRenderable,
+  StyledText,
   TextAttributes,
   TextRenderable,
   type CliRenderer,
+  type TextChunk,
 } from "@opentui/core"
+import { ToolCell } from "./tool-cell"
+import { formatTimestamp } from "./text"
+import { background, COLORS, textColors } from "./theme"
 
-const DISPLAY_OUTPUT_LIMIT = 1500
+function formatReasoningSummary(content: string): StyledText {
+  const chunks: TextChunk[] = []
+  const foreground = textColors(COLORS.dim).fg
+  let cursor = 0
+  let strong = false
+
+  while (cursor < content.length) {
+    const marker = content.indexOf("**", cursor)
+    const end = marker === -1 ? content.length : marker
+    if (end > cursor) {
+      chunks.push({
+        __isChunk: true,
+        text: content.slice(cursor, end),
+        fg: foreground,
+        attributes:
+          TextAttributes.DIM | TextAttributes.ITALIC | (strong ? TextAttributes.BOLD : TextAttributes.NONE),
+      })
+    }
+    if (marker === -1) break
+    strong = !strong
+    cursor = marker + 2
+  }
+
+  return new StyledText(chunks)
+}
 
 export class StreamingText {
   private buffer = ""
 
-  constructor(private readonly text: TextRenderable) {}
+  constructor(private readonly update: (content: string) => void) {}
 
   append(delta: string): void {
     this.buffer += delta
-    this.text.content = this.buffer
-  }
-}
-
-export class ToolCell {
-  constructor(
-    private readonly renderer: CliRenderer,
-    private readonly box: BoxRenderable,
-    private readonly status: TextRenderable,
-  ) {}
-
-  markRunning(): void {
-    this.box.borderColor = "#666666"
-    this.status.content = "running…"
-  }
-
-  markDenied(message: string): void {
-    this.box.borderColor = "#E06C75"
-    this.status.content = message
-  }
-
-  setOutput(output: string): void {
-    this.box.borderColor = "#666666"
-    let display = output
-    if (display.length > DISPLAY_OUTPUT_LIMIT) {
-      display = display.slice(0, DISPLAY_OUTPUT_LIMIT) + `\n… (${display.length - DISPLAY_OUTPUT_LIMIT} more characters)`
-    }
-    this.status.content = display || "(no output)"
+    this.update(this.buffer)
   }
 }
 
 export class ChatLog {
   readonly view: ScrollBoxRenderable
+  private readonly tools: ToolCell[] = []
+  private toolsExpanded = false
 
   constructor(private readonly renderer: CliRenderer) {
     this.view = new ScrollBoxRenderable(renderer, {
       flexGrow: 1,
       stickyScroll: true,
       stickyStart: "bottom",
-      paddingLeft: 1,
-      paddingRight: 1,
+      paddingLeft: 2,
+      paddingRight: 2,
+      paddingTop: 0,
+      viewportCulling: true,
+      verticalScrollbarOptions: { visible: false },
+      horizontalScrollbarOptions: { visible: false },
     })
   }
 
-  private cell(): BoxRenderable {
-    const box = new BoxRenderable(this.renderer, { flexDirection: "column", marginTop: 1 })
+  addUser(text: string, sentAt: number): void {
+    const box = new BoxRenderable(this.renderer, {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      minWidth: 0,
+      marginTop: 1,
+      padding: 1,
+      ...background(COLORS.userBackground),
+    })
     this.view.add(box)
-    return box
-  }
-
-  addUser(text: string): void {
-    const box = this.cell()
-    box.add(new TextRenderable(this.renderer, { content: `❯ ${text}`, fg: "#61AFEF", wrapMode: "word" }))
+    box.add(
+      new TextRenderable(this.renderer, {
+        content: text,
+        flexGrow: 1,
+        minWidth: 0,
+        wrapMode: "word",
+        ...textColors(COLORS.foreground, COLORS.userBackground),
+      }),
+    )
+    box.add(
+      new TextRenderable(this.renderer, {
+        content: formatTimestamp(sentAt),
+        height: 1,
+        flexShrink: 0,
+        marginLeft: 2,
+        attributes: TextAttributes.DIM,
+        wrapMode: "none",
+        ...textColors(COLORS.foreground, COLORS.userBackground),
+      }),
+    )
   }
 
   addInfo(text: string): void {
     const box = this.cell()
     box.add(
-      new TextRenderable(this.renderer, { content: text, attributes: TextAttributes.DIM, wrapMode: "word" }),
+      new TextRenderable(this.renderer, {
+        content: text,
+        attributes: TextAttributes.DIM,
+        wrapMode: "word",
+        ...textColors(),
+      }),
     )
   }
 
   addError(text: string): void {
     const box = this.cell()
-    box.add(new TextRenderable(this.renderer, { content: `✗ ${text}`, fg: "#E06C75", wrapMode: "word" }))
+    box.add(
+      new TextRenderable(this.renderer, {
+        content: `x ${text}`,
+        wrapMode: "word",
+        ...textColors(COLORS.error),
+      }),
+    )
   }
 
   startAssistant(): StreamingText {
     const box = this.cell()
-    const text = new TextRenderable(this.renderer, { content: "", wrapMode: "word" })
+    const text = new TextRenderable(this.renderer, {
+      content: "",
+      wrapMode: "word",
+      ...textColors(),
+    })
     box.add(text)
-    return new StreamingText(text)
+    return new StreamingText((content) => {
+      text.content = content
+    })
   }
 
-  startThinking(): StreamingText {
+  startReasoningSummary(): StreamingText {
     const box = this.cell()
     const text = new TextRenderable(this.renderer, {
       content: "",
-      attributes: TextAttributes.DIM | TextAttributes.ITALIC,
       wrapMode: "word",
+      ...textColors(COLORS.dim),
     })
     box.add(text)
-    return new StreamingText(text)
+    return new StreamingText((content) => {
+      text.content = formatReasoningSummary(content)
+    })
   }
 
-  addToolCell(command: string): ToolCell {
+  addToolCell(tool: string, command: string): ToolCell {
+    const box = this.cell(0)
+    const cell = new ToolCell(this.renderer, tool, command, this.toolsExpanded)
+    cell.addTo(box)
+    this.tools.push(cell)
+    return cell
+  }
+
+  toggleToolOutput(): void {
+    this.toolsExpanded = !this.toolsExpanded
+    for (const tool of this.tools) tool.setExpanded(this.toolsExpanded)
+  }
+
+  scrollPage(direction: -1 | 1): void {
+    this.view.scrollBy(direction * 0.85, "viewport")
+  }
+
+  private cell(marginTop = 1): BoxRenderable {
     const box = new BoxRenderable(this.renderer, {
       flexDirection: "column",
-      marginTop: 1,
-      border: true,
-      borderStyle: "rounded",
-      borderColor: "#E5C07B",
-      title: "bash",
-      paddingLeft: 1,
-      paddingRight: 1,
+      minWidth: 0,
+      marginTop,
     })
     this.view.add(box)
-    box.add(new TextRenderable(this.renderer, { content: `$ ${command}`, fg: "#98C379", wrapMode: "word" }))
-    const status = new TextRenderable(this.renderer, {
-      content: "[y] run · [n] deny · [Esc] interrupt",
-      attributes: TextAttributes.DIM,
-      wrapMode: "word",
-    })
-    box.add(status)
-    return new ToolCell(this.renderer, box, status)
+    return box
   }
 }

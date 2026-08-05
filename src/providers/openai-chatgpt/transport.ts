@@ -123,8 +123,11 @@ export async function* streamResponse(request: StreamRequest): AsyncGenerator<St
       case "output_text_delta":
         yield { type: "text_delta", text: event.delta }
         break
-      case "thinking_delta":
-        yield { type: "thinking_delta", text: event.delta }
+      case "reasoning_summary_delta":
+        yield { type: "reasoning_summary_delta", text: event.delta }
+        break
+      case "reasoning_delta":
+        yield { type: "reasoning_delta", text: event.delta }
         break
       case "item_done": {
         yield { type: "item_done", item: event.item }

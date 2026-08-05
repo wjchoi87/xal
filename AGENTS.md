@@ -57,3 +57,5 @@ sequenceDiagram
 - Typed wire boundaries; narrow `unknown` with `lib/json` guards, never `as` casts.
 - Typed event unions at seams; exhaustive switches.
 - No code comments.
+- No backward compatibility. only clean solutions.
+- No tests.
