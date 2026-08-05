@@ -79,10 +79,7 @@ function parseDiff(lines: string[]): OutputLine[] | undefined {
 function crop(lines: OutputLine[]): OutputLine[] {
   if (lines.length <= MAX_OUTPUT_ROWS) return lines
   const visible = lines.slice(-(MAX_OUTPUT_ROWS - 1))
-  return [
-    { number: "", text: `… ${lines.length - visible.length} earlier lines omitted`, kind: "faint" },
-    ...visible,
-  ]
+  return [{ number: "", text: `… ${lines.length - visible.length} earlier lines omitted`, kind: "faint" }, ...visible]
 }
 
 function contentChunk(line: OutputLine): TextChunk {

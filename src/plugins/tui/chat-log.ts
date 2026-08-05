@@ -26,8 +26,7 @@ function formatReasoningSummary(content: string): StyledText {
         __isChunk: true,
         text: content.slice(cursor, end),
         fg: foreground,
-        attributes:
-          TextAttributes.DIM | TextAttributes.ITALIC | (strong ? TextAttributes.BOLD : TextAttributes.NONE),
+        attributes: TextAttributes.DIM | TextAttributes.ITALIC | (strong ? TextAttributes.BOLD : TextAttributes.NONE),
       })
     }
     if (marker === -1) break

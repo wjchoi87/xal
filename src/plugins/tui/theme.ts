@@ -32,7 +32,10 @@ export function border(colorValue: RGBA): { borderColor: RGBA; focusedBorderColo
   return { borderColor: resolved, focusedBorderColor: resolved }
 }
 
-export function textColors(colorValue = COLORS.foreground, backgroundValue = COLORS.background): {
+export function textColors(
+  colorValue = COLORS.foreground,
+  backgroundValue = COLORS.background,
+): {
   fg: RGBA
   bg: RGBA
   selectionBg: RGBA

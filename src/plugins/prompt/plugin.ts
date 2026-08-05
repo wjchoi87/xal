@@ -16,9 +16,7 @@ const plugin: Plugin = {
       text(prompt) {
         if (prompt.tools.length === 0) return "You have no tools available."
         const names = prompt.tools.map((tool) => tool.name).join(", ")
-        const guidance = prompt.tools
-          .filter((tool) => tool.prompt)
-          .map((tool) => `${tool.name}: ${tool.prompt}`)
+        const guidance = prompt.tools.filter((tool) => tool.prompt).map((tool) => `${tool.name}: ${tool.prompt}`)
         return [`Available tools: ${names}.`, ...guidance].join("\n")
       },
     })

@@ -90,25 +90,17 @@ export class StatusBar {
       return
     }
     if (this.state === "awaiting_approval") {
-      this.activity.content = new StyledText([
-        paint(COLORS.warning, "!"),
-        muted(" Approval needed · choose above"),
-      ])
+      this.activity.content = new StyledText([paint(COLORS.warning, "!"), muted(" Approval needed · choose above")])
       return
     }
     if (this.state === "streaming") {
       const hint = this.view.width > 64 ? " · Esc interrupt" : ""
       const spinner = terminalGlyph(SPINNER_FRAMES[this.frame]!, "*")
-      this.activity.content = new StyledText([
-        paint(COLORS.agent, spinner),
-        muted(` Working${hint}`),
-      ])
+      this.activity.content = new StyledText([paint(COLORS.agent, spinner), muted(` Working${hint}`)])
       return
     }
     const shortcuts =
-      this.view.width > 64
-        ? "PgUp/PgDn scroll · Ctrl+O tool output · Ctrl+C quit"
-        : "PgUp/PgDn · Ctrl+O · Ctrl+C"
+      this.view.width > 64 ? "PgUp/PgDn scroll · Ctrl+O tool output · Ctrl+C quit" : "PgUp/PgDn · Ctrl+O · Ctrl+C"
     this.activity.content = new StyledText([muted(shortcuts)])
   }
 }

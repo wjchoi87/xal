@@ -20,11 +20,7 @@ export class NotLoggedInError extends Error {
 }
 
 function base64url(bytes: Uint8Array): string {
-  return Buffer.from(bytes)
-    .toString("base64")
-    .replaceAll("+", "-")
-    .replaceAll("/", "_")
-    .replace(/=+$/, "")
+  return Buffer.from(bytes).toString("base64").replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "")
 }
 
 async function createPkce(): Promise<{ verifier: string; challenge: string }> {

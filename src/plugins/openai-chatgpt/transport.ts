@@ -6,7 +6,10 @@ import { parseErrorDetail, parseFunctionCall, parseSseEvent } from "./wire"
 const RESPONSES_URL = "https://chatgpt.com/backend-api/codex/responses"
 
 export class RateLimitError extends Error {
-  constructor(message: string, readonly retryAfterSeconds?: number) {
+  constructor(
+    message: string,
+    readonly retryAfterSeconds?: number,
+  ) {
     super(message)
   }
 }

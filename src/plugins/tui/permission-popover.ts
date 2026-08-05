@@ -1,11 +1,4 @@
-import {
-  bold,
-  BoxRenderable,
-  StyledText,
-  TextRenderable,
-  t,
-  type CliRenderer,
-} from "@opentui/core"
+import { bold, BoxRenderable, StyledText, TextRenderable, t, type CliRenderer } from "@opentui/core"
 import { background, border, COLORS, muted, paint, textColors } from "./theme"
 
 export interface PermissionPopoverActions {
@@ -24,7 +17,10 @@ export class PermissionPopover {
     return this.view.visible
   }
 
-  constructor(renderer: CliRenderer, private readonly actions: PermissionPopoverActions) {
+  constructor(
+    renderer: CliRenderer,
+    private readonly actions: PermissionPopoverActions,
+  ) {
     this.view = new BoxRenderable(renderer, {
       visible: false,
       height: 6,

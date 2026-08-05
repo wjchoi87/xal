@@ -2,7 +2,8 @@ import type { Tool } from "../../tools/types"
 
 const MAX_OUTPUT_CHARS = 30_000
 const TIMEOUT_MS = 120_000
-const READ_ONLY_COMMAND = /^(?:cat|find|grep|head|ls|pwd|rg|tail|wc)(?:\s|$)|^(?:git\s+(?:diff|log|show|status))(?:\s|$)|^(?:bun|cargo|npm|pnpm|yarn)\s+(?:run\s+)?test(?:\s|$)|^sed\s+(?!.*(?:\s-i|--in-place))|^git\s+branch\s+--show-current(?:\s|$)/
+const READ_ONLY_COMMAND =
+  /^(?:cat|find|grep|head|ls|pwd|rg|tail|wc)(?:\s|$)|^(?:git\s+(?:diff|log|show|status))(?:\s|$)|^(?:bun|cargo|npm|pnpm|yarn)\s+(?:run\s+)?test(?:\s|$)|^sed\s+(?!.*(?:\s-i|--in-place))|^git\s+branch\s+--show-current(?:\s|$)/
 
 function truncateMiddle(text: string, max: number): string {
   if (text.length <= max) return text
@@ -59,7 +60,10 @@ export const bashTool: Tool = {
         new Response(proc.stderr).text(),
         proc.exited,
       ])
-      let output = [stdout, stderr].filter((part) => part.length > 0).join("\n").trimEnd()
+      let output = [stdout, stderr]
+        .filter((part) => part.length > 0)
+        .join("\n")
+        .trimEnd()
       output = truncateMiddle(output, MAX_OUTPUT_CHARS)
       let footer = `(exit code ${exitCode})`
       if (signal?.aborted) footer = "(interrupted by user)"
