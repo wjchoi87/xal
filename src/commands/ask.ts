@@ -1,7 +1,6 @@
+import { AgentSession } from "../agent/agent-session"
 import { appInfo } from "../app-info"
-import { runTurn, type UiSink } from "../agent/loop"
-import { Session } from "../agent/session"
-import type { PermissionService } from "../permissions/service"
+import { askPolicy } from "../permissions/service"
 import { getProvider } from "../providers/registry"
 import { registerCommand } from "./registry"
 
@@ -15,26 +14,40 @@ registerCommand({
 
     const provider = getProvider("chatgpt")!
     const model = await provider.defaultModel()
-    const session = new Session()
-    session.addUserMessage(text)
+    const session = new AgentSession({ provider, model, policy: askPolicy })
 
-    const permissions: PermissionService = {
-      async requestPermission(request) {
-        const answer = prompt(`\n[${request.tool}] ${request.title}\nallow? [y/N]`)
-        return answer?.trim().toLowerCase().startsWith("y") ? "allow" : "deny"
-      },
-    }
-
-    const sink: UiSink = {
-      onTextDelta: (delta) => process.stdout.write(delta),
-      onThinkingDelta: () => {},
-      onToolStart: (_callId, title) => ctx.print(`\n[running] ${title}`),
-      onToolResult: (_callId, output, denied) => ctx.print(denied ? `[denied] ${output}` : output),
-      onInterrupted: () => ctx.print("\n(interrupted)"),
-      onTurnEnd: () => {},
-    }
-
-    await runTurn(session, { provider, model, permissions, sink }, new AbortController().signal)
+    await new Promise<void>((resolve) => {
+      session.subscribe((event) => {
+        switch (event.type) {
+          case "text_delta":
+            process.stdout.write(event.text)
+            break
+          case "approval_requested": {
+            const answer = prompt(`\n[${event.tool}] ${event.title}\nallow? [y/N]`)
+            if (answer?.trim().toLowerCase().startsWith("y")) session.approve()
+            else session.deny()
+            break
+          }
+          case "tool_started":
+            ctx.print(`\n[running] ${event.title}`)
+            break
+          case "tool_finished":
+            ctx.print(event.denied ? `[denied] ${event.output}` : event.output)
+            break
+          case "error":
+            ctx.print(`\n${event.message}`)
+            resolve()
+            break
+          case "turn_ended":
+          case "turn_interrupted":
+            resolve()
+            break
+          default:
+            break
+        }
+      })
+      session.send(text)
+    })
     ctx.print("")
   },
 })

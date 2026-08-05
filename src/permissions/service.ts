@@ -1,11 +1,14 @@
 export interface PermissionRequest {
   tool: string
   title: string
-  detail?: string
 }
 
-export type PermissionDecision = "allow" | "deny"
+export type PolicyDecision = "allow" | "deny" | "ask"
 
-export interface PermissionService {
-  requestPermission(request: PermissionRequest): Promise<PermissionDecision>
+export interface PermissionPolicy {
+  evaluate(request: PermissionRequest): PolicyDecision
+}
+
+export const askPolicy: PermissionPolicy = {
+  evaluate: () => "ask",
 }

@@ -4,7 +4,7 @@ export class Composer {
   readonly view: BoxRenderable
   private readonly input: InputRenderable
 
-  constructor(renderer: CliRenderer, onSubmit: (text: string) => void) {
+  constructor(renderer: CliRenderer, onSubmit: (text: string) => boolean) {
     this.view = new BoxRenderable(renderer, {
       border: true,
       borderStyle: "rounded",
@@ -18,8 +18,7 @@ export class Composer {
     this.input.on(InputRenderableEvents.ENTER, () => {
       const text = this.input.value.trim()
       if (!text) return
-      this.input.value = ""
-      onSubmit(text)
+      if (onSubmit(text)) this.input.value = ""
     })
   }
 

@@ -1,18 +1,19 @@
 import { BoxRenderable, createCliRenderer } from "@opentui/core"
-import { runTurn, type UiSink } from "../agent/loop"
-import { Session } from "../agent/session"
+import { AgentSession } from "../agent/agent-session"
+import type { AgentEvent, AgentState } from "../agent/events"
 import { appInfo } from "../app-info"
+import { askPolicy } from "../permissions/service"
 import { getProvider } from "../providers/registry"
 import { ChatLog, type StreamingText, type ToolCell } from "./chat-log"
 import { Composer } from "./composer"
 import { StatusBar } from "./status-bar"
-import { TuiPermissionService } from "./approval"
 
-type UiState = "idle" | "working" | "approval"
-
-const IDLE_HINT = "idle — Enter to send · Ctrl+C twice to quit"
-const WORKING_HINT = "working — Esc to interrupt"
-const APPROVAL_HINT = "awaiting approval — [y] run · [n] deny · [Esc] interrupt"
+const HINTS: Record<AgentState, string> = {
+  idle: "idle — Enter to send · Ctrl+C twice to quit",
+  streaming: "working — Esc to interrupt",
+  awaiting_approval: "awaiting approval — [y] run · [n] deny · [Esc] interrupt",
+  running_tool: "running command — Esc to interrupt",
+}
 
 export async function startTui(): Promise<void> {
   const provider = getProvider("chatgpt")!
@@ -21,6 +22,7 @@ export async function startTui(): Promise<void> {
     process.exit(1)
   }
   const model = await provider.defaultModel()
+  const session = new AgentSession({ provider, model, policy: askPolicy })
 
   const renderer = await createCliRenderer({ exitOnCtrlC: false })
   const root = new BoxRenderable(renderer, { flexDirection: "column", width: "100%", height: "100%" })
@@ -28,14 +30,16 @@ export async function startTui(): Promise<void> {
 
   const chatLog = new ChatLog(renderer)
   const statusBar = new StatusBar(renderer, model)
+  const composer = new Composer(renderer, (text) => session.send(text))
 
-  const session = new Session()
-  let state: UiState = "idle"
-  let abort: AbortController | undefined
-  let lastCtrlC = 0
+  root.add(chatLog.view)
+  root.add(composer.view)
+  root.add(statusBar.view)
+
   let assistant: StreamingText | undefined
   let thinking: StreamingText | undefined
   let toolCell: ToolCell | undefined
+  let lastCtrlC = 0
 
   function quit(): void {
     try {
@@ -44,87 +48,64 @@ export async function startTui(): Promise<void> {
     process.exit(0)
   }
 
-  function setIdle(): void {
-    state = "idle"
-    abort = undefined
-    assistant = undefined
-    thinking = undefined
-    toolCell = undefined
-    statusBar.setState(IDLE_HINT)
-    composer.focus()
+  function handleEvent(event: AgentEvent): void {
+    switch (event.type) {
+      case "state_changed":
+        statusBar.setState(HINTS[event.state])
+        if (event.state === "awaiting_approval") composer.blur()
+        else composer.focus()
+        if (event.state === "idle") {
+          assistant = undefined
+          thinking = undefined
+          toolCell = undefined
+        }
+        break
+      case "user_message":
+        chatLog.addUser(event.text)
+        break
+      case "text_delta":
+        thinking = undefined
+        assistant ??= chatLog.startAssistant()
+        assistant.append(event.text)
+        break
+      case "thinking_delta":
+        thinking ??= chatLog.startThinking()
+        thinking.append(event.text)
+        break
+      case "approval_requested":
+        toolCell = chatLog.addToolCell(event.title)
+        break
+      case "tool_started":
+        toolCell ??= chatLog.addToolCell(event.title)
+        toolCell.markRunning()
+        assistant = undefined
+        thinking = undefined
+        break
+      case "tool_finished": {
+        const cell = toolCell ?? chatLog.addToolCell(event.title)
+        if (event.denied) cell.markDenied(event.output)
+        else cell.setOutput(event.output)
+        toolCell = undefined
+        assistant = undefined
+        thinking = undefined
+        break
+      }
+      case "turn_interrupted":
+        chatLog.addInfo("(interrupted)")
+        break
+      case "turn_ended":
+        break
+      case "error":
+        chatLog.addError(event.message)
+        break
+    }
   }
 
-  const permissions = new TuiPermissionService({
-    onRequest(request) {
-      state = "approval"
-      composer.blur()
-      toolCell = chatLog.addToolCell(request.title)
-      statusBar.setState(APPROVAL_HINT)
-    },
-    onResolve() {
-      state = "working"
-      statusBar.setState(WORKING_HINT)
-    },
-  })
-
-  const sink: UiSink = {
-    onTextDelta(text) {
-      thinking = undefined
-      assistant ??= chatLog.startAssistant()
-      assistant.append(text)
-    },
-    onThinkingDelta(text) {
-      thinking ??= chatLog.startThinking()
-      thinking.append(text)
-    },
-    onToolStart() {
-      toolCell?.markRunning()
-      assistant = undefined
-      thinking = undefined
-    },
-    onToolResult(_callId, output, denied) {
-      if (denied) toolCell?.markDenied(output)
-      else toolCell?.setOutput(output)
-      toolCell = undefined
-      assistant = undefined
-      thinking = undefined
-    },
-    onInterrupted() {
-      chatLog.addInfo("(interrupted)")
-    },
-    onTurnEnd() {},
-  }
-
-  function submit(text: string): void {
-    if (state !== "idle") return
-    chatLog.addUser(text)
-    session.addUserMessage(text)
-    state = "working"
-    statusBar.setState(WORKING_HINT)
-    abort = new AbortController()
-    runTurn(session, { provider, model, permissions, sink }, abort.signal)
-      .catch((error) => {
-        chatLog.addError(error instanceof Error ? error.message : String(error))
-      })
-      .finally(() => {
-        setIdle()
-      })
-  }
-
-  const composer = new Composer(renderer, submit)
-
-  root.add(chatLog.view)
-  root.add(composer.view)
-  root.add(statusBar.view)
-
-  function interrupt(): void {
-    abort?.abort()
-    if (permissions.hasPending) permissions.resolvePending("deny")
-  }
+  session.subscribe(handleEvent)
 
   function handleCtrlC(): void {
-    if (state !== "idle") {
-      interrupt()
+    if (session.currentState !== "idle") {
+      session.interrupt()
       return
     }
     const now = Date.now()
@@ -135,7 +116,7 @@ export async function startTui(): Promise<void> {
     lastCtrlC = now
     statusBar.setState("press Ctrl+C again to quit")
     setTimeout(() => {
-      if (state === "idle") statusBar.setState(IDLE_HINT)
+      if (session.currentState === "idle") statusBar.setState(HINTS.idle)
     }, 2000)
   }
 
@@ -146,18 +127,18 @@ export async function startTui(): Promise<void> {
       return
     }
     if (key.name === "escape") {
-      if (state !== "idle") interrupt()
+      if (session.currentState !== "idle") session.interrupt()
       return
     }
-    if (state !== "approval") return
+    if (session.currentState !== "awaiting_approval") return
     if (key.name === "y") {
       key.preventDefault()
-      permissions.resolvePending("allow")
+      session.approve()
       return
     }
     if (key.name === "n") {
       key.preventDefault()
-      permissions.resolvePending("deny")
+      session.deny()
     }
   })
 
