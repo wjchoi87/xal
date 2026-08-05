@@ -15,7 +15,7 @@ function truncateMiddle(text: string, max: number): string {
 export const bashTool: Tool = {
   name: "bash",
   description:
-    "Execute a bash command in the user's current working directory. Returns combined stdout and stderr followed by the exit code. Use standard shell tools to read, search, and edit files, and to run builds or tests. Each command requires the user's approval before it runs.",
+    "Execute a bash command in the user's current working directory. Returns combined stdout and stderr followed by the exit code. Use it to search the project, run builds and tests, and perform shell operations; use the read and write tools for file contents. Each command requires the user's approval before it runs.",
   parameters: {
     type: "object",
     properties: {
@@ -28,7 +28,7 @@ export const bashTool: Tool = {
     additionalProperties: false,
   },
   prompt:
-    "Use bash for all file access and project work: read and search with cat/rg/ls, edit with standard tools, run builds and tests. Prefer non-interactive commands; anything needing a TTY will hang.",
+    "Use bash for shell work: search with rg/ls, run builds and tests. Use the read and write tools for file contents instead of cat or heredocs. Prefer non-interactive commands; anything needing a TTY will hang.",
   title(args) {
     return String(args.command ?? "")
   },

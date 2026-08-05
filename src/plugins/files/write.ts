@@ -1,0 +1,68 @@
+import { stat } from "node:fs/promises"
+import { asString } from "../../lib/json"
+import type { Tool } from "../../tools/types"
+import { unifiedDiff } from "./diff"
+import { displayPath, resolveFilePath } from "./path"
+
+const MAX_DIFF_LINES = 200
+
+function capDiff(hunks: string): string {
+  if (!hunks) return ""
+  const lines = hunks.split("\n")
+  if (lines.length <= MAX_DIFF_LINES) return hunks
+  const visible = lines.slice(0, MAX_DIFF_LINES)
+  return [...visible, `… ${lines.length - visible.length} more diff lines`].join("\n")
+}
+
+function withDiff(header: string, hunks: string): string {
+  const diff = capDiff(hunks)
+  return diff ? `${header}\n${diff}` : header
+}
+
+export const writeTool: Tool = {
+  name: "write",
+  description:
+    "Write a file with the given content, creating it and any missing parent directories or replacing the existing file entirely. Returns a diff of the change. Paths are absolute or relative to the working directory.",
+  parameters: {
+    type: "object",
+    properties: {
+      file_path: {
+        type: "string",
+        description: "Path to the file, absolute or relative to the working directory",
+      },
+      content: {
+        type: "string",
+        description: "Full file content; replaces anything already in the file",
+      },
+    },
+    required: ["file_path", "content"],
+    additionalProperties: false,
+  },
+  prompt:
+    "Use write to create or replace files with complete content. Read a file before overwriting it. Content is raw file text; never include read's line-number prefixes.",
+  title(args) {
+    return displayPath(asString(args.file_path) ?? "")
+  },
+  async execute(args) {
+    const path = asString(args.file_path)
+    if (!path) throw new Error("file_path is required")
+    const content = asString(args.content)
+    if (content === undefined) throw new Error("content is required")
+
+    const absolute = resolveFilePath(path)
+    const stats = await stat(absolute).catch(() => undefined)
+    if (stats?.isDirectory()) throw new Error(`Path is a directory, not a file: ${displayPath(path)}`)
+
+    const previous = stats ? await Bun.file(absolute).text() : undefined
+    if (previous === content) return { output: `Unchanged ${displayPath(path)}` }
+
+    await Bun.write(absolute, content)
+
+    if (previous === undefined) {
+      const diff = unifiedDiff("", content)
+      return { output: withDiff(`Created ${displayPath(path)} (${diff.added} lines)`, diff.hunks) }
+    }
+    const diff = unifiedDiff(previous, content)
+    return { output: withDiff(`Updated ${displayPath(path)} (+${diff.added} -${diff.removed})`, diff.hunks) }
+  },
+}

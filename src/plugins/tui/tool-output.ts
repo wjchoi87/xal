@@ -57,28 +57,36 @@ function parseDiff(lines: string[]): OutputLine[] | undefined {
       parsed.push({ number: "", text: line, kind: "faint" })
       continue
     }
-    if (line.startsWith("-") && !line.startsWith("---")) {
+    if (line.startsWith("-")) {
       parsed.push({ number: String(oldLine), text: line, kind: "removed" })
       oldLine += 1
       continue
     }
-    if (line.startsWith("+") && !line.startsWith("+++")) {
+    if (line.startsWith("+")) {
       parsed.push({ number: String(newLine), text: line, kind: "added" })
       newLine += 1
       continue
     }
-    parsed.push({ number: String(newLine), text: line, kind: "plain" })
-    if (!line.startsWith("\\")) {
+    if (line.startsWith(" ")) {
+      parsed.push({ number: String(newLine), text: line, kind: "plain" })
       oldLine += 1
       newLine += 1
+      continue
     }
+    if (line.startsWith("\\")) {
+      parsed.push({ number: "", text: line, kind: "plain" })
+      continue
+    }
+    oldLine = undefined
+    newLine = undefined
+    parsed.push({ number: "", text: line, kind: "faint" })
   }
   return parsed
 }
 
-function crop(lines: OutputLine[]): OutputLine[] {
-  if (lines.length <= MAX_OUTPUT_ROWS) return lines
-  const visible = lines.slice(-(MAX_OUTPUT_ROWS - 1))
+function crop(lines: OutputLine[], maxRows: number): OutputLine[] {
+  if (lines.length <= maxRows) return lines
+  const visible = lines.slice(-(maxRows - 1))
   return [{ number: "", text: `… ${lines.length - visible.length} earlier lines omitted`, kind: "faint" }, ...visible]
 }
 
@@ -98,11 +106,15 @@ function contentChunk(line: OutputLine): TextChunk {
   }
 }
 
-export function renderToolOutput(output: string, width: number): { content: StyledText; rows: number } {
+export function renderToolOutput(
+  output: string,
+  width: number,
+  maxRows = MAX_OUTPUT_ROWS,
+): { content: StyledText; rows: number } {
   const sourceLines = cleanLines(output)
   const plainLines = sourceLines.map(plainLine)
   const parsed = parseDiff(sourceLines) ?? plainLines
-  const lines = crop(parsed)
+  const lines = crop(parsed, maxRows)
   const chunks: TextChunk[] = []
 
   for (const [index, line] of lines.entries()) {

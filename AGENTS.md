@@ -82,3 +82,7 @@ sequenceDiagram
 - No code comments.
 - No backward compatibility. only clean solutions.
 - No tests.
+
+## Linting & Formatting
+
+Use `bun checks:fix` to fix any formatting or linting if you modified files that are subject to this.

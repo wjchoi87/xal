@@ -41,8 +41,8 @@ export class ToolCell {
     readOnly: boolean,
     expanded: boolean,
   ) {
-    this.expanded = expanded
     this.toolRenderer = getToolRenderer(tool)
+    this.expanded = expanded || (this.toolRenderer?.alwaysExpanded ?? false)
     this.label = commandLabel(tool, title)
     this.waiting = this.toolRenderer?.waitingLabel?.(title) ?? `Waiting for ${tool}`
     this.row = new BoxRenderable(renderer, {
@@ -81,7 +81,7 @@ export class ToolCell {
     this.row.add(this.metadata)
 
     this.body = new BoxRenderable(renderer, {
-      visible: expanded,
+      visible: false,
       flexDirection: "column",
       border: ["left"],
       customBorderChars: { ...BorderChars.single, vertical: terminalGlyph("│", "|") },
@@ -91,7 +91,7 @@ export class ToolCell {
     this.bodyText = new TextRenderable(renderer, {
       content: "",
       height: 1,
-      maxHeight: 8,
+      maxHeight: this.toolRenderer?.maxRows ?? 8,
       wrapMode: "none",
       truncate: true,
       ...textColors(),
@@ -136,9 +136,10 @@ export class ToolCell {
   }
 
   setExpanded(expanded: boolean): void {
+    if (this.toolRenderer?.alwaysExpanded) return
     this.expanded = expanded
-    this.body.visible = expanded
-    if (expanded) this.renderBody()
+    this.body.visible = expanded && this.output.length > 0
+    if (this.body.visible) this.renderBody()
   }
 
   private settle(outcome: ToolOutcome, output: string): void {
@@ -151,6 +152,7 @@ export class ToolCell {
     this.activity.visible = false
     if (this.timer) clearInterval(this.timer)
     this.timer = undefined
+    this.body.visible = this.expanded && this.output.length > 0
     this.renderBody()
     this.update()
   }
@@ -211,7 +213,9 @@ export class ToolCell {
   private renderBody(): void {
     if (!this.output) return
     const width = Math.max(1, (this.body.width || this.row.width) - 2)
-    const rendered = this.toolRenderer?.renderOutput?.(this.output, width) ?? renderToolOutput(this.output, width)
+    const rendered =
+      this.toolRenderer?.renderOutput?.(this.output, width) ??
+      renderToolOutput(this.output, width, this.toolRenderer?.maxRows)
     this.bodyText.content = rendered.content
     this.bodyText.height = rendered.rows
   }

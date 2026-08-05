@@ -2,6 +2,8 @@ import type { RGBA, StyledText } from "@opentui/core"
 
 export interface ToolRenderer {
   tool: string
+  alwaysExpanded?: boolean
+  maxRows?: number
   waitingLabel?(title: string): string
   summarize?(output: string): string
   failed?(output: string): boolean
