@@ -2,6 +2,7 @@ import { registerPrompt, registerPromptFull } from "../agent/prompt"
 import { registerCommand } from "../commands/registry"
 import { configDir } from "../config/paths"
 import type { Settings } from "../config/settings"
+import { events, type PluginFailure, type PluginStatus } from "../events"
 import { registerPolicyRule } from "../permissions/service"
 import { registerProvider } from "../providers/registry"
 import { registerTool } from "../tools/registry"
@@ -11,25 +12,19 @@ import { builtinPlugins } from "./builtins"
 import { importPlugin } from "./load"
 import type { Plugin, PluginContext } from "./types"
 
-export interface PluginFailure {
-  plugin: string
-  reason: string
-}
-
-export interface PluginStatus {
-  total: number
-  failures: PluginFailure[]
+interface RegisteredPlugin {
+  plugin: Plugin
+  ctx: PluginContext
 }
 
 let status: PluginStatus = { total: 0, failures: [] }
-
-export function pluginStatus(): PluginStatus {
-  return status
-}
+let registered: RegisteredPlugin[] = []
+let bootstrapRun: Promise<PluginStatus> | undefined
 
 function contextFor(plugin: Plugin, settings: Settings): PluginContext {
   return {
     config: settings.pluginConfig[plugin.name] ?? {},
+    events,
     registerTool,
     registerProvider,
     registerCommand,
@@ -46,26 +41,55 @@ function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+function registerPlugin(plugin: Plugin, settings: Settings): RegisteredPlugin {
+  const ctx = contextFor(plugin, settings)
+  plugin.register(ctx)
+  return { plugin, ctx }
+}
+
 export async function registerPlugins(settings: Settings): Promise<PluginStatus> {
   const failures: PluginFailure[] = []
+  registered = []
+  bootstrapRun = undefined
 
   for (const plugin of builtinPlugins) {
     try {
-      plugin.register(contextFor(plugin, settings))
+      registered.push(registerPlugin(plugin, settings))
     } catch (error) {
-      failures.push({ plugin: plugin.name, reason: describeError(error) })
+      failures.push({ plugin: plugin.name, phase: "register", reason: describeError(error) })
     }
   }
 
   for (const spec of settings.plugins) {
     try {
       const plugin = await importPlugin(spec, configDir())
-      plugin.register(contextFor(plugin, settings))
+      registered.push(registerPlugin(plugin, settings))
     } catch (error) {
-      failures.push({ plugin: spec, reason: describeError(error) })
+      failures.push({ plugin: spec, phase: "register", reason: describeError(error) })
     }
   }
 
   status = { total: builtinPlugins.length + settings.plugins.length, failures }
+  events.emitRetained({ type: "plugin_registration_finished", status })
   return status
+}
+
+async function runBootstrap(): Promise<PluginStatus> {
+  const entries = registered.filter((entry) => entry.plugin.bootstrap)
+  events.emitRetained({ type: "plugin_bootstrap_started", total: entries.length })
+  const outcomes = await Promise.allSettled(
+    entries.map((entry) => Promise.resolve().then(() => entry.plugin.bootstrap?.(entry.ctx))),
+  )
+  const failures = outcomes.flatMap((outcome, index): PluginFailure[] => {
+    if (outcome.status === "fulfilled") return []
+    return [{ plugin: entries[index]!.plugin.name, phase: "bootstrap", reason: describeError(outcome.reason) }]
+  })
+  status = { total: status.total, failures: [...status.failures, ...failures] }
+  events.emitRetained({ type: "plugin_bootstrap_finished", status })
+  return status
+}
+
+export function bootstrapPlugins(): Promise<PluginStatus> {
+  bootstrapRun ??= runBootstrap()
+  return bootstrapRun
 }

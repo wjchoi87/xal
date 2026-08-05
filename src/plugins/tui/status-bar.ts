@@ -17,6 +17,7 @@ export class StatusBar {
   private readonly activity: TextRenderable
   private readonly model: TextRenderable
   private state: AgentState = "idle"
+  private loading: string | undefined
   private notice: string | undefined
   private frame = 0
   private timer: ReturnType<typeof setInterval> | undefined
@@ -58,8 +59,17 @@ export class StatusBar {
 
   setState(state: AgentState): void {
     this.state = state
+    this.loading = undefined
     this.notice = undefined
     if (state === "streaming") this.startSpinner()
+    else this.stopSpinner()
+    this.render()
+  }
+
+  setLoading(label: string | undefined): void {
+    this.loading = label
+    this.notice = undefined
+    if (label) this.startSpinner()
     else this.stopSpinner()
     this.render()
   }
@@ -67,6 +77,12 @@ export class StatusBar {
   setNotice(notice: string): void {
     this.notice = notice
     this.stopSpinner()
+    this.render()
+  }
+
+  clearNotice(): void {
+    this.notice = undefined
+    if (this.loading || this.state === "streaming") this.startSpinner()
     this.render()
   }
 
@@ -87,6 +103,11 @@ export class StatusBar {
   private render(): void {
     if (this.notice) {
       this.activity.content = new StyledText([muted(this.notice)])
+      return
+    }
+    if (this.loading) {
+      const spinner = terminalGlyph(SPINNER_FRAMES[this.frame]!, "*")
+      this.activity.content = new StyledText([paint(COLORS.agent, spinner), muted(` ${this.loading}`)])
       return
     }
     if (this.state === "awaiting_approval") {

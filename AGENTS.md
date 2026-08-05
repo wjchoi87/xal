@@ -73,6 +73,7 @@ sequenceDiagram
 ### Principles
 
 - Customizable and Extensible by supporting plugins
+- Plugins must not rely on eachother. This will make a circular dependencies.
 
 ## Conventions
 
@@ -82,6 +83,7 @@ sequenceDiagram
 - No code comments.
 - No backward compatibility. only clean solutions.
 - No tests.
+- Write simple and readable code and avoid extra complexity.
 
 ## Linting & Formatting
 

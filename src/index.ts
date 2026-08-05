@@ -1,7 +1,7 @@
 import { appInfo } from "./app-info"
 import { getCommand, listCommands, type CommandContext } from "./commands/registry"
 import { loadSettings } from "./config/settings"
-import { registerPlugins } from "./plugins/discover"
+import { bootstrapPlugins, registerPlugins } from "./plugins/discover"
 import { getUi } from "./ui/registry"
 
 const ctx: CommandContext = {
@@ -33,12 +33,19 @@ async function main(args: string[]): Promise<void> {
       ctx.print(`unknown ui: ${uiId}`)
       process.exit(1)
     }
+    void bootstrapPlugins()
     await ui.start()
     return
   }
 
   for (const failure of plugins.failures) {
     ctx.print(`plugin failed: ${failure.plugin}: ${failure.reason}`)
+  }
+
+  const bootstrapped = await bootstrapPlugins()
+  for (const failure of bootstrapped.failures) {
+    if (failure.phase !== "bootstrap") continue
+    ctx.print(`plugin bootstrap failed: ${failure.plugin}: ${failure.reason}`)
   }
 
   const first = args[0]!

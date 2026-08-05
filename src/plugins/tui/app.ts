@@ -1,8 +1,8 @@
-import { BoxRenderable, createCliRenderer } from "@opentui/core"
+import { BoxRenderable, createCliRenderer, RenderableEvents } from "@opentui/core"
 import { createSession } from "../../agent/compose"
 import type { AgentEvent } from "../../agent/events"
 import { appInfo } from "../../app-info"
-import { pluginStatus } from "../../plugins/discover"
+import type { AppEvent, EventService } from "../../events"
 import { ChatLog, type StreamingText } from "./chat-log"
 import { Composer } from "./composer"
 import { PermissionPopover } from "./permission-popover"
@@ -11,7 +11,7 @@ import { compactPath } from "./text"
 import { COLORS } from "./theme"
 import type { ToolCell } from "./tool-cell"
 
-export async function startTui(): Promise<void> {
+export async function startTui(events: EventService): Promise<void> {
   const { session, provider, model } = await createSession()
   if (!(await provider.isLoggedIn())) {
     console.log(`not logged in — run: ${appInfo.name} login ${provider.aliases[0] ?? provider.id}`)
@@ -33,8 +33,15 @@ export async function startTui(): Promise<void> {
   })
   renderer.root.add(root)
 
+  let bootstrapped = false
+  let queued: string | undefined
+
   const chatLog = new ChatLog(renderer)
-  const composer = new Composer(renderer, (text) => session.send(text))
+  const composer = new Composer(renderer, (text) => {
+    if (bootstrapped) return session.send(text)
+    queued = text
+    return true
+  })
   const statusBar = new StatusBar(renderer, model)
   const permission = new PermissionPopover(renderer, {
     approve: () => session.approve(),
@@ -47,15 +54,42 @@ export async function startTui(): Promise<void> {
   root.add(composer.view)
   root.add(statusBar.view)
 
-  const plugins = pluginStatus()
-  const loaded = plugins.total - plugins.failures.length
-  if (plugins.failures.length === 0) {
-    chatLog.addInfo(`plugins: ${loaded}/${plugins.total} registered`)
-  } else {
-    chatLog.addCollapsible(
-      `plugins: ${loaded}/${plugins.total} registered — ctrl+o to see failures`,
-      plugins.failures.map((failure) => `${failure.plugin}: ${failure.reason}`),
-    )
+  function handleAppEvent(event: AppEvent): void {
+    switch (event.type) {
+      case "plugin_registration_finished": {
+        const failures = event.status.failures
+        const registered = event.status.total - failures.length
+        if (failures.length === 0) {
+          chatLog.addInfo(`plugins: ${registered}/${event.status.total} registered`)
+          break
+        }
+        chatLog.addCollapsible(
+          `plugins: ${registered}/${event.status.total} registered — ctrl+o to see failures`,
+          failures.map((failure) => `${failure.plugin}: ${failure.reason}`),
+        )
+        break
+      }
+      case "plugin_bootstrap_started":
+        statusBar.setLoading("Bootstrapping plugins")
+        break
+      case "plugin_bootstrap_finished": {
+        statusBar.setLoading(undefined)
+        const failures = event.status.failures.filter((failure) => failure.phase === "bootstrap")
+        if (failures.length > 0) {
+          chatLog.addCollapsible(
+            `plugins: ${failures.length} failed to initialize — ctrl+o to see failures`,
+            failures.map((failure) => `${failure.plugin}: ${failure.reason}`),
+          )
+        }
+        bootstrapped = true
+        if (queued !== undefined) {
+          session.send(queued)
+          queued = undefined
+        }
+        composer.focus()
+        break
+      }
+    }
   }
 
   let assistant: StreamingText | undefined
@@ -153,7 +187,7 @@ export async function startTui(): Promise<void> {
     lastCtrlC = now
     statusBar.setNotice("Ctrl+C again to quit")
     setTimeout(() => {
-      if (session.currentState === "idle") statusBar.setState("idle")
+      if (session.currentState === "idle") statusBar.clearNotice()
     }, 2000)
   }
 
@@ -183,5 +217,7 @@ export async function startTui(): Promise<void> {
     }
   })
 
+  const unsubscribeEvents = events.subscribe(handleAppEvent, true)
+  root.on(RenderableEvents.DESTROYED, unsubscribeEvents)
   composer.focus()
 }
