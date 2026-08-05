@@ -24,10 +24,6 @@ const plugin: Plugin = {
     ctx.registerTool(globTool)
     ctx.registerToolRenderer({ tool: "grep", failed: toolFailed, summarize: summarizeSearch })
     ctx.registerToolRenderer({ tool: "glob", failed: toolFailed, summarize: summarizeSearch })
-    ctx.registerPolicyRule({
-      id: "allow-read-only",
-      evaluate: (request) => (request.readOnly ? "allow" : undefined),
-    })
   },
 }
 
