@@ -1,6 +1,7 @@
 {
   "name": "agent",
-  "module": "src/index.tsx",
+  "version": "0.0.1",
+  "module": "src/index.ts",
   "type": "module",
   "private": true,
   "scripts": {
