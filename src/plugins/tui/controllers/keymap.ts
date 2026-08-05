@@ -39,17 +39,12 @@ export function bindKeys(renderer: CliRenderer, deps: KeymapDeps): void {
     }
     if (key.ctrl && key.name === "o") {
       key.preventDefault()
-      screen.chatLog.toggleToolOutput()
+      screen.scrollback.toggleExpanded()
       return
     }
     if (screen.permission.handleKey(key.name)) {
       key.preventDefault()
-      screen.syncApproval()
-      return
-    }
-    if (key.name === "pageup" || key.name === "pagedown") {
-      key.preventDefault()
-      screen.chatLog.scrollPage(key.name === "pageup" ? -1 : 1)
+      screen.syncFooter()
       return
     }
     if (key.name === "escape" && session.currentState !== "idle") session.interrupt()

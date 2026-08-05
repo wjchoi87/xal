@@ -1,7 +1,9 @@
-import { bold, StyledText, t, type BoxRenderable, type CliRenderer, type TextRenderable } from "@opentui/core"
-import { column, label } from "../lib/renderables"
+import { StyledText, TextAttributes, type BoxRenderable, type RenderContext, type TextRenderable } from "@opentui/core"
+import { label, row } from "../lib/renderables"
 import { COLORS } from "../theme/colors"
 import { background, border, muted, paint } from "../theme/styles"
+
+export const POPOVER_ROWS = 4
 
 export interface PermissionPopoverActions {
   approve(): void
@@ -13,7 +15,6 @@ type Choice = "run" | "deny"
 
 export class PermissionPopover {
   readonly view: BoxRenderable
-  private readonly command: TextRenderable
   private readonly options: TextRenderable
   private choice: Choice = "run"
 
@@ -22,34 +23,33 @@ export class PermissionPopover {
   }
 
   constructor(
-    renderer: CliRenderer,
+    ctx: RenderContext,
     private readonly actions: PermissionPopoverActions,
   ) {
-    this.view = column(renderer, {
+    this.view = row(ctx, {
       visible: false,
-      height: 6,
+      height: 3,
+      alignItems: "center",
       border: true,
       borderStyle: "rounded",
       paddingLeft: 1,
       paddingRight: 1,
       marginLeft: 1,
       marginRight: 1,
+      marginTop: 1,
       ...background(),
       ...border(COLORS.warning),
     })
-    this.command = label(renderer, { content: "" })
-    this.options = label(renderer, { content: "" })
+    this.options = label(ctx, { content: "", flexGrow: 1, flexShrink: 1, minWidth: 1 })
 
-    this.view.add(label(renderer, { content: t`${bold(paint(COLORS.warning, "Approve command?"))}` }))
-    this.view.add(this.command)
+    this.view.add(label(ctx, { content: "?", width: 2, attributes: TextAttributes.BOLD, color: COLORS.warning }))
     this.view.add(this.options)
-    this.view.add(label(renderer, { content: "←→ choose · Enter confirm · Esc cancel", color: COLORS.faint }))
+    this.view.add(label(ctx, { content: "←→ · Enter · Esc", flexShrink: 0, marginLeft: 1, color: COLORS.faint }))
     this.renderOptions()
   }
 
-  show(command: string): void {
+  show(): void {
     this.choice = "run"
-    this.command.content = t`${muted("$ ")}${paint(COLORS.foreground, command)}`
     this.renderOptions()
     this.view.visible = true
   }

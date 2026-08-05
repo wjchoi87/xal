@@ -84,6 +84,7 @@ sequenceDiagram
 - No backward compatibility. only clean solutions.
 - No tests.
 - Write simple and readable code and avoid extra complexity.
+- If a constant will be used only one time, Do not overengineer to make it `const`. this reduces the code readability.
 
 ## Linting & Formatting
 

@@ -3,40 +3,49 @@ import {
   StyledText,
   TextAttributes,
   type BoxRenderable,
-  type CliRenderer,
+  type RenderContext,
   type TextRenderable,
 } from "@opentui/core"
 import type { AgentState } from "../../../agent/events"
+import type { Usage } from "../../../providers/types"
+import { formatTokens } from "../lib/format"
 import { label, row } from "../lib/renderables"
 import { Spinner } from "../lib/spinner"
 import { COLORS } from "../theme/colors"
 import { muted, paint } from "../theme/styles"
 
+export const STATUS_ROWS = 1
+
 const WIDE = 64
-const WIDE_SHORTCUTS = "PgUp/PgDn scroll · Ctrl+O tool output · Ctrl+C quit"
-const NARROW_SHORTCUTS = "PgUp/PgDn · Ctrl+O · Ctrl+C"
+const WIDE_SHORTCUTS = "Ctrl+O tool output · Ctrl+C quit"
+const NARROW_SHORTCUTS = "Ctrl+O · Ctrl+C"
 
 export class StatusBar {
   readonly view: BoxRenderable
   private readonly activity: TextRenderable
+  private readonly meta: TextRenderable
   private readonly spinner = new Spinner()
   private state: AgentState = "idle"
   private loading: string | undefined
   private notice: string | undefined
+  private inputTokens = 0
+  private outputTokens = 0
 
-  constructor(renderer: CliRenderer, model: string) {
-    this.view = row(renderer, { height: 1, paddingLeft: 2, paddingRight: 2 })
-    this.activity = label(renderer, { content: "", flexGrow: 1, flexShrink: 1 })
+  constructor(
+    ctx: RenderContext,
+    private readonly model: string,
+  ) {
+    this.view = row(ctx, { height: STATUS_ROWS, paddingLeft: 2, paddingRight: 2 })
+    this.activity = label(ctx, { content: "", flexGrow: 1, flexShrink: 1 })
+    this.meta = label(ctx, {
+      content: model,
+      flexShrink: 0,
+      marginLeft: 1,
+      attributes: TextAttributes.DIM,
+      color: COLORS.faint,
+    })
     this.view.add(this.activity)
-    this.view.add(
-      label(renderer, {
-        content: model,
-        flexShrink: 0,
-        marginLeft: 1,
-        attributes: TextAttributes.DIM,
-        color: COLORS.faint,
-      }),
-    )
+    this.view.add(this.meta)
     this.view.onSizeChange = () => this.render()
     this.view.on(RenderableEvents.DESTROYED, () => this.spinner.stop())
     this.render()
@@ -46,7 +55,7 @@ export class StatusBar {
     this.state = state
     this.loading = undefined
     this.notice = undefined
-    this.toggleSpinner(state === "streaming")
+    this.toggleSpinner(this.busy)
     this.render()
   }
 
@@ -65,8 +74,19 @@ export class StatusBar {
 
   clearNotice(): void {
     this.notice = undefined
-    this.toggleSpinner(this.loading !== undefined || this.state === "streaming")
+    this.toggleSpinner(this.loading !== undefined || this.busy)
     this.render()
+  }
+
+  private get busy(): boolean {
+    return this.state === "streaming" || this.state === "running_tool"
+  }
+
+  setUsage(usage: Usage | undefined): void {
+    if (!usage) return
+    this.inputTokens += usage.inputTokens ?? 0
+    this.outputTokens += usage.outputTokens ?? 0
+    this.meta.content = `${this.model} · ↑${formatTokens(this.inputTokens)} ↓${formatTokens(this.outputTokens)}`
   }
 
   private toggleSpinner(active: boolean): void {
@@ -86,7 +106,7 @@ export class StatusBar {
     if (this.state === "awaiting_approval") {
       return new StyledText([paint(COLORS.warning, "!"), muted(" Approval needed · choose above")])
     }
-    if (this.state === "streaming") {
+    if (this.state !== "idle") {
       const hint = this.view.width > WIDE ? " · Esc interrupt" : ""
       return new StyledText([paint(COLORS.agent, this.spinner.glyph), muted(` Working${hint}`)])
     }

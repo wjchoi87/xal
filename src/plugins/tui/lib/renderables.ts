@@ -3,7 +3,7 @@ import {
   BoxRenderable,
   TextRenderable,
   type BoxOptions,
-  type CliRenderer,
+  type RenderContext,
   type RGBA,
   type TextOptions,
 } from "@opentui/core"
@@ -13,17 +13,17 @@ import { terminalGlyph } from "./text"
 
 type TintedTextOptions = TextOptions & { color?: RGBA; background?: RGBA }
 
-export function column(renderer: CliRenderer, options: BoxOptions = {}): BoxRenderable {
-  return new BoxRenderable(renderer, { flexDirection: "column", minWidth: 0, ...options })
+export function column(ctx: RenderContext, options: BoxOptions = {}): BoxRenderable {
+  return new BoxRenderable(ctx, { flexDirection: "column", minWidth: 0, ...options })
 }
 
-export function row(renderer: CliRenderer, options: BoxOptions = {}): BoxRenderable {
-  return new BoxRenderable(renderer, { flexDirection: "row", minWidth: 0, ...options })
+export function row(ctx: RenderContext, options: BoxOptions = {}): BoxRenderable {
+  return new BoxRenderable(ctx, { flexDirection: "row", minWidth: 0, ...options })
 }
 
-export function label(renderer: CliRenderer, options: TintedTextOptions = {}): TextRenderable {
+export function label(ctx: RenderContext, options: TintedTextOptions = {}): TextRenderable {
   const { color, background, ...rest } = options
-  return new TextRenderable(renderer, {
+  return new TextRenderable(ctx, {
     height: 1,
     wrapMode: "none",
     truncate: true,
@@ -32,17 +32,17 @@ export function label(renderer: CliRenderer, options: TintedTextOptions = {}): T
   })
 }
 
-export function paragraph(renderer: CliRenderer, options: TintedTextOptions = {}): TextRenderable {
+export function paragraph(ctx: RenderContext, options: TintedTextOptions = {}): TextRenderable {
   const { color, background, ...rest } = options
-  return new TextRenderable(renderer, {
+  return new TextRenderable(ctx, {
     wrapMode: "word",
     ...textColors(color, background),
     ...rest,
   })
 }
 
-export function detailPanel(renderer: CliRenderer, options: BoxOptions = {}): BoxRenderable {
-  return column(renderer, {
+export function detailPanel(ctx: RenderContext, options: BoxOptions = {}): BoxRenderable {
+  return column(ctx, {
     border: ["left"],
     customBorderChars: { ...BorderChars.single, vertical: terminalGlyph("│", "|") },
     paddingLeft: 1,

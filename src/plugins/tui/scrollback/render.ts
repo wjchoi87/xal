@@ -1,0 +1,131 @@
+import {
+  bold,
+  StyledText,
+  t,
+  TextAttributes,
+  type Renderable,
+  type RenderContext,
+  type TextRenderable,
+} from "@opentui/core"
+import { appInfo } from "../../../app-info"
+import { getToolRenderer } from "../../../ui/extension"
+import { commandLabel, settledStatus, type ToolOutcome } from "../components/tool-status"
+import { formatTimestamp } from "../lib/format"
+import { renderInlineMarkdown } from "../lib/markdown"
+import { column, detailPanel, label, paragraph, row } from "../lib/renderables"
+import { MAX_OUTPUT_ROWS, renderToolOutput } from "../output/render"
+import { summarizeToolOutput, toolOutputFailed } from "../output/summary"
+import { COLORS } from "../theme/colors"
+import { background, muted, paint } from "../theme/styles"
+import type { BannerBlock, Block, NoticeBlock, StreamBlock, ToolBlock, UserBlock } from "./blocks"
+
+const GUTTER = 2
+
+export interface StreamView {
+  view: Renderable
+  text: TextRenderable
+}
+
+export function streamContent(block: StreamBlock): StyledText | string {
+  if (block.kind === "text") return block.text
+  return renderInlineMarkdown(block.text, COLORS.dim, TextAttributes.DIM | TextAttributes.ITALIC)
+}
+
+export function streamView(ctx: RenderContext, block: StreamBlock): StreamView {
+  const text = paragraph(ctx, {
+    content: streamContent(block),
+    color: block.kind === "text" ? COLORS.foreground : COLORS.dim,
+  })
+  return { view: frame(ctx, text), text }
+}
+
+export function renderBlock(ctx: RenderContext, block: Block, expanded: boolean): Renderable {
+  switch (block.kind) {
+    case "banner":
+      return frame(ctx, banner(ctx, block))
+    case "user":
+      return frame(ctx, bubble(ctx, block))
+    case "info":
+      return frame(ctx, paragraph(ctx, { content: block.text, attributes: TextAttributes.DIM }))
+    case "error":
+      return frame(ctx, paragraph(ctx, { content: `x ${block.text}`, color: COLORS.error }))
+    case "notice":
+      return frame(ctx, notice(ctx, block, expanded))
+    case "text":
+    case "reasoning":
+      return streamView(ctx, block).view
+    case "tool":
+      return tool(ctx, block, expanded)
+  }
+}
+
+function frame(ctx: RenderContext, child: Renderable, marginTop = 1): Renderable {
+  const box = column(ctx, { marginTop, paddingLeft: GUTTER, paddingRight: GUTTER })
+  box.add(child)
+  return box
+}
+
+function banner(ctx: RenderContext, block: BannerBlock): Renderable {
+  const box = column(ctx)
+  box.add(label(ctx, { content: t`${bold(paint(COLORS.accent, appInfo.name))} ${muted(`v${appInfo.version}`)}` }))
+  box.add(label(ctx, { content: block.model, color: COLORS.faint }))
+  box.add(label(ctx, { content: block.cwd, color: COLORS.faint }))
+  return box
+}
+
+function bubble(ctx: RenderContext, block: UserBlock): Renderable {
+  const box = row(ctx, { alignItems: "flex-start", padding: 1, ...background(COLORS.userBackground) })
+  box.add(paragraph(ctx, { content: block.text, flexGrow: 1, background: COLORS.userBackground }))
+  box.add(
+    label(ctx, {
+      content: formatTimestamp(block.sentAt),
+      flexShrink: 0,
+      marginLeft: 2,
+      attributes: TextAttributes.DIM,
+      background: COLORS.userBackground,
+    }),
+  )
+  return box
+}
+
+function notice(ctx: RenderContext, block: NoticeBlock, expanded: boolean): Renderable {
+  const box = column(ctx)
+  box.add(paragraph(ctx, { content: block.summary, color: COLORS.warning }))
+  if (!expanded) return box
+  const body = detailPanel(ctx)
+  for (const detail of block.details) body.add(paragraph(ctx, { content: detail, color: COLORS.error }))
+  box.add(body)
+  return box
+}
+
+function tool(ctx: RenderContext, block: ToolBlock, expanded: boolean): Renderable {
+  const toolRenderer = getToolRenderer(block.tool)
+  const failed = toolRenderer?.failed?.(block.output) ?? toolOutputFailed(block.output)
+  const outcome: ToolOutcome = block.denied ? "denied" : failed ? "failure" : "success"
+  const summary = block.denied
+    ? "denied"
+    : (toolRenderer?.summarize?.(block.output) ?? summarizeToolOutput(block.output))
+
+  const box = column(ctx, { paddingLeft: GUTTER, paddingRight: GUTTER })
+  const head = row(ctx, { height: 1, alignItems: "center" })
+  head.add(label(ctx, { content: block.readOnly ? ">" : "*", width: 2, color: COLORS.faint }))
+  head.add(label(ctx, { content: commandLabel(block.tool, block.title), flexGrow: 1, flexShrink: 1, minWidth: 1 }))
+  head.add(
+    label(ctx, {
+      content: settledStatus(outcome, summary, block.elapsed, ctx.width),
+      flexShrink: 0,
+      marginLeft: 1,
+    }),
+  )
+  box.add(head)
+
+  if (!(expanded || toolRenderer?.alwaysExpanded) || block.output.length === 0) return box
+
+  const width = Math.max(1, ctx.width - GUTTER * 2 - 4)
+  const maxRows = toolRenderer?.maxRows ?? MAX_OUTPUT_ROWS
+  const output = toolRenderer?.renderOutput?.(block.output, width) ?? renderToolOutput(block.output, width, maxRows)
+  const body = detailPanel(ctx, { marginLeft: 2 })
+  body.add(label(ctx, { content: output.content, height: output.rows }))
+  box.add(body)
+  return box
+}
