@@ -1,8 +1,8 @@
 import { createSession } from "../../agent/compose"
 import { appInfo } from "../../app-info"
-import type { Command } from "../../commands/registry"
+import type { Cli } from "../../cli/registry"
 
-export const askCommand: Command = {
+export const askCli: Cli = {
   name: "ask",
   hidden: true,
   describe: "one-shot debug prompt streamed to stdout",

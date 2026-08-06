@@ -1,10 +1,10 @@
 import { appInfo } from "./app-info"
-import { getCommand, listCommands, type CommandContext } from "./commands/registry"
+import { getCli, listClis, type CliContext } from "./cli/registry"
 import { loadSettings } from "./config/settings"
 import { bootstrapPlugins, registerPlugins } from "./plugins/discover"
 import { getUi } from "./ui/registry"
 
-const ctx: CommandContext = {
+const ctx: CliContext = {
   print(line) {
     console.log(line)
   },
@@ -16,9 +16,9 @@ function printHelp(): void {
   ctx.print(`usage: ${appInfo.name} [command]`)
   ctx.print("")
   ctx.print(`  ${appInfo.name.padEnd(24)}start the chat TUI`)
-  for (const command of listCommands()) {
-    if (command.hidden) continue
-    ctx.print(`  ${(appInfo.name + " " + (command.usage ?? command.name)).padEnd(24)}${command.describe}`)
+  for (const cli of listClis()) {
+    if (cli.hidden) continue
+    ctx.print(`  ${(appInfo.name + " " + (cli.usage ?? cli.name)).padEnd(24)}${cli.describe}`)
   }
 }
 
@@ -58,15 +58,15 @@ async function main(args: string[]): Promise<void> {
     return
   }
 
-  const command = getCommand(first)
-  if (!command) {
+  const cli = getCli(first)
+  if (!cli) {
     ctx.print(`unknown command: ${first}`)
     printHelp()
     process.exit(1)
   }
 
   try {
-    await command.run(args.slice(1), ctx)
+    await cli.run(args.slice(1), ctx)
   } catch (error) {
     ctx.print(error instanceof Error ? error.message : String(error))
     process.exit(1)

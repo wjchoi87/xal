@@ -1,8 +1,8 @@
 import { appInfo } from "../../app-info"
-import type { Command } from "../../commands/registry"
+import type { Cli } from "../../cli/registry"
 import { getProvider, listProviders } from "../../providers/registry"
 
-export const loginCommand: Command = {
+export const loginCli: Cli = {
   name: "login",
   usage: "login chatgpt",
   describe: "sign in to a provider",

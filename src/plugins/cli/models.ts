@@ -1,7 +1,7 @@
 import { resolveProvider } from "../../agent/compose"
-import type { Command } from "../../commands/registry"
+import type { Cli } from "../../cli/registry"
 
-export const modelsCommand: Command = {
+export const modelsCli: Cli = {
   name: "models",
   hidden: true,
   describe: "list available models for a provider",

@@ -8,7 +8,7 @@ Customizable and extensible full coding harness that remains as small as possibl
 
 ## Architecture
 
-One sentence: **a headless agent core emits a typed, serializable, unidirectional event stream per session; UIs are subscribers; commands flow in through a narrow typed surface; every feature — tools, providers, commands, prompt, policy, the TUI itself — is contributed through plugin registration.**
+One sentence: **a headless agent core emits a typed, serializable, unidirectional event stream per session; UIs are subscribers; commands flow in through a narrow typed surface; every feature — tools, providers, CLIs, prompt, policy, the TUI itself — is contributed through plugin registration.**
 
 ```mermaid
 sequenceDiagram
@@ -61,10 +61,10 @@ sequenceDiagram
     loop builtinPlugins, then settings.plugins
         Discover->>P: import <root>/plugin.ts, validate contract
         Discover->>P: plugin.register(ctx)
-        P->>Reg: ctx.registerTool / registerProvider / registerCommand / registerUi / ...
+        P->>Reg: ctx.registerTool / registerProvider / registerCli / registerUi / ...
     end
     alt args given
-        Entry->>Reg: getCommand(args[0]).run(args, ctx)
+        Entry->>Reg: getCli(args[0]).run(args, ctx)
     else no args
         Entry->>Reg: getUi(settings.ui ?? "tui").start()
     end
