@@ -1,6 +1,5 @@
 import type { Plugin } from "./types"
 import bash from "./bash/plugin"
-import cli from "./cli/plugin"
 import files from "./files/plugin"
 import openaiChatgpt from "./openai-chatgpt/plugin"
 import permissions from "./permissions/plugin"
@@ -17,6 +16,5 @@ export const builtinPlugins: Plugin[] = [
   files,
   search,
   openaiChatgpt,
-  cli,
   tui,
 ]

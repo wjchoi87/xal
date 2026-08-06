@@ -1,6 +1,6 @@
-import { createSession } from "../../agent/compose"
-import { appInfo } from "../../app-info"
-import type { Cli } from "../../cli/registry"
+import { createSession } from "../agent/compose"
+import { appInfo } from "../app-info"
+import type { Cli } from "./types"
 
 export const askCli: Cli = {
   name: "ask",

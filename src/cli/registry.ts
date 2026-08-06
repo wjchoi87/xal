@@ -1,25 +1,37 @@
-export interface CliContext {
-  print(line: string): void
+import { builtinClis } from "./builtins"
+import type { Cli, ResolvedCli } from "./types"
+
+const clis = new Map<string, Cli>(builtinClis.map((cli) => [cli.name, cli]))
+const children = new Map<string, Map<string, Cli>>()
+
+export function registerCli(cli: Cli, parent?: string): void {
+  if (!parent) {
+    clis.set(cli.name, cli)
+    return
+  }
+  if (!clis.has(parent)) throw new Error(`unknown parent cli: ${parent}`)
+  const group = children.get(parent) ?? new Map<string, Cli>()
+  group.set(cli.name, cli)
+  children.set(parent, group)
 }
 
-export interface Cli {
-  name: string
-  describe: string
-  usage?: string
-  hidden?: boolean
-  run(args: string[], ctx: CliContext): Promise<void>
+export function listClis(parent?: string): Cli[] {
+  if (!parent) return [...clis.values()]
+  return [...(children.get(parent)?.values() ?? [])]
 }
 
-const clis = new Map<string, Cli>()
+export function resolveCli(args: string[]): ResolvedCli | undefined {
+  const name = args[0]
+  if (!name) return undefined
 
-export function registerCli(cli: Cli): void {
-  clis.set(cli.name, cli)
-}
+  const cli = clis.get(name)
+  if (!cli) return undefined
 
-export function getCli(name: string): Cli | undefined {
-  return clis.get(name)
-}
+  const subName = args[1]
+  if (subName) {
+    const sub = children.get(name)?.get(subName)
+    if (sub) return { cli: sub, path: [name, subName], args: args.slice(2) }
+  }
 
-export function listClis(): Cli[] {
-  return [...clis.values()]
+  return { cli, path: [name], args: args.slice(1) }
 }

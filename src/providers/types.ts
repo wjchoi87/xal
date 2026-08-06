@@ -40,7 +40,6 @@ export interface Provider {
   id: string
   name: string
   aliases: string[]
-  login(print: (line: string) => void): Promise<void>
   isLoggedIn(): Promise<boolean>
   listModels(): Promise<ModelInfo[]>
   defaultModel(): Promise<string>

@@ -1,5 +1,5 @@
 import type { PromptSection } from "../agent/prompt"
-import type { Cli } from "../cli/registry"
+import type { Cli } from "../cli/types"
 import type { EventService } from "../events"
 import type { PolicyRule } from "../permissions/service"
 import type { Provider } from "../providers/types"
@@ -18,7 +18,7 @@ export interface PluginContext {
   events: EventService
   registerTool(tool: Tool): void
   registerProvider(provider: Provider): void
-  registerCli(cli: Cli): void
+  registerCli(cli: Cli, parent?: string): void
   registerPrompt(section: PromptSection): void
   registerPromptFull(section: PromptSection): void
   registerPolicyRule(rule: PolicyRule): void

@@ -17,7 +17,7 @@ const RESET_SCROLL_REGION = "\u001b[r"
 export async function startTui(events: EventService): Promise<void> {
   const { session, provider, model } = await createSession()
   if (!(await provider.isLoggedIn())) {
-    console.log(`not logged in — run: ${appInfo.name} login ${provider.aliases[0] ?? provider.id}`)
+    console.log(`not connected — run: ${appInfo.name} connect ${provider.aliases[0] ?? provider.id}`)
     process.exit(1)
   }
 

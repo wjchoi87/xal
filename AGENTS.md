@@ -43,6 +43,10 @@ sequenceDiagram
     Core->>Memory: Turn committed (persistable later)
 ```
 
+### CLI
+
+`src/cli` owns the entry-point surface: `runCli(args, ctx)` dispatches, and the registry is seeded with the built-in roots (`connect`, `models`, `ask`) so they exist the moment the module is imported — no bootstrap step, no ordering rule against plugin registration. A root without a `run` is a namespace that only prints its subcommands; plugins fill it in through `ctx.registerCli(cli, parent)`, so the ChatGPT plugin is what makes `agent connect chatgpt` and `agent models chatgpt` exist. Registering under a parent that does not exist fails the plugin, not the process.
+
 ### Plugins
 
 A plugin is a folder with a `plugin.ts` default-exporting the contract in `src/plugins/types.ts`; its `register(ctx)` introduces contributions through the per-module registries. Built-ins (`src/plugins/builtins.ts`) register first, then external plugins from `~/.config/agent/config.json` in order; later plugins can extend or replace anything. A failing plugin is skipped and reported, never fatal.
@@ -64,7 +68,7 @@ sequenceDiagram
         P->>Reg: ctx.registerTool / registerProvider / registerCli / registerUi / ...
     end
     alt args given
-        Entry->>Reg: getCli(args[0]).run(args, ctx)
+        Entry->>Reg: runCli(args, ctx) → resolveCli → cli.run(rest, ctx)
     else no args
         Entry->>Reg: getUi(settings.ui ?? "tui").start()
     end
