@@ -13,3 +13,8 @@ export function asNumber(value: unknown): number | undefined {
 export function asBoolean(value: unknown): boolean | undefined {
   return typeof value === "boolean" ? value : undefined
 }
+
+export function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((entry) => (typeof entry === "string" ? [entry] : []))
+}

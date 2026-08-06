@@ -23,6 +23,7 @@ const plugin: Plugin = {
     ctx.registerTool(readTool)
     ctx.registerTool(writeTool)
     ctx.registerTool(editTool)
+    ctx.registerPermissionRules({ ask: ["write(/*)", "edit(/*)"] })
     ctx.registerToolRenderer({ tool: "read", failed: toolFailed })
     ctx.registerToolRenderer({
       tool: "write",

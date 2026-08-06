@@ -3,6 +3,7 @@ import { asBoolean, asString } from "../../lib/json"
 import type { Tool } from "../../tools/types"
 import { unifiedDiff, withDiff } from "./diff"
 import { displayPath, resolveFilePath } from "../../lib/path"
+import { pathPermission } from "./permission"
 
 export const editTool: Tool = {
   name: "edit",
@@ -35,6 +36,9 @@ export const editTool: Tool = {
     "Use edit for targeted changes to existing files; use write only for new files or full rewrites. Read the file first and copy old_string verbatim — exact match including whitespace, never read's line-number prefixes. Add surrounding lines to old_string to make it unique, or set replace_all to change every occurrence.",
   title(args) {
     return displayPath(asString(args.file_path) ?? "")
+  },
+  permission(args) {
+    return pathPermission("edit", args)
   },
   async execute(args) {
     const path = asString(args.file_path)

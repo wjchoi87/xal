@@ -2,6 +2,7 @@ import { stat } from "node:fs/promises"
 import { asNumber, asString } from "../../lib/json"
 import type { Tool } from "../../tools/types"
 import { displayPath, resolveFilePath } from "../../lib/path"
+import { pathPermission } from "./permission"
 
 const DEFAULT_LIMIT = 2000
 const MAX_OUTPUT_CHARS = 50_000
@@ -36,6 +37,9 @@ export const readTool: Tool = {
   },
   readOnly() {
     return true
+  },
+  permission(args) {
+    return pathPermission("read", args)
   },
   async execute(args) {
     const path = asString(args.file_path)

@@ -5,6 +5,12 @@ const TIMEOUT_MS = 120_000
 const READ_ONLY_COMMAND =
   /^(?:cat|find|grep|head|ls|pwd|rg|tail|wc)(?:\s|$)|^(?:git\s+(?:diff|log|show|status))(?:\s|$)|^(?:bun|cargo|npm|pnpm|yarn)\s+(?:run\s+)?test(?:\s|$)|^sed\s+(?!.*(?:\s-i|--in-place))|^git\s+branch\s+--show-current(?:\s|$)/
 
+export const COMPOUND_COMMAND = /[;|&\n`<>(){}]/
+
+export function commandOf(args: Record<string, unknown>): string {
+  return String(args.command ?? "").trim()
+}
+
 function truncateMiddle(text: string, max: number): string {
   if (text.length <= max) return text
   const half = Math.floor(max / 2)
@@ -33,10 +39,19 @@ export const bashTool: Tool = {
     return String(args.command ?? "")
   },
   readOnly(args) {
-    return READ_ONLY_COMMAND.test(String(args.command ?? "").trim())
+    const command = commandOf(args)
+    if (COMPOUND_COMMAND.test(command)) return false
+    return READ_ONLY_COMMAND.test(command)
+  },
+  permission(args) {
+    const command = commandOf(args)
+    if (COMPOUND_COMMAND.test(command)) return { subject: command }
+    const words = command.split(/\s+/)
+    if (words.length < 2) return { subject: command, suggestion: `bash(${command})` }
+    return { subject: command, suggestion: `bash(${words[0]} ${words[1]}*)` }
   },
   async execute(args, signal) {
-    const command = String(args.command ?? "").trim()
+    const command = commandOf(args)
     if (!command) return { output: "(no command provided)" }
 
     const proc = Bun.spawn(["bash", "-c", command], {

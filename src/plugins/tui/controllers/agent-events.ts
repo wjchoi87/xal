@@ -26,9 +26,12 @@ export class AgentEventController {
         break
       case "reasoning_delta":
         break
+      case "mode_changed":
+        statusBar.setMode(event.mode)
+        break
       case "approval_requested":
         live.request(event.callId, event.tool, event.title, event.readOnly)
-        this.screen.requestApproval()
+        this.screen.requestApproval(event.suggestion)
         break
       case "tool_started":
         this.screen.dismissApproval()
@@ -44,7 +47,7 @@ export class AgentEventController {
           tool: event.tool,
           title: event.title,
           readOnly: finished?.readOnly ?? false,
-          denied: event.denied,
+          denial: event.denial,
           output: event.output,
           elapsed: finished?.elapsed,
         })

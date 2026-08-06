@@ -1,5 +1,6 @@
 import type { CliRenderer } from "@opentui/core"
 import type { AgentSession } from "../../../agent/agent-session"
+import { nextPermissionMode } from "../../../permissions/types"
 import type { Screen } from "../screen"
 
 const QUIT_WINDOW_MS = 2000
@@ -45,6 +46,11 @@ export function bindKeys(renderer: CliRenderer, deps: KeymapDeps): void {
     if (screen.permission.handleKey(key.name)) {
       key.preventDefault()
       screen.syncFooter()
+      return
+    }
+    if (key.shift && key.name === "tab") {
+      key.preventDefault()
+      session.setMode(nextPermissionMode(session.currentMode))
       return
     }
     if (key.name === "escape" && session.currentState !== "idle") session.interrupt()

@@ -1,3 +1,4 @@
+import type { PermissionMode } from "../permissions/types"
 import type { Tool } from "../tools/types"
 
 export interface PromptContext {
@@ -5,6 +6,7 @@ export interface PromptContext {
   platform: string
   cwd: string
   tools: Tool[]
+  mode: PermissionMode
 }
 
 export interface PromptSection {

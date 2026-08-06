@@ -3,6 +3,7 @@ import { asString } from "../../lib/json"
 import type { Tool } from "../../tools/types"
 import { unifiedDiff, withDiff } from "./diff"
 import { displayPath, resolveFilePath } from "../../lib/path"
+import { pathPermission } from "./permission"
 
 export const writeTool: Tool = {
   name: "write",
@@ -27,6 +28,9 @@ export const writeTool: Tool = {
     "Use write to create or replace files with complete content. Read a file before overwriting it. Content is raw file text; never include read's line-number prefixes. Prefer edit for modifying parts of an existing file.",
   title(args) {
     return displayPath(asString(args.file_path) ?? "")
+  },
+  permission(args) {
+    return pathPermission("write", args)
   },
   async execute(args) {
     const path = asString(args.file_path)

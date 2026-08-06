@@ -7,6 +7,7 @@ import {
   type RenderContext,
   type TextRenderable,
 } from "@opentui/core"
+import type { DenialCause } from "../../../agent/events"
 import { appInfo } from "../../../app-info"
 import { getToolRenderer } from "../../../ui/extension"
 import { commandLabel, settledStatus, type ToolOutcome } from "../components/tool-status"
@@ -98,12 +99,18 @@ function notice(ctx: RenderContext, block: NoticeBlock, expanded: boolean): Rend
   return box
 }
 
+const denialSummary: Record<DenialCause, string> = {
+  user: "denied",
+  policy: "blocked",
+  plan: "plan mode",
+}
+
 function tool(ctx: RenderContext, block: ToolBlock, expanded: boolean): Renderable {
   const toolRenderer = getToolRenderer(block.tool)
   const failed = toolRenderer?.failed?.(block.output) ?? toolOutputFailed(block.output)
-  const outcome: ToolOutcome = block.denied ? "denied" : failed ? "failure" : "success"
-  const summary = block.denied
-    ? "denied"
+  const outcome: ToolOutcome = block.denial ? "denied" : failed ? "failure" : "success"
+  const summary = block.denial
+    ? denialSummary[block.denial]
     : (toolRenderer?.summarize?.(block.output) ?? summarizeToolOutput(block.output))
 
   const box = column(ctx, { paddingLeft: GUTTER, paddingRight: GUTTER })

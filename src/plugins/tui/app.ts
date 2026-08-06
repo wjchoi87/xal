@@ -32,9 +32,9 @@ export async function startTui(events: EventService): Promise<void> {
   renderer.setTerminalTitle(`${appInfo.name} — ${compactPath(process.cwd())}`)
 
   const input = new InputQueue((text) => session.send(text))
-  const screen = new Screen(renderer, model, {
+  const screen = new Screen(renderer, model, session.currentMode, {
     submit: (text) => input.submit(text),
-    approve: () => session.approve(),
+    approve: (scope, pattern) => session.approve(scope, pattern),
     deny: () => session.deny(),
     cancel: () => session.interrupt(),
   })

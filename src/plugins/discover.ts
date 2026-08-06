@@ -3,6 +3,7 @@ import { registerCli } from "../cli/registry"
 import { configDir } from "../config/paths"
 import type { Settings } from "../config/settings"
 import { events, type PluginFailure, type PluginStatus } from "../events"
+import { contributeRules } from "../permissions/rules"
 import { registerPolicyRule } from "../permissions/service"
 import { registerProvider } from "../providers/registry"
 import { registerTool } from "../tools/registry"
@@ -31,6 +32,7 @@ function contextFor(plugin: Plugin, settings: Settings): PluginContext {
     registerPrompt,
     registerPromptFull,
     registerPolicyRule,
+    registerPermissionRules: contributeRules,
     registerUi,
     registerToolRenderer,
     setTheme,

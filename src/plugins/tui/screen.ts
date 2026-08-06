@@ -1,7 +1,8 @@
 import type { BoxRenderable, CliRenderer } from "@opentui/core"
+import type { PermissionMode } from "../../permissions/types"
 import { Composer, COMPOSER_ROWS } from "./components/composer"
 import { LiveTools } from "./components/live-tools"
-import { PermissionPopover, POPOVER_ROWS, type PermissionPopoverActions } from "./components/permission-popover"
+import { PermissionPopover, type PermissionPopoverActions } from "./components/permission-popover"
 import { StatusBar, STATUS_ROWS } from "./components/status-bar"
 import { column } from "./lib/renderables"
 import { Scrollback } from "./scrollback/scrollback"
@@ -22,6 +23,7 @@ export class Screen {
   constructor(
     private readonly renderer: CliRenderer,
     model: string,
+    mode: PermissionMode,
     actions: ScreenActions,
   ) {
     this.scrollback = new Scrollback(renderer)
@@ -29,7 +31,7 @@ export class Screen {
     this.live = new LiveTools(renderer, () => this.syncFooter())
     this.permission = new PermissionPopover(renderer, actions)
     this.composer = new Composer(renderer, (text) => actions.submit(text))
-    this.statusBar = new StatusBar(renderer, model)
+    this.statusBar = new StatusBar(renderer, model, mode)
 
     this.view.add(this.live.view)
     this.view.add(this.permission.view)
@@ -38,8 +40,8 @@ export class Screen {
     this.syncFooter()
   }
 
-  requestApproval(): void {
-    this.permission.show()
+  requestApproval(suggestion: string | undefined): void {
+    this.permission.show(suggestion)
     this.syncFooter()
   }
 
@@ -56,6 +58,6 @@ export class Screen {
       if (approving) this.composer.blur()
       else this.composer.focus()
     }
-    this.renderer.footerHeight = this.live.height + (approving ? POPOVER_ROWS : COMPOSER_ROWS) + STATUS_ROWS
+    this.renderer.footerHeight = this.live.height + (approving ? this.permission.height : COMPOSER_ROWS) + STATUS_ROWS
   }
 }

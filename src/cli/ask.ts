@@ -1,16 +1,43 @@
 import { createSession } from "../agent/compose"
 import { appInfo } from "../app-info"
+import { isPermissionMode, permissionModes, type PermissionMode } from "../permissions/types"
 import type { Cli } from "./types"
+
+interface Parsed {
+  text: string
+  mode: PermissionMode
+}
+
+function parseArgs(args: string[]): Parsed {
+  const rest: string[] = []
+  let mode: PermissionMode = "build"
+
+  for (let index = 0; index < args.length; index++) {
+    const arg = args[index]!
+    if (arg !== "--mode") {
+      rest.push(arg)
+      continue
+    }
+    const value = args[++index]
+    if (!value || !isPermissionMode(value)) {
+      throw new Error(`--mode expects one of: ${permissionModes.join(", ")}`)
+    }
+    mode = value
+  }
+
+  return { text: rest.join(" ").trim(), mode }
+}
 
 export const askCli: Cli = {
   name: "ask",
   hidden: true,
   describe: "one-shot debug prompt streamed to stdout",
   async run(args, ctx) {
-    const text = args.join(" ").trim()
-    if (!text) throw new Error(`usage: ${appInfo.name} ask <prompt>`)
+    const { text, mode } = parseArgs(args)
+    if (!text) throw new Error(`usage: ${appInfo.name} ask [--mode ${permissionModes.join("|")}] <prompt>`)
 
     const { session } = await createSession()
+    session.setMode(mode)
 
     await new Promise<void>((resolve) => {
       session.subscribe((event) => {
@@ -19,6 +46,12 @@ export const askCli: Cli = {
             process.stdout.write(event.text)
             break
           case "approval_requested": {
+            if (!process.stdin.isTTY) {
+              const message = "This action needed approval but the session is headless, so it was not run."
+              ctx.print(`\n${message} Rerun with --mode auto to allow it.`)
+              session.deny("policy", message)
+              break
+            }
             const answer = prompt(`\n[${event.tool}] ${event.title}\nallow? [y/N]`)
             if (answer?.trim().toLowerCase().startsWith("y")) session.approve()
             else session.deny()
@@ -28,7 +61,7 @@ export const askCli: Cli = {
             ctx.print(`\n[running] ${event.title}`)
             break
           case "tool_finished":
-            ctx.print(event.denied ? `[denied] ${event.output}` : event.output)
+            ctx.print(event.denial ? `[${event.denial}] ${event.output}` : event.output)
             break
           case "error":
             ctx.print(`\n${event.message}`)

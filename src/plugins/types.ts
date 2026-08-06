@@ -1,7 +1,7 @@
 import type { PromptSection } from "../agent/prompt"
 import type { Cli } from "../cli/types"
 import type { EventService } from "../events"
-import type { PolicyRule } from "../permissions/service"
+import type { PermissionRules, PolicyRule } from "../permissions/service"
 import type { Provider } from "../providers/types"
 import type { Tool } from "../tools/types"
 import type { ThemeColors, ToolRenderer } from "../ui/extension"
@@ -22,6 +22,7 @@ export interface PluginContext {
   registerPrompt(section: PromptSection): void
   registerPromptFull(section: PromptSection): void
   registerPolicyRule(rule: PolicyRule): void
+  registerPermissionRules(rules: PermissionRules): void
   registerUi(ui: Ui): void
   registerToolRenderer(renderer: ToolRenderer): void
   setTheme(overrides: Partial<ThemeColors>): void

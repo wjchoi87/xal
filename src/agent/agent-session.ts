@@ -1,9 +1,11 @@
 import { release } from "node:os"
 import { appInfo } from "../app-info"
+import { rememberRule } from "../permissions/rules"
 import { evaluatePolicy } from "../permissions/service"
+import type { PermissionMode, PermissionScope } from "../permissions/types"
 import type { ConversationItem, Provider, Usage } from "../providers/types"
 import { getTool, listTools } from "../tools/registry"
-import type { AgentEvent, AgentState } from "./events"
+import type { AgentEvent, AgentState, DenialCause } from "./events"
 import { composeSystemPrompt } from "./prompt"
 
 export interface AgentSessionDeps {
@@ -17,6 +19,20 @@ interface PendingToolCall {
   args: Record<string, unknown>
 }
 
+interface ApprovalResult {
+  decision: "allow" | "deny"
+  scope?: PermissionScope
+  pattern?: string
+  cause?: DenialCause
+  message?: string
+}
+
+const denialMessages: Record<DenialCause, string> = {
+  user: "User denied permission to run this action.",
+  policy: "Blocked by the active permission rules.",
+  plan: "Plan mode is active, so this action was not run. Finish investigating and present a plan instead of retrying.",
+}
+
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError"
 }
@@ -26,13 +42,24 @@ export class AgentSession {
   private readonly items: ConversationItem[] = []
   private readonly listeners = new Set<(event: AgentEvent) => void>()
   private state: AgentState = "idle"
+  private mode: PermissionMode = "build"
   private abortController: AbortController | undefined
-  private pendingApproval: ((decision: "allow" | "deny") => void) | undefined
+  private pendingApproval: ((result: ApprovalResult) => void) | undefined
 
   constructor(private readonly deps: AgentSessionDeps) {}
 
   get currentState(): AgentState {
     return this.state
+  }
+
+  get currentMode(): PermissionMode {
+    return this.mode
+  }
+
+  setMode(mode: PermissionMode): void {
+    if (this.mode === mode) return
+    this.mode = mode
+    this.emit({ type: "mode_changed", mode })
   }
 
   subscribe(listener: (event: AgentEvent) => void): () => void {
@@ -57,24 +84,29 @@ export class AgentSession {
     return true
   }
 
-  approve(): void {
-    this.resolveApproval("allow")
+  approve(scope: PermissionScope = "once", pattern?: string): void {
+    this.resolveApproval({ decision: "allow", scope, pattern })
   }
 
-  deny(): void {
-    this.resolveApproval("deny")
+  deny(cause: DenialCause = "user", message?: string): void {
+    this.resolveApproval({ decision: "deny", cause, message })
   }
 
   interrupt(): void {
     this.abortController?.abort()
-    this.resolveApproval("deny")
+    this.resolveApproval({ decision: "deny", cause: "user" })
   }
 
-  private resolveApproval(decision: "allow" | "deny"): void {
+  private resolveApproval(result: ApprovalResult): void {
     const resolve = this.pendingApproval
     if (!resolve) return
     this.pendingApproval = undefined
-    resolve(decision)
+    if (result.pattern && result.scope && result.scope !== "once") {
+      rememberRule(result.pattern, result.scope).catch((error) => {
+        this.emit({ type: "error", message: error instanceof Error ? error.message : String(error) })
+      })
+    }
+    resolve(result)
   }
 
   private emit(event: AgentEvent): void {
@@ -107,6 +139,7 @@ export class AgentSession {
             platform: `${process.platform} ${release()}`,
             cwd: process.cwd(),
             tools: listTools(),
+            mode: this.mode,
           }),
           input: this.items,
           tools: listTools().map(({ name, description, parameters }) => ({ name, description, parameters })),
@@ -172,26 +205,51 @@ export class AgentSession {
     if (!tool) {
       const message = `Unknown tool: ${call.name}`
       this.addToolOutput(call.callId, message)
-      this.emit({ type: "tool_finished", callId: call.callId, tool: call.name, title, output: message, denied: true })
+      this.emit({
+        type: "tool_finished",
+        callId: call.callId,
+        tool: call.name,
+        title,
+        output: message,
+        denial: "policy",
+      })
       return
     }
 
     const readOnly = tool.readOnly?.(call.args) ?? false
-    let decision = evaluatePolicy({ tool: call.name, title, args: call.args, readOnly })
+    const permission = tool.permission?.(call.args)
+    const decision = await evaluatePolicy({
+      tool: call.name,
+      title,
+      args: call.args,
+      subject: permission?.subject,
+      readOnly,
+      mode: this.mode,
+    })
+
+    if (decision === "deny") {
+      this.denyToolCall(call.callId, call.name, title, this.mode === "plan" && !readOnly ? "plan" : "policy")
+      return
+    }
+
     if (decision === "ask") {
-      const asked = new Promise<"allow" | "deny">((resolve) => {
+      const asked = new Promise<ApprovalResult>((resolve) => {
         this.pendingApproval = resolve
       })
       this.setState("awaiting_approval")
-      this.emit({ type: "approval_requested", callId: call.callId, tool: call.name, title, readOnly })
-      decision = await asked
-    }
-
-    if (decision === "deny") {
-      const message = "User denied permission to run this command."
-      this.addToolOutput(call.callId, message)
-      this.emit({ type: "tool_finished", callId: call.callId, tool: call.name, title, output: message, denied: true })
-      return
+      this.emit({
+        type: "approval_requested",
+        callId: call.callId,
+        tool: call.name,
+        title,
+        readOnly,
+        suggestion: permission?.suggestion,
+      })
+      const result = await asked
+      if (result.decision === "deny") {
+        this.denyToolCall(call.callId, call.name, title, result.cause ?? "user", result.message)
+        return
+      }
     }
 
     this.setState("running_tool")
@@ -203,6 +261,12 @@ export class AgentSession {
       output = `Tool failed: ${error instanceof Error ? error.message : String(error)}`
     }
     this.addToolOutput(call.callId, output)
-    this.emit({ type: "tool_finished", callId: call.callId, tool: call.name, title, output, denied: false })
+    this.emit({ type: "tool_finished", callId: call.callId, tool: call.name, title, output })
+  }
+
+  private denyToolCall(callId: string, tool: string, title: string, denial: DenialCause, message?: string): void {
+    const output = message ?? denialMessages[denial]
+    this.addToolOutput(callId, output)
+    this.emit({ type: "tool_finished", callId, tool, title, output, denial })
   }
 }

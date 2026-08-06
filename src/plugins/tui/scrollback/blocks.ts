@@ -1,3 +1,5 @@
+import type { DenialCause } from "../../../agent/events"
+
 export interface BannerBlock {
   kind: "banner"
   model: string
@@ -41,7 +43,7 @@ export interface ToolBlock {
   tool: string
   title: string
   readOnly: boolean
-  denied: boolean
+  denial: DenialCause | undefined
   output: string
   elapsed: string | undefined
 }

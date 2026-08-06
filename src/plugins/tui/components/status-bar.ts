@@ -4,9 +4,11 @@ import {
   TextAttributes,
   type BoxRenderable,
   type RenderContext,
+  type RGBA,
   type TextRenderable,
 } from "@opentui/core"
 import type { AgentState } from "../../../agent/events"
+import type { PermissionMode } from "../../../permissions/types"
 import type { Usage } from "../../../providers/types"
 import { formatTokens } from "../lib/format"
 import { label, row } from "../lib/renderables"
@@ -17,12 +19,20 @@ import { muted, paint } from "../theme/styles"
 export const STATUS_ROWS = 1
 
 const WIDE = 64
-const WIDE_SHORTCUTS = "Ctrl+O tool output · Ctrl+C quit"
-const NARROW_SHORTCUTS = "Ctrl+O · Ctrl+C"
+const WIDE_SHORTCUTS = "Shift+Tab mode · Ctrl+O tool output · Ctrl+C quit"
+const NARROW_SHORTCUTS = "Shift+Tab · Ctrl+O · Ctrl+C"
+
+function modeColor(mode: PermissionMode): RGBA {
+  if (mode === "plan") return COLORS.success
+  if (mode === "auto") return COLORS.warning
+  if (mode === "yolo") return COLORS.error
+  return COLORS.accent
+}
 
 export class StatusBar {
   readonly view: BoxRenderable
   private readonly activity: TextRenderable
+  private readonly modeLabel: TextRenderable
   private readonly meta: TextRenderable
   private readonly spinner = new Spinner()
   private state: AgentState = "idle"
@@ -34,9 +44,11 @@ export class StatusBar {
   constructor(
     ctx: RenderContext,
     private readonly model: string,
+    private mode: PermissionMode,
   ) {
     this.view = row(ctx, { height: STATUS_ROWS, paddingLeft: 2, paddingRight: 2 })
     this.activity = label(ctx, { content: "", flexGrow: 1, flexShrink: 1 })
+    this.modeLabel = label(ctx, { content: "", flexShrink: 0, marginLeft: 1 })
     this.meta = label(ctx, {
       content: model,
       flexShrink: 0,
@@ -46,9 +58,20 @@ export class StatusBar {
     })
     this.view.add(this.activity)
     this.view.add(this.meta)
+    this.view.add(this.modeLabel)
+    this.renderMode()
     this.view.onSizeChange = () => this.render()
     this.view.on(RenderableEvents.DESTROYED, () => this.spinner.stop())
     this.render()
+  }
+
+  setMode(mode: PermissionMode): void {
+    this.mode = mode
+    this.renderMode()
+  }
+
+  private renderMode(): void {
+    this.modeLabel.content = new StyledText([muted("· "), paint(modeColor(this.mode), this.mode)])
   }
 
   setState(state: AgentState): void {
