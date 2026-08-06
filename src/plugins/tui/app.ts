@@ -12,7 +12,6 @@ import { Screen } from "./screen"
 import { COLORS } from "./theme/colors"
 
 const RESIZE_DEBOUNCE_MS = 60
-const RESET_SCROLL_REGION = "\u001b[r"
 
 export async function startTui(events: EventService): Promise<void> {
   const { session, provider, model } = await createSession()
@@ -29,7 +28,7 @@ export async function startTui(events: EventService): Promise<void> {
     footerHeight: COMPOSER_ROWS + STATUS_ROWS,
     backgroundColor: COLORS.background,
   })
-  process.on("exit", () => process.stdout.write(RESET_SCROLL_REGION))
+  process.on("exit", () => process.stdout.write("\u001b[r\u001b[<u\u001b[?25h"))
   renderer.setTerminalTitle(`${appInfo.name} — ${compactPath(process.cwd())}`)
 
   const input = new InputQueue((text) => session.send(text))
