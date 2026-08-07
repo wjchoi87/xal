@@ -63,6 +63,11 @@ export const askCli: Cli = {
           case "tool_finished":
             ctx.print(event.denial ? `[${event.denial}] ${event.output}` : event.output)
             break
+          case "retry_scheduled":
+            ctx.print(
+              `[retrying in ${Math.ceil(event.delayMs / 1_000)}s · attempt ${event.attempt}/${event.maxAttempts}] ${event.message}`,
+            )
+            break
           case "error":
             ctx.print(`\n${event.message}`)
             resolve()

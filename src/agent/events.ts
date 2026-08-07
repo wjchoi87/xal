@@ -16,6 +16,7 @@ export type AgentEvent =
   | { type: "reasoning_delta"; text: string }
   | { type: "assistant_message"; text: string }
   | { type: "reasoning_summary"; text: string }
+  | { type: "retry_scheduled"; attempt: number; maxAttempts: number; delayMs: number; message: string }
   | { type: "approval_requested"; callId: string; tool: string; title: string; readOnly: boolean; suggestion?: string }
   | { type: "tool_started"; callId: string; tool: string; title: string; readOnly: boolean }
   | {

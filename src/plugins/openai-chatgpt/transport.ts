@@ -1,18 +1,11 @@
 import { appInfo } from "../../app-info"
+import { describeError } from "../../lib/error"
+import { ProviderError } from "../../providers/errors"
 import type { StreamEvent, StreamRequest } from "../../providers/types"
 import { ensureAccessToken, PROVIDER_ID } from "./oauth"
 import { buildInput, parseErrorDetail, parseOutputItem, parseSseEvent } from "./wire"
 
 const RESPONSES_URL = "https://chatgpt.com/backend-api/codex/responses"
-
-export class RateLimitError extends Error {
-  constructor(
-    message: string,
-    readonly retryAfterSeconds?: number,
-  ) {
-    super(message)
-  }
-}
 
 function buildHeaders(access: string, accountId: string, sessionId: string): Record<string, string> {
   return {
@@ -50,25 +43,47 @@ function buildBody(request: StreamRequest): string {
   })
 }
 
+function retryAfterMs(value: string | null): number | undefined {
+  if (!value) return undefined
+  const seconds = Number(value)
+  if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1_000
+  const date = Date.parse(value)
+  if (Number.isNaN(date)) return undefined
+  return Math.max(0, date - Date.now())
+}
+
 async function raiseForStatus(response: Response): Promise<never> {
   const text = await response.text().catch(() => "")
   if (response.status === 404 && /usage_limit_reached|usage_not_included|rate_limit_exceeded/.test(text)) {
-    throw new RateLimitError("usage limit reached for your ChatGPT plan — try again later")
+    throw new ProviderError("usage limit reached for your ChatGPT plan — try again later", { retryable: false })
   }
   if (response.status === 429) {
-    const retryAfter = Number(response.headers.get("retry-after")) || undefined
-    throw new RateLimitError(
-      retryAfter ? `rate limited — retry in ${retryAfter}s` : "rate limited — try again shortly",
-      retryAfter,
-    )
+    const delayMs = retryAfterMs(response.headers.get("retry-after"))
+    throw new ProviderError(delayMs === undefined ? "rate limited" : `rate limited — retry in ${delayMs / 1_000}s`, {
+      retryable: true,
+      retryAfterMs: delayMs,
+    })
   }
   const detail = parseErrorDetail(text) ?? text.slice(0, 500)
   if (/model is not supported/i.test(detail)) {
-    throw new Error(
+    throw new ProviderError(
       `${detail} — run \`${appInfo.name} models\` to see accepted models, or set ${appInfo.name.toUpperCase().replace(/[^A-Z0-9]/g, "_")}_MODEL`,
+      { retryable: false },
     )
   }
-  throw new Error(`request failed (${response.status}): ${detail}`)
+  throw new ProviderError(`request failed (${response.status}): ${detail}`, {
+    retryable: response.status === 408 || response.status >= 500,
+    retryAfterMs: retryAfterMs(response.headers.get("retry-after")),
+  })
+}
+
+async function fetchResponse(run: () => Promise<Response>, signal?: AbortSignal): Promise<Response> {
+  try {
+    return await run()
+  } catch (error) {
+    if (signal?.aborted || (error instanceof Error && error.name === "AbortError")) throw error
+    throw new ProviderError(`request failed: ${describeError(error)}`, { retryable: true })
+  }
 }
 
 async function* sseJsonEvents(body: ReadableStream<Uint8Array>): AsyncGenerator<unknown> {
@@ -110,41 +125,46 @@ export async function* streamResponse(request: StreamRequest): AsyncGenerator<St
       signal: request.signal,
     })
 
-  let response = await doFetch()
+  let response = await fetchResponse(doFetch, request.signal)
   if (response.status === 401) {
     auth = await ensureAccessToken(true)
-    response = await doFetch()
+    response = await fetchResponse(doFetch, request.signal)
   }
   if (!response.ok) await raiseForStatus(response)
-  if (!response.body) throw new Error("response had no body")
+  if (!response.body) throw new ProviderError("response had no body", { retryable: true })
 
   let terminal = false
-  for await (const raw of sseJsonEvents(response.body)) {
-    const event = parseSseEvent(raw)
-    if (!event) continue
-    switch (event.type) {
-      case "output_text_delta":
-        yield { type: "text_delta", text: event.delta }
-        break
-      case "reasoning_summary_delta":
-        yield { type: "reasoning_summary_delta", text: event.delta }
-        break
-      case "reasoning_delta":
-        yield { type: "reasoning_delta", text: event.delta }
-        break
-      case "item_done": {
-        const item = parseOutputItem(event.item, { provider: PROVIDER_ID, model: request.model })
-        if (item) yield { type: "item_done", item }
-        break
+  try {
+    for await (const raw of sseJsonEvents(response.body)) {
+      const event = parseSseEvent(raw)
+      if (!event) continue
+      switch (event.type) {
+        case "output_text_delta":
+          yield { type: "text_delta", text: event.delta }
+          break
+        case "reasoning_summary_delta":
+          yield { type: "reasoning_summary_delta", text: event.delta }
+          break
+        case "reasoning_delta":
+          yield { type: "reasoning_delta", text: event.delta }
+          break
+        case "item_done": {
+          const item = parseOutputItem(event.item, { provider: PROVIDER_ID, model: request.model })
+          if (item) yield { type: "item_done", item }
+          break
+        }
+        case "terminal":
+          terminal = true
+          yield { type: "done", usage: event.usage }
+          break
+        case "failure":
+          throw new ProviderError(event.message, { retryable: false })
       }
-      case "terminal":
-        terminal = true
-        yield { type: "done", usage: event.usage }
-        break
-      case "failure":
-        throw new Error(event.message)
+      if (terminal) break
     }
-    if (terminal) break
+  } catch (error) {
+    if (request.signal?.aborted || error instanceof ProviderError) throw error
+    throw new ProviderError(`stream failed: ${describeError(error)}`, { retryable: true })
   }
-  if (!terminal) throw new Error("stream ended unexpectedly")
+  if (!terminal) throw new ProviderError("stream ended unexpectedly", { retryable: true })
 }

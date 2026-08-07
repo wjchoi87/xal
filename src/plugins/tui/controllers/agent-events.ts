@@ -35,6 +35,12 @@ export class AgentEventController {
       case "reasoning_summary":
         if (!scrollback.endStream()) scrollback.append({ kind: "reasoning", text: event.text })
         break
+      case "retry_scheduled":
+        scrollback.append({
+          kind: "info",
+          text: `retrying in ${Math.ceil(event.delayMs / 1_000)}s · attempt ${event.attempt}/${event.maxAttempts} · ${event.message}`,
+        })
+        break
       case "mode_changed":
         statusBar.setMode(event.mode)
         break
