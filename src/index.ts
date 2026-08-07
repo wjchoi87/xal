@@ -26,7 +26,8 @@ async function main(input: string[]): Promise<void> {
     const ui = getUi(uiId)
     if (!ui) {
       ctx.print(`unknown ui: ${uiId}`)
-      process.exit(1)
+      process.exitCode = 1
+      return
     }
     void bootstrapPlugins()
     await ui.start()
@@ -47,3 +48,4 @@ async function main(input: string[]): Promise<void> {
 }
 
 await main(process.argv.slice(2))
+process.exit(process.exitCode ?? 0)

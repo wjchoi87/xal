@@ -27,9 +27,10 @@ export function bindKeys(renderer: CliRenderer, deps: KeymapDeps): void {
     }
     lastInterrupt = now
     screen.statusBar.setNotice("Ctrl+C again to quit")
-    setTimeout(() => {
+    const timer = setTimeout(() => {
       if (session.currentState === "idle") screen.statusBar.clearNotice()
     }, QUIT_WINDOW_MS)
+    timer.unref()
   }
 
   renderer.keyInput.on("keypress", (key) => {

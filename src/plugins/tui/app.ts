@@ -16,15 +16,21 @@ import { Screen } from "./screen"
 import { COLORS } from "./theme/colors"
 
 const RESIZE_DEBOUNCE_MS = 60
+const TERMINAL_RESET = "\u001b[r\u001b[<u\u001b[?25h"
 
 export async function startTui(events: EventService, options: UiOptions = {}): Promise<void> {
   const { session, provider, model } = await createSession({ persist: true })
   if (!(await provider.isLoggedIn())) {
     console.log(`not connected — run: ${appInfo.name} connect ${provider.aliases[0] ?? provider.id}`)
-    process.exit(1)
+    process.exitCode = 1
+    return
   }
 
   const startRow = await cursorRow()
+  const { promise: destroyed, resolve: finishDestroy } = Promise.withResolvers<void>()
+  const restoreTerminal = (): void => {
+    process.stdout.write(TERMINAL_RESET)
+  }
 
   const renderer = await createCliRenderer({
     exitOnCtrlC: false,
@@ -33,8 +39,12 @@ export async function startTui(events: EventService, options: UiOptions = {}): P
     screenMode: "split-footer",
     footerHeight: COMPOSER_ROWS + STATUS_ROWS,
     backgroundColor: COLORS.background,
+    onDestroy() {
+      process.off("exit", restoreTerminal)
+      process.stdout.write(TERMINAL_RESET, () => finishDestroy())
+    },
   })
-  process.on("exit", () => process.stdout.write("\u001b[r\u001b[<u\u001b[?25h"))
+  process.on("exit", restoreTerminal)
   renderer.setTerminalTitle(`${appInfo.name} — ${compactPath(process.cwd())}`)
 
   const input = new InputQueue((text) => session.send(text))
@@ -75,12 +85,9 @@ export async function startTui(events: EventService, options: UiOptions = {}): P
   })
 
   const quit = (): void => {
-    try {
-      renderer.externalOutputMode = "passthrough"
-      renderer.screenMode = "main-screen"
-      renderer.destroy()
-    } catch {}
-    process.exit(0)
+    renderer.externalOutputMode = "passthrough"
+    renderer.screenMode = "main-screen"
+    renderer.destroy()
   }
 
   registerCommand({
@@ -94,4 +101,6 @@ export async function startTui(events: EventService, options: UiOptions = {}): P
   bindKeys(renderer, { session, screen, quit })
 
   screen.composer.focus()
+  await destroyed
+  clearTimeout(replayTimer)
 }

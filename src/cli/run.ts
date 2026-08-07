@@ -19,14 +19,15 @@ export async function runCli(args: string[], ctx: CliContext): Promise<void> {
   if (!resolved) {
     ctx.print(`unknown command: ${first}`)
     printHelp(ctx)
-    process.exit(1)
+    process.exitCode = 1
+    return
   }
 
   if (!resolved.cli.run) {
     const unknown = resolved.args[0]
     if (unknown) ctx.print(`unknown ${resolved.cli.name} target: ${unknown}`)
     printCliHelp(resolved.cli, ctx)
-    if (unknown) process.exit(1)
+    if (unknown) process.exitCode = 1
     return
   }
 
@@ -34,6 +35,6 @@ export async function runCli(args: string[], ctx: CliContext): Promise<void> {
     await resolved.cli.run(resolved.args, ctx)
   } catch (error) {
     ctx.print(describeError(error))
-    process.exit(1)
+    process.exitCode = 1
   }
 }
