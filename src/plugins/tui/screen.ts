@@ -5,11 +5,13 @@ import type { CommandContext, SelectRequest } from "../../commands/types"
 import { describeError } from "../../lib/error"
 import { compactPath } from "../../lib/path"
 import type { PermissionMode } from "../../permissions/types"
+import type { ThinkingEffort } from "../../providers/types"
 import { CommandPalette, PALETTE_CHROME_ROWS } from "./components/command-palette"
 import { Composer, COMPOSER_ROWS } from "./components/composer"
 import { LiveTools } from "./components/live-tools"
 import { Picker } from "./components/picker"
 import { PermissionPopover, type PermissionPopoverActions } from "./components/permission-popover"
+import { SecretInput } from "./components/secret-input"
 import { StatusBar, STATUS_ROWS } from "./components/status-bar"
 import { column } from "./lib/renderables"
 import { Scrollback } from "./scrollback/scrollback"
@@ -25,6 +27,7 @@ export class Screen {
   readonly scrollback: Scrollback
   readonly live: LiveTools
   readonly permission: PermissionPopover
+  readonly secret: SecretInput
   readonly picker: Picker
   readonly palette: CommandPalette
   readonly composer: Composer
@@ -43,6 +46,7 @@ export class Screen {
     this.view = column(renderer, { width: "100%", height: "100%", justifyContent: "flex-end" })
     this.live = new LiveTools(renderer, () => this.syncFooter())
     this.permission = new PermissionPopover(renderer, actions)
+    this.secret = new SecretInput(renderer, () => this.syncFooter())
     this.picker = new Picker(renderer, () => this.syncFooter())
     this.palette = new CommandPalette(
       renderer,
@@ -60,10 +64,11 @@ export class Screen {
         this.palette.update(value, this.paletteLimit())
       },
     })
-    this.statusBar = new StatusBar(renderer, session.currentModel, session.currentMode)
+    this.statusBar = new StatusBar(renderer, session.currentModel, session.currentThinking, session.currentMode)
 
     this.view.add(this.live.view)
     this.view.add(this.permission.view)
+    this.view.add(this.secret.view)
     this.view.add(this.picker.view)
     this.view.add(this.composer.view)
     this.view.add(this.palette.view)
@@ -72,7 +77,7 @@ export class Screen {
   }
 
   get overlayVisible(): boolean {
-    return this.permission.visible || this.picker.visible
+    return this.permission.visible || this.secret.visible || this.picker.visible
   }
 
   requestApproval(suggestion: string | undefined): void {
@@ -86,8 +91,9 @@ export class Screen {
     this.syncFooter()
   }
 
-  startSession(model: string, mode: PermissionMode): void {
+  startSession(model: string, thinking: ThinkingEffort | undefined, mode: PermissionMode): void {
     this.statusBar.setModel(model)
+    this.statusBar.setThinking(thinking)
     this.statusBar.setMode(mode)
     this.statusBar.resetUsage()
     this.scrollback.clear()
@@ -99,6 +105,11 @@ export class Screen {
     this.syncFooter()
     const index = await chosen
     return index === undefined ? undefined : request.options[index]?.value
+  }
+
+  async askSecret(question: string): Promise<string | undefined> {
+    this.picker.hide()
+    return this.secret.show(question)
   }
 
   syncFooter(): void {
@@ -119,7 +130,11 @@ export class Screen {
     if (this.paletteBelow || overlaid) this.reserved = 0
     else this.reserved = Math.max(this.reserved, paletteRows)
     const editing = COMPOSER_ROWS + Math.max(paletteRows, this.reserved)
-    const overlayRows = this.permission.visible ? this.permission.height : this.picker.height
+    const overlayRows = this.permission.visible
+      ? this.permission.height
+      : this.secret.visible
+        ? this.secret.height
+        : this.picker.height
     this.renderer.footerHeight = this.live.height + (overlaid ? overlayRows : editing) + STATUS_ROWS
   }
 
@@ -163,6 +178,7 @@ export class Screen {
       print: (text) => this.scrollback.append({ kind: "info", text }),
       busy: (label) => this.statusBar.setLoading(label),
       select: <T>(request: SelectRequest<T>) => this.select(request),
+      askSecret: (question) => this.askSecret(question),
     }
   }
 

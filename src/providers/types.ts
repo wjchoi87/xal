@@ -2,7 +2,7 @@ import type { JsonObject } from "../lib/json"
 
 export interface ProviderReplay {
   provider: string
-  model: string
+  model?: string
   data: JsonObject
 }
 
@@ -58,6 +58,13 @@ export interface Usage {
   outputTokens?: number
 }
 
+export type ThinkingEffort = "none" | "low" | "medium" | "high" | "xhigh" | "max"
+
+export interface ThinkingOptions {
+  options: ThinkingEffort[]
+  default: ThinkingEffort
+}
+
 export interface ToolDefinition {
   name: string
   description: string
@@ -73,6 +80,7 @@ export type StreamEvent =
 
 export interface StreamRequest {
   model: string
+  thinking?: ThinkingEffort
   instructions: string
   input: ConversationItem[]
   tools: ToolDefinition[]
@@ -83,6 +91,7 @@ export interface StreamRequest {
 export interface ConnectContext {
   print(line: string): void
   ask?(question: string): Promise<string>
+  askSecret?(question: string): Promise<string | undefined>
 }
 
 export interface Provider {
@@ -90,8 +99,9 @@ export interface Provider {
   name: string
   aliases: string[]
   isLoggedIn(): Promise<boolean>
-  connect?(ctx: ConnectContext): Promise<void>
+  connect?(ctx: ConnectContext): Promise<boolean>
   listModels(): Promise<ModelInfo[]>
   defaultModel(): Promise<string>
+  thinking?(model: string): Promise<ThinkingOptions | undefined>
   stream(request: StreamRequest): AsyncIterable<StreamEvent>
 }

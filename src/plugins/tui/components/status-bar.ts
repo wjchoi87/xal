@@ -8,7 +8,7 @@ import {
 } from "@opentui/core"
 import type { AgentState } from "../../../agent/events"
 import type { PermissionMode } from "../../../permissions/types"
-import type { Usage } from "../../../providers/types"
+import type { ThinkingEffort, Usage } from "../../../providers/types"
 import { formatTokens } from "../lib/format"
 import { label, row } from "../lib/renderables"
 import { Spinner } from "../lib/spinner"
@@ -43,6 +43,7 @@ export class StatusBar {
   constructor(
     ctx: RenderContext,
     private model: string,
+    private thinking: ThinkingEffort | undefined,
     private mode: PermissionMode,
   ) {
     this.view = row(ctx, { height: STATUS_ROWS, paddingLeft: 2, paddingRight: 2 })
@@ -73,6 +74,11 @@ export class StatusBar {
 
   setModel(model: string): void {
     this.model = model
+    this.renderMeta()
+  }
+
+  setThinking(thinking: ThinkingEffort | undefined): void {
+    this.thinking = thinking
     this.renderMeta()
   }
 
@@ -126,8 +132,9 @@ export class StatusBar {
   }
 
   private renderMeta(): void {
+    const thinking = this.thinking ? ` · think ${this.thinking === "none" ? "off" : this.thinking}` : ""
     if (this.contextInputTokens === undefined) {
-      this.meta.content = this.model
+      this.meta.content = `${this.model}${thinking}`
       return
     }
 
@@ -135,7 +142,7 @@ export class StatusBar {
     const hitRate =
       cache === undefined || this.contextInputTokens === 0 ? undefined : (cache / this.contextInputTokens) * 100
     const cached = hitRate === undefined ? "" : ` · ${hitRate.toFixed(0)}% cached`
-    this.meta.content = `${this.model} · ctx ${formatTokens(this.contextInputTokens)}${cached}`
+    this.meta.content = `${this.model}${thinking} · ctx ${formatTokens(this.contextInputTokens)}${cached}`
   }
 
   private toggleSpinner(active: boolean): void {

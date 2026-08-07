@@ -36,6 +36,11 @@ export function bindKeys(renderer: CliRenderer, deps: KeymapDeps): void {
   renderer.keyInput.on("keypress", (key) => {
     if (key.ctrl && key.name === "c") {
       key.preventDefault()
+      if (screen.secret.visible) {
+        screen.secret.hide()
+        screen.syncFooter()
+        return
+      }
       handleInterrupt()
       return
     }
@@ -50,6 +55,11 @@ export function bindKeys(renderer: CliRenderer, deps: KeymapDeps): void {
       return
     }
     if (screen.permission.handleKey(key.name)) {
+      key.preventDefault()
+      screen.syncFooter()
+      return
+    }
+    if (screen.secret.handleKey(key)) {
       key.preventDefault()
       screen.syncFooter()
       return
@@ -69,5 +79,11 @@ export function bindKeys(renderer: CliRenderer, deps: KeymapDeps): void {
       return
     }
     if (key.name === "escape" && session.currentState !== "idle") session.interrupt()
+  })
+
+  renderer.keyInput.on("paste", (event) => {
+    if (!screen.secret.handlePaste(event)) return
+    event.preventDefault()
+    screen.syncFooter()
   })
 }

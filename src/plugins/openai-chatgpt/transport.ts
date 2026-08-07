@@ -37,7 +37,7 @@ function buildBody(request: StreamRequest): string {
     })),
     tool_choice: "auto",
     parallel_tool_calls: true,
-    reasoning: { effort: "medium", summary: "auto" },
+    reasoning: { effort: request.thinking ?? "medium", summary: "auto" },
     include: ["reasoning.encrypted_content"],
     prompt_cache_key: request.sessionId,
   })

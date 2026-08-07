@@ -1,14 +1,15 @@
 import type { Provider } from "../../providers/types"
-import { isLoggedIn, login, PROVIDER_ID } from "./oauth"
+import { PROVIDER_ID } from "./api"
+import { connect, isLoggedIn } from "./auth"
 import { defaultModel, listModels, thinking } from "./models"
 import { streamResponse } from "./transport"
 
-export const openaiChatgptProvider: Provider = {
+export const deepSeekProvider: Provider = {
   id: PROVIDER_ID,
-  name: "OpenAI (ChatGPT subscription)",
-  aliases: ["chatgpt"],
+  name: "DeepSeek",
+  aliases: [],
   isLoggedIn,
-  connect: login,
+  connect,
   listModels,
   defaultModel,
   thinking,

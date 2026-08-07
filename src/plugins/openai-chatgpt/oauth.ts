@@ -190,7 +190,7 @@ function tryStartCallbackServer(state: string): { code: Promise<string>; close: 
   }
 }
 
-export async function login(ctx: ConnectContext): Promise<void> {
+export async function login(ctx: ConnectContext): Promise<boolean> {
   const { print } = ctx
   const ask = ctx.ask
   const { verifier, challenge } = await createPkce()
@@ -236,15 +236,16 @@ export async function login(ctx: ConnectContext): Promise<void> {
   const credential = toCredential(tokens)
   await saveCredential(PROVIDER_ID, credential)
   print(`signed in (account ${credential.accountId})`)
+  return true
 }
 
 export async function isLoggedIn(): Promise<boolean> {
-  return (await loadCredential(PROVIDER_ID)) !== undefined
+  return (await loadCredential(PROVIDER_ID))?.type === "oauth"
 }
 
 export async function ensureAccessToken(forceRefresh = false): Promise<{ access: string; accountId: string }> {
   const credential = await loadCredential(PROVIDER_ID)
-  if (!credential) throw new NotLoggedInError()
+  if (credential?.type !== "oauth") throw new NotLoggedInError()
   if (!forceRefresh && credential.expires - 60_000 > Date.now()) {
     return { access: credential.access, accountId: credential.accountId }
   }

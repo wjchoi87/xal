@@ -11,7 +11,12 @@ export interface OAuthCredential {
   accountId: string
 }
 
-export type Credential = OAuthCredential
+export interface ApiKeyCredential {
+  type: "api_key"
+  key: string
+}
+
+export type Credential = OAuthCredential | ApiKeyCredential
 
 interface CredentialsFile {
   version: 1
@@ -21,7 +26,12 @@ interface CredentialsFile {
 const emptyFile = (): CredentialsFile => ({ version: 1, providers: {} })
 
 function parseCredential(raw: unknown): Credential | undefined {
-  if (!isRecord(raw) || raw.type !== "oauth") return undefined
+  if (!isRecord(raw)) return undefined
+  if (raw.type === "api_key") {
+    const key = asString(raw.key)
+    return key ? { type: "api_key", key } : undefined
+  }
+  if (raw.type !== "oauth") return undefined
   const access = asString(raw.access)
   const refresh = asString(raw.refresh)
   const expires = asNumber(raw.expires)

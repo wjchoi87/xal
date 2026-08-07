@@ -29,13 +29,13 @@ export interface StreamView {
 
 export function streamContent(block: StreamBlock): StyledText | string {
   if (block.kind === "text") return block.text
-  return renderInlineMarkdown(block.text, COLORS.dim, TextAttributes.DIM | TextAttributes.ITALIC)
+  return renderInlineMarkdown(block.text, COLORS.faint, TextAttributes.ITALIC)
 }
 
 export function streamView(ctx: RenderContext, block: StreamBlock): StreamView {
   const text = paragraph(ctx, {
     content: streamContent(block),
-    color: block.kind === "text" ? COLORS.foreground : COLORS.dim,
+    color: block.kind === "text" ? COLORS.foreground : COLORS.faint,
   })
   return { view: frame(ctx, text), text }
 }

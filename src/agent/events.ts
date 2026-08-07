@@ -1,15 +1,23 @@
 import type { PermissionMode } from "../permissions/types"
-import type { Usage } from "../providers/types"
+import type { ThinkingEffort, Usage } from "../providers/types"
 
 export type AgentState = "idle" | "streaming" | "awaiting_approval" | "running_tool"
 
 export type DenialCause = "user" | "policy" | "plan"
 
 export type AgentEvent =
-  | { type: "session_started"; id: string; resumed: boolean; model: string; mode: PermissionMode }
+  | {
+      type: "session_started"
+      id: string
+      resumed: boolean
+      model: string
+      thinking?: ThinkingEffort
+      mode: PermissionMode
+    }
   | { type: "state_changed"; state: AgentState }
   | { type: "mode_changed"; mode: PermissionMode }
   | { type: "model_changed"; provider: string; model: string }
+  | { type: "thinking_changed"; thinking?: ThinkingEffort }
   | { type: "user_message"; text: string; sentAt: number }
   | { type: "text_delta"; text: string }
   | { type: "reasoning_summary_delta"; text: string }

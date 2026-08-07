@@ -1,6 +1,6 @@
 import type { AgentEvent } from "../agent/events"
 import type { PermissionMode } from "../permissions/types"
-import type { ConversationItem } from "../providers/types"
+import type { ConversationItem, ThinkingEffort } from "../providers/types"
 
 export interface SessionMeta {
   version: 1
@@ -8,6 +8,7 @@ export interface SessionMeta {
   cwd: string
   provider: string
   model: string
+  thinking?: ThinkingEffort
   mode: PermissionMode
   startedAt: number
 }

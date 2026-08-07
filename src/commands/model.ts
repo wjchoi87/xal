@@ -1,4 +1,5 @@
 import { saveSettings } from "../config/settings"
+import { resolveThinking } from "../config/thinking"
 import { listModelChoices } from "../providers/catalog"
 import type { Command } from "./types"
 
@@ -53,7 +54,8 @@ export const modelCommand: Command = {
         if (!confirmed) continue
       }
 
-      if (!ctx.session.setModel(choice.provider, choice.model.id)) {
+      const thinking = await resolveThinking(choice.provider, choice.model.id)
+      if (!ctx.session.setModel(choice.provider, choice.model.id, thinking)) {
         ctx.print("cannot change model while a turn is running")
         return
       }

@@ -9,7 +9,7 @@ export class AgentEventController {
 
     switch (event.type) {
       case "session_started":
-        this.screen.startSession(event.model, event.mode)
+        this.screen.startSession(event.model, event.thinking, event.mode)
         break
       case "state_changed":
         statusBar.setState(event.state)
@@ -47,6 +47,13 @@ export class AgentEventController {
       case "model_changed":
         statusBar.setModel(event.model)
         scrollback.append({ kind: "info", text: `model: ${event.model} · ${event.provider}` })
+        break
+      case "thinking_changed":
+        statusBar.setThinking(event.thinking)
+        scrollback.append({
+          kind: "info",
+          text: `thinking: ${event.thinking === "none" ? "off" : (event.thinking ?? "not configurable")}`,
+        })
         break
       case "approval_requested":
         live.request(event.callId, event.tool, event.title, event.readOnly)

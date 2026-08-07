@@ -18,6 +18,7 @@ export interface CommandContext {
   print(line: string): void
   busy(label?: string): void
   select<T>(request: SelectRequest<T>): Promise<T | undefined>
+  askSecret(question: string): Promise<string | undefined>
 }
 
 export interface Command {

@@ -2,6 +2,7 @@ import { appInfo } from "../app-info"
 import { listConnectTargets } from "../providers/catalog"
 import { getProvider } from "../providers/registry"
 import type { Cli } from "./types"
+import { askSecret } from "./secret"
 
 export const connectCli: Cli = {
   name: "connect",
@@ -28,6 +29,7 @@ export const connectCli: Cli = {
     await provider.connect({
       print: (line) => ctx.print(line),
       ask: async (question) => prompt(question) ?? "",
+      askSecret,
     })
   },
 }

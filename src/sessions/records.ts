@@ -1,7 +1,7 @@
 import type { AgentEvent, DenialCause } from "../agent/events"
 import { asBoolean, asNumber, asString, isJsonObject, isRecord } from "../lib/json"
 import { isPermissionMode } from "../permissions/types"
-import type { ConversationItem, ProviderReplay, Usage } from "../providers/types"
+import type { ConversationItem, ProviderReplay, ThinkingEffort, Usage } from "../providers/types"
 import type { SessionMeta, SessionRecord } from "./types"
 
 export function isPersistable(event: AgentEvent): boolean {
@@ -22,6 +22,21 @@ function parseUsage(value: unknown): Usage | undefined {
     cacheWriteInputTokens: asNumber(value.cacheWriteInputTokens),
     outputTokens: asNumber(value.outputTokens),
   }
+}
+
+function parseThinking(value: unknown): ThinkingEffort | undefined {
+  const effort = asString(value)
+  if (
+    effort === "none" ||
+    effort === "low" ||
+    effort === "medium" ||
+    effort === "high" ||
+    effort === "xhigh" ||
+    effort === "max"
+  ) {
+    return effort
+  }
+  return undefined
 }
 
 function parseEvent(raw: unknown): AgentEvent | undefined {
@@ -74,6 +89,8 @@ function parseEvent(raw: unknown): AgentEvent | undefined {
       if (!provider || !model) return undefined
       return { type: "model_changed", provider, model }
     }
+    case "thinking_changed":
+      return { type: "thinking_changed", thinking: parseThinking(raw.thinking) }
     case "error": {
       const message = asString(raw.message)
       if (message === undefined) return undefined
@@ -93,15 +110,25 @@ function parseMeta(raw: unknown): SessionMeta | undefined {
   const model = asString(raw.model)
   const mode = asString(raw.mode)
   if (!id || !cwd || !provider || !model || !mode || !isPermissionMode(mode)) return undefined
-  return { version: 1, id, cwd, provider, model, mode, startedAt: asNumber(raw.startedAt) ?? 0 }
+  return {
+    version: 1,
+    id,
+    cwd,
+    provider,
+    model,
+    thinking: parseThinking(raw.thinking),
+    mode,
+    startedAt: asNumber(raw.startedAt) ?? 0,
+  }
 }
 
 function parseReplay(raw: unknown): ProviderReplay | undefined {
   if (!isRecord(raw)) return undefined
   const provider = asString(raw.provider)
+  if (!provider || !isJsonObject(raw.data)) return undefined
+  if (raw.model === undefined) return { provider, data: raw.data }
   const model = asString(raw.model)
-  if (!provider || !model || !isJsonObject(raw.data)) return undefined
-  return { provider, model, data: raw.data }
+  return model ? { provider, model, data: raw.data } : undefined
 }
 
 function replay(raw: Record<string, unknown>): ProviderReplay | undefined | false {

@@ -19,12 +19,7 @@ const RESIZE_DEBOUNCE_MS = 60
 const TERMINAL_RESET = "\u001b[r\u001b[<u\u001b[?25h"
 
 export async function startTui(events: EventService, options: UiOptions = {}): Promise<void> {
-  const { session, provider, model } = await createSession({ persist: true })
-  if (!(await provider.isLoggedIn())) {
-    console.log(`not connected — run: ${appInfo.name} connect ${provider.aliases[0] ?? provider.id}`)
-    process.exitCode = 1
-    return
-  }
+  const { session, model } = await createSession({ persist: true })
 
   const startRow = await cursorRow()
   const { promise: destroyed, resolve: finishDestroy } = Promise.withResolvers<void>()
@@ -69,6 +64,9 @@ export async function startTui(events: EventService, options: UiOptions = {}): P
     }
   } else {
     screen.scrollback.append({ kind: "banner", model, cwd: compactPath(process.cwd()) })
+  }
+  if (!(await session.currentProvider.isLoggedIn().catch(() => false))) {
+    screen.scrollback.append({ kind: "info", text: "not connected — run /connect" })
   }
 
   const appEvents = new AppEventController(screen, input)

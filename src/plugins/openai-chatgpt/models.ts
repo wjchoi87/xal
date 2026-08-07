@@ -2,8 +2,8 @@ import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { appEnvVar } from "../../app-info"
 import { cacheDir } from "../../config/paths"
-import { asBoolean, asNumber, asString, isRecord } from "../../lib/json"
-import type { ModelInfo } from "../../providers/types"
+import { asBoolean, asNumber, asString, asStringArray, isRecord } from "../../lib/json"
+import type { ModelInfo, ThinkingEffort, ThinkingOptions } from "../../providers/types"
 
 const MODELS_URL = "https://models.dev/api.json"
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000
@@ -23,11 +23,33 @@ interface ModelMetadata {
   reasoning?: boolean
   contextWindow?: number
   maxOutput?: number
+  thinking?: ThinkingEffort[]
 }
 
 type MetadataMap = Record<string, ModelMetadata>
 
 let memo: MetadataMap | undefined
+
+function isThinkingEffort(value: string): value is ThinkingEffort {
+  return (
+    value === "none" ||
+    value === "low" ||
+    value === "medium" ||
+    value === "high" ||
+    value === "xhigh" ||
+    value === "max"
+  )
+}
+
+function parseThinking(raw: unknown): ThinkingEffort[] | undefined {
+  if (!Array.isArray(raw)) return undefined
+  for (const option of raw) {
+    if (!isRecord(option) || option.type !== "effort") continue
+    const efforts = asStringArray(option.values).filter(isThinkingEffort)
+    if (efforts.length > 0) return efforts
+  }
+  return undefined
+}
 
 function cachePath(): string {
   return join(cacheDir(), "models.json")
@@ -41,6 +63,7 @@ function parseMetadataEntry(raw: unknown): ModelMetadata | undefined {
     reasoning: asBoolean(raw.reasoning),
     contextWindow: asNumber(raw.contextWindow) ?? (limit ? asNumber(limit.context) : undefined),
     maxOutput: asNumber(raw.maxOutput) ?? (limit ? asNumber(limit.output) : undefined),
+    thinking: parseThinking(raw.reasoning_options),
   }
 }
 
@@ -115,4 +138,17 @@ export async function defaultModel(): Promise<string> {
   const override = process.env[appEnvVar("MODEL")]?.trim()
   if (override) return override
   return BACKEND_MODEL_IDS[0]!
+}
+
+export async function thinking(model: string): Promise<ThinkingOptions | undefined> {
+  const metadata = await loadMetadata()
+  const options = metadata[model]?.thinking
+  if (options) return { options, default: "medium" }
+  if (!BACKEND_MODEL_IDS.includes(model)) return undefined
+  return {
+    options: model.startsWith("gpt-5.6-")
+      ? ["none", "low", "medium", "high", "xhigh", "max"]
+      : ["none", "low", "medium", "high", "xhigh"],
+    default: "medium",
+  }
 }

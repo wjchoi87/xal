@@ -6,7 +6,14 @@ import { evaluatePolicy } from "../permissions/service"
 import type { PermissionMode, PermissionScope } from "../permissions/types"
 import { prepareConversation } from "../providers/conversation"
 import { ProviderError } from "../providers/errors"
-import type { ConversationItem, Provider, ProviderOutputItem, ToolCallItem, Usage } from "../providers/types"
+import type {
+  ConversationItem,
+  Provider,
+  ProviderOutputItem,
+  ThinkingEffort,
+  ToolCallItem,
+  Usage,
+} from "../providers/types"
 import { SessionRecorder } from "../sessions/recorder"
 import type { LoadedSession, SessionMeta } from "../sessions/types"
 import { getTool, listTools } from "../tools/registry"
@@ -16,6 +23,7 @@ import { composeSystemPrompt } from "./prompt"
 export interface AgentSessionDeps {
   provider: Provider
   model: string
+  thinking?: ThinkingEffort
   persist?: boolean
 }
 
@@ -24,6 +32,7 @@ export interface ResumeTarget {
   path: string
   provider: Provider
   model: string
+  thinking?: ThinkingEffort
   mode: PermissionMode
 }
 
@@ -83,6 +92,7 @@ export class AgentSession {
   private readonly recorder: SessionRecorder | undefined
   private provider: Provider
   private model: string
+  private thinking: ThinkingEffort | undefined
   private state: AgentState = "idle"
   private mode: PermissionMode = "build"
   private streaming: { kind: StreamKind; text: string } | undefined
@@ -92,6 +102,7 @@ export class AgentSession {
   constructor(deps: AgentSessionDeps) {
     this.provider = deps.provider
     this.model = deps.model
+    this.thinking = deps.thinking
     if (deps.persist) {
       this.recorder = new SessionRecorder((message) => this.emit({ type: "error", message }))
       this.recorder.start(this.meta())
@@ -118,6 +129,10 @@ export class AgentSession {
     return this.provider
   }
 
+  get currentThinking(): ThinkingEffort | undefined {
+    return this.thinking
+  }
+
   get hasModelOutput(): boolean {
     return this.items.some(
       (item) => item.type === "assistant_message" || item.type === "reasoning" || item.type === "tool_call",
@@ -131,6 +146,7 @@ export class AgentSession {
       cwd: process.cwd(),
       provider: this.provider.id,
       model: this.model,
+      thinking: this.thinking,
       mode: this.mode,
       startedAt: this.startedAt,
     }
@@ -143,7 +159,14 @@ export class AgentSession {
     this.items = []
     this.streaming = undefined
     this.recorder?.start(this.meta())
-    this.emit({ type: "session_started", id: this.sessionId, resumed: false, model: this.model, mode: this.mode })
+    this.emit({
+      type: "session_started",
+      id: this.sessionId,
+      resumed: false,
+      model: this.model,
+      thinking: this.thinking,
+      mode: this.mode,
+    })
     return true
   }
 
@@ -156,19 +179,37 @@ export class AgentSession {
     this.streaming = undefined
     this.provider = target.provider
     this.model = target.model
+    this.thinking = target.thinking
     this.mode = target.mode
     this.recorder?.attach(target.path)
-    this.emit({ type: "session_started", id: this.sessionId, resumed: true, model: this.model, mode: this.mode })
+    this.emit({
+      type: "session_started",
+      id: this.sessionId,
+      resumed: true,
+      model: this.model,
+      thinking: this.thinking,
+      mode: this.mode,
+    })
     for (const event of target.session.events) this.notify(event)
     return true
   }
 
-  setModel(provider: Provider, model: string): boolean {
+  setModel(provider: Provider, model: string, thinking?: ThinkingEffort): boolean {
     if (this.state !== "idle") return false
-    if (this.provider === provider && this.model === model) return true
+    if (this.provider === provider && this.model === model) return this.setThinking(thinking)
     this.provider = provider
     this.model = model
+    this.thinking = thinking
     this.emit({ type: "model_changed", provider: provider.id, model })
+    this.emit({ type: "thinking_changed", thinking })
+    return true
+  }
+
+  setThinking(thinking?: ThinkingEffort): boolean {
+    if (this.state !== "idle") return false
+    if (this.thinking === thinking) return true
+    this.thinking = thinking
+    this.emit({ type: "thinking_changed", thinking })
     return true
   }
 
@@ -190,8 +231,9 @@ export class AgentSession {
     const controller = new AbortController()
     const provider = this.provider
     const model = this.model
+    const thinking = this.thinking
     this.abortController = controller
-    void this.runTurn(controller.signal, provider, model)
+    void this.runTurn(controller.signal, provider, model, thinking)
       .catch((error) => {
         this.emit({ type: "error", message: describeError(error) })
       })
@@ -270,7 +312,12 @@ export class AgentSession {
     this.pushItem({ type: "tool_result", callId: call.callId, name: call.name, output, isError })
   }
 
-  private async runTurn(signal: AbortSignal, provider: Provider, model: string): Promise<void> {
+  private async runTurn(
+    signal: AbortSignal,
+    provider: Provider,
+    model: string,
+    thinking: ThinkingEffort | undefined,
+  ): Promise<void> {
     let turnUsage: Usage | undefined
     let context: Usage | undefined
 
@@ -285,6 +332,7 @@ export class AgentSession {
         try {
           for await (const event of provider.stream({
             model,
+            thinking,
             instructions: composeSystemPrompt({
               appName: appInfo.name,
               platform: `${process.platform} ${release()}`,

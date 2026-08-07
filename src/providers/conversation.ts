@@ -6,7 +6,7 @@ export interface ConversationTarget {
 }
 
 function matches(replay: ProviderReplay | undefined, target: ConversationTarget): replay is ProviderReplay {
-  return replay?.provider === target.provider && replay.model === target.model
+  return replay?.provider === target.provider && (replay.model === undefined || replay.model === target.model)
 }
 
 function assistant(item: AssistantMessageItem, target: ConversationTarget): AssistantMessageItem {

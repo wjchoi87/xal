@@ -1,6 +1,7 @@
 import { mkdir } from "node:fs/promises"
 import { join } from "node:path"
 import { asString, isRecord } from "../lib/json"
+import type { ThinkingEffort } from "../providers/types"
 import { agentHome } from "./paths"
 
 export interface Settings {
@@ -9,9 +10,10 @@ export interface Settings {
   model?: string
   ui?: string
   pluginConfig: Record<string, Record<string, unknown>>
+  thinking: Record<string, Record<string, ThinkingEffort>>
 }
 
-let current: Settings = { plugins: [], pluginConfig: {} }
+let current: Settings = { plugins: [], pluginConfig: {}, thinking: {} }
 
 export function settingsPath(): string {
   return join(agentHome(), "config.json")
@@ -41,7 +43,7 @@ export async function saveSettings(patch: Partial<Settings>): Promise<void> {
 }
 
 async function readSettings(): Promise<Settings> {
-  const fallback: Settings = { plugins: [], pluginConfig: {} }
+  const fallback: Settings = { plugins: [], pluginConfig: {}, thinking: {} }
   const file = Bun.file(settingsPath())
   if (!(await file.exists())) return fallback
 
@@ -62,11 +64,32 @@ async function readSettings(): Promise<Settings> {
       if (isRecord(value)) pluginConfig[name] = value
     }
   }
+  const thinking: Record<string, Record<string, ThinkingEffort>> = {}
+  if (isRecord(raw.thinking)) {
+    for (const [provider, models] of Object.entries(raw.thinking)) {
+      if (!isRecord(models)) continue
+      const efforts: Record<string, ThinkingEffort> = {}
+      for (const [model, value] of Object.entries(models)) {
+        if (
+          value === "none" ||
+          value === "low" ||
+          value === "medium" ||
+          value === "high" ||
+          value === "xhigh" ||
+          value === "max"
+        ) {
+          efforts[model] = value
+        }
+      }
+      thinking[provider] = efforts
+    }
+  }
   return {
     plugins,
     provider: asString(raw.provider),
     model: asString(raw.model),
     ui: asString(raw.ui),
     pluginConfig,
+    thinking,
   }
 }
