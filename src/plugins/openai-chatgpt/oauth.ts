@@ -1,4 +1,5 @@
 import { appInfo } from "../../app-info"
+import type { ConnectContext } from "../../providers/types"
 import { loadCredential, saveCredential, type OAuthCredential } from "../../config/credentials"
 import { asString, isRecord } from "../../lib/json"
 import { parseTokenResponse, type TokenResponse } from "./wire"
@@ -189,12 +190,20 @@ function tryStartCallbackServer(state: string): { code: Promise<string>; close: 
   }
 }
 
-export async function login(print: (line: string) => void): Promise<void> {
+export async function login(ctx: ConnectContext): Promise<void> {
+  const { print } = ctx
+  const ask = ctx.ask
   const { verifier, challenge } = await createPkce()
   const state = base64url(crypto.getRandomValues(new Uint8Array(16)))
   const authorizeUrl = buildAuthorizeUrl(challenge, state)
 
   const callback = tryStartCallbackServer(state)
+  if (!callback && !ask) {
+    throw new Error(
+      `could not listen on port ${REDIRECT_PORT} — free it and try again, or run: ${appInfo.name} connect chatgpt`,
+    )
+  }
+
   print("opening your browser to sign in with ChatGPT…")
   print("if it doesn't open, visit:")
   print(`  ${authorizeUrl}`)
@@ -209,9 +218,10 @@ export async function login(print: (line: string) => void): Promise<void> {
     }
   } else {
     print("")
-    print("could not listen on port 1455 — after authorizing, copy the URL you were redirected to and paste it here.")
-    const pasted = prompt("paste redirect URL or code:") ?? ""
-    code = parsePastedCode(pasted, state)
+    print(
+      `could not listen on port ${REDIRECT_PORT} — after authorizing, copy the URL you were redirected to and paste it here.`,
+    )
+    code = parsePastedCode(await ask!("paste redirect URL or code:"), state)
   }
 
   const tokens = await requestTokens(

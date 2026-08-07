@@ -1,9 +1,12 @@
 import { release } from "node:os"
 import { appInfo } from "../app-info"
+import { describeError } from "../lib/error"
 import { rememberRule } from "../permissions/rules"
 import { evaluatePolicy } from "../permissions/service"
 import type { PermissionMode, PermissionScope } from "../permissions/types"
 import type { ConversationItem, Provider, Usage } from "../providers/types"
+import { SessionRecorder } from "../sessions/recorder"
+import type { LoadedSession, SessionMeta } from "../sessions/types"
 import { getTool, listTools } from "../tools/registry"
 import type { AgentEvent, AgentState, DenialCause } from "./events"
 import { composeSystemPrompt } from "./prompt"
@@ -11,7 +14,18 @@ import { composeSystemPrompt } from "./prompt"
 export interface AgentSessionDeps {
   provider: Provider
   model: string
+  persist?: boolean
 }
+
+export interface ResumeTarget {
+  session: LoadedSession
+  path: string
+  provider: Provider
+  model: string
+  mode: PermissionMode
+}
+
+type StreamKind = "assistant" | "reasoning"
 
 interface PendingToolCall {
   callId: string
@@ -38,15 +52,31 @@ function isAbortError(error: unknown): boolean {
 }
 
 export class AgentSession {
-  readonly id = crypto.randomUUID()
-  private readonly items: ConversationItem[] = []
+  private sessionId: string = crypto.randomUUID()
+  private startedAt = Date.now()
+  private items: ConversationItem[] = []
   private readonly listeners = new Set<(event: AgentEvent) => void>()
+  private readonly recorder: SessionRecorder | undefined
+  private provider: Provider
+  private model: string
   private state: AgentState = "idle"
   private mode: PermissionMode = "build"
+  private streaming: { kind: StreamKind; text: string } | undefined
   private abortController: AbortController | undefined
   private pendingApproval: ((result: ApprovalResult) => void) | undefined
 
-  constructor(private readonly deps: AgentSessionDeps) {}
+  constructor(deps: AgentSessionDeps) {
+    this.provider = deps.provider
+    this.model = deps.model
+    if (deps.persist) {
+      this.recorder = new SessionRecorder((message) => this.emit({ type: "error", message }))
+      this.recorder.start(this.meta())
+    }
+  }
+
+  get id(): string {
+    return this.sessionId
+  }
 
   get currentState(): AgentState {
     return this.state
@@ -54,6 +84,59 @@ export class AgentSession {
 
   get currentMode(): PermissionMode {
     return this.mode
+  }
+
+  get currentModel(): string {
+    return this.model
+  }
+
+  get currentProvider(): Provider {
+    return this.provider
+  }
+
+  private meta(): SessionMeta {
+    return {
+      id: this.sessionId,
+      cwd: process.cwd(),
+      provider: this.provider.id,
+      model: this.model,
+      mode: this.mode,
+      startedAt: this.startedAt,
+    }
+  }
+
+  reset(): boolean {
+    if (this.state !== "idle") return false
+    this.sessionId = crypto.randomUUID()
+    this.startedAt = Date.now()
+    this.items = []
+    this.streaming = undefined
+    this.recorder?.start(this.meta())
+    this.emit({ type: "session_started", id: this.sessionId, resumed: false, model: this.model, mode: this.mode })
+    return true
+  }
+
+  resume(target: ResumeTarget): boolean {
+    if (this.state !== "idle") return false
+    const { meta } = target.session
+    this.sessionId = meta.id
+    this.startedAt = meta.startedAt
+    this.items = [...target.session.items]
+    this.streaming = undefined
+    this.provider = target.provider
+    this.model = target.model
+    this.mode = target.mode
+    this.recorder?.attach(target.path)
+    this.emit({ type: "session_started", id: this.sessionId, resumed: true, model: this.model, mode: this.mode })
+    for (const event of target.session.events) this.notify(event)
+    return true
+  }
+
+  setModel(provider: Provider, model: string): void {
+    if (this.provider === provider && this.model === model) return
+    this.provider = provider
+    this.model = model
+    this.emit({ type: "model_changed", provider: provider.id, model })
   }
 
   setMode(mode: PermissionMode): void {
@@ -69,13 +152,13 @@ export class AgentSession {
 
   send(text: string): boolean {
     if (this.state !== "idle") return false
-    this.items.push({ role: "user", content: [{ type: "input_text", text }] })
+    this.pushItem({ role: "user", content: [{ type: "input_text", text }] })
     this.emit({ type: "user_message", text, sentAt: Date.now() })
     const controller = new AbortController()
     this.abortController = controller
     void this.runTurn(controller.signal)
       .catch((error) => {
-        this.emit({ type: "error", message: error instanceof Error ? error.message : String(error) })
+        this.emit({ type: "error", message: describeError(error) })
       })
       .finally(() => {
         this.abortController = undefined
@@ -103,14 +186,43 @@ export class AgentSession {
     this.pendingApproval = undefined
     if (result.pattern && result.scope && result.scope !== "once") {
       rememberRule(result.pattern, result.scope).catch((error) => {
-        this.emit({ type: "error", message: error instanceof Error ? error.message : String(error) })
+        this.emit({ type: "error", message: describeError(error) })
       })
     }
     resolve(result)
   }
 
   private emit(event: AgentEvent): void {
+    this.recorder?.event(event)
+    this.notify(event)
+  }
+
+  private notify(event: AgentEvent): void {
     for (const listener of this.listeners) listener(event)
+  }
+
+  private pushItem(item: ConversationItem): void {
+    this.items.push(item)
+    this.recorder?.item(item)
+  }
+
+  private stream(kind: StreamKind, text: string): void {
+    if (this.streaming && this.streaming.kind !== kind) this.flushStream()
+    const streaming = this.streaming ?? { kind, text: "" }
+    streaming.text += text
+    this.streaming = streaming
+    this.emit(kind === "assistant" ? { type: "text_delta", text } : { type: "reasoning_summary_delta", text })
+  }
+
+  private flushStream(): void {
+    const streaming = this.streaming
+    this.streaming = undefined
+    if (!streaming || !streaming.text) return
+    this.emit(
+      streaming.kind === "assistant"
+        ? { type: "assistant_message", text: streaming.text }
+        : { type: "reasoning_summary", text: streaming.text },
+    )
   }
 
   private setState(state: AgentState): void {
@@ -120,7 +232,7 @@ export class AgentSession {
   }
 
   private addToolOutput(callId: string, output: string): void {
-    this.items.push({ type: "function_call_output", call_id: callId, output })
+    this.pushItem({ type: "function_call_output", call_id: callId, output })
   }
 
   private async runTurn(signal: AbortSignal): Promise<void> {
@@ -132,8 +244,8 @@ export class AgentSession {
       this.setState("streaming")
 
       try {
-        for await (const event of this.deps.provider.stream({
-          model: this.deps.model,
+        for await (const event of this.provider.stream({
+          model: this.model,
           instructions: composeSystemPrompt({
             appName: appInfo.name,
             platform: `${process.platform} ${release()}`,
@@ -148,10 +260,10 @@ export class AgentSession {
         })) {
           switch (event.type) {
             case "text_delta":
-              this.emit({ type: "text_delta", text: event.text })
+              this.stream("assistant", event.text)
               break
             case "reasoning_summary_delta":
-              this.emit({ type: "reasoning_summary_delta", text: event.text })
+              this.stream("reasoning", event.text)
               break
             case "reasoning_delta":
               this.emit({ type: "reasoning_delta", text: event.text })
@@ -169,14 +281,17 @@ export class AgentSession {
         }
       } catch (error) {
         if (isAbortError(error) || signal.aborted) {
-          this.items.push(...pendingItems.filter((item) => item.type === "message"))
+          this.flushStream()
+          for (const item of pendingItems.filter((item) => item.type === "message")) this.pushItem(item)
           this.emit({ type: "turn_interrupted" })
           return
         }
+        this.flushStream()
         throw error
       }
 
-      this.items.push(...pendingItems)
+      this.flushStream()
+      for (const item of pendingItems) this.pushItem(item)
 
       if (toolCalls.length === 0) {
         this.emit({ type: "turn_ended", usage: lastUsage })
@@ -210,6 +325,7 @@ export class AgentSession {
         callId: call.callId,
         tool: call.name,
         title,
+        readOnly: false,
         output: message,
         denial: "policy",
       })
@@ -228,7 +344,8 @@ export class AgentSession {
     })
 
     if (decision === "deny") {
-      this.denyToolCall(call.callId, call.name, title, this.mode === "plan" && !readOnly ? "plan" : "policy")
+      const cause = this.mode === "plan" && !readOnly ? "plan" : "policy"
+      this.denyToolCall(call.callId, call.name, title, readOnly, cause)
       return
     }
 
@@ -247,7 +364,7 @@ export class AgentSession {
       })
       const result = await asked
       if (result.decision === "deny") {
-        this.denyToolCall(call.callId, call.name, title, result.cause ?? "user", result.message)
+        this.denyToolCall(call.callId, call.name, title, readOnly, result.cause ?? "user", result.message)
         return
       }
     }
@@ -258,15 +375,22 @@ export class AgentSession {
     try {
       output = (await tool.execute(call.args, signal)).output
     } catch (error) {
-      output = `Tool failed: ${error instanceof Error ? error.message : String(error)}`
+      output = `Tool failed: ${describeError(error)}`
     }
     this.addToolOutput(call.callId, output)
-    this.emit({ type: "tool_finished", callId: call.callId, tool: call.name, title, output })
+    this.emit({ type: "tool_finished", callId: call.callId, tool: call.name, title, readOnly, output })
   }
 
-  private denyToolCall(callId: string, tool: string, title: string, denial: DenialCause, message?: string): void {
+  private denyToolCall(
+    callId: string,
+    tool: string,
+    title: string,
+    readOnly: boolean,
+    denial: DenialCause,
+    message?: string,
+  ): void {
     const output = message ?? denialMessages[denial]
     this.addToolOutput(callId, output)
-    this.emit({ type: "tool_finished", callId, tool, title, output, denial })
+    this.emit({ type: "tool_finished", callId, tool, title, readOnly, output, denial })
   }
 }

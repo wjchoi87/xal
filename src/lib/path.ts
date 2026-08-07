@@ -6,6 +6,12 @@ export function resolveFilePath(path: string): string {
   return isAbsolute(path) ? path : resolve(process.cwd(), path)
 }
 
+export function compactPath(path: string): string {
+  const home = homedir()
+  if (path !== home && !path.startsWith(`${home}/`)) return path
+  return `~${path.slice(home.length)}`
+}
+
 export function displayPath(path: string): string {
   if (!path) return ""
   const absolute = resolveFilePath(path)

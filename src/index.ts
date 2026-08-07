@@ -10,7 +10,14 @@ const ctx: CliContext = {
   },
 }
 
-async function main(args: string[]): Promise<void> {
+function normalize(args: string[]): string[] {
+  const first = args[0]
+  if (first === "-c" || first === "--continue") return ["resume", ...args.slice(1)]
+  return args
+}
+
+async function main(input: string[]): Promise<void> {
+  const args = normalize(input)
   const settings = await loadSettings()
   const plugins = await registerPlugins(settings)
 

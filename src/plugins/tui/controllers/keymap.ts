@@ -43,7 +43,17 @@ export function bindKeys(renderer: CliRenderer, deps: KeymapDeps): void {
       screen.scrollback.toggleExpanded()
       return
     }
+    if (key.ctrl && key.name === "u" && !screen.overlayVisible) {
+      key.preventDefault()
+      screen.composer.setValue("")
+      return
+    }
     if (screen.permission.handleKey(key.name)) {
+      key.preventDefault()
+      screen.syncFooter()
+      return
+    }
+    if (screen.picker.handleKey(key.name)) {
       key.preventDefault()
       screen.syncFooter()
       return
@@ -51,6 +61,10 @@ export function bindKeys(renderer: CliRenderer, deps: KeymapDeps): void {
     if (key.shift && key.name === "tab") {
       key.preventDefault()
       session.setMode(nextPermissionMode(session.currentMode))
+      return
+    }
+    if (screen.palette.handleKey(key.name)) {
+      key.preventDefault()
       return
     }
     if (key.name === "escape" && session.currentState !== "idle") session.interrupt()

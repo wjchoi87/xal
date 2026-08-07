@@ -1,4 +1,4 @@
-# Agent Harnes
+# Tack
 
 A terminal coding harness: an agentic TUI that integrates with AI providers to do real development work in your project. Built in small working increments — `0.0.x` releases grow feature by feature until `0.1.0`, which is **v0, the beta**.
 
@@ -45,11 +45,11 @@ sequenceDiagram
 
 ### CLI
 
-`src/cli` owns the entry-point surface: `runCli(args, ctx)` dispatches, and the registry is seeded with the built-in roots (`connect`, `models`, `ask`) so they exist the moment the module is imported — no bootstrap step, no ordering rule against plugin registration. A root without a `run` is a namespace that only prints its subcommands; plugins fill it in through `ctx.registerCli(cli, parent)`, so the ChatGPT plugin is what makes `agent connect chatgpt` and `agent models chatgpt` exist. Registering under a parent that does not exist fails the plugin, not the process.
+`src/cli` owns the entry-point surface: `runCli(args, ctx)` dispatches, and the registry is seeded with the built-in roots (`connect`, `models`, `ask`) so they exist the moment the module is imported — no bootstrap step, no ordering rule against plugin registration. A root without a `run` is a namespace that only prints its subcommands; plugins fill it in through `ctx.registerCli(cli, parent)`, and registering under a parent that does not exist fails the plugin, not the process. Providers are not wired this way: `connect` and `models` resolve any registered provider through `providers/catalog`, so `tack connect chatgpt` and `tack models chatgpt` work because the ChatGPT plugin calls `ctx.registerProvider` — never `ctx.registerCli`.
 
 ### Plugins
 
-A plugin is a folder with a `plugin.ts` default-exporting the contract in `src/plugins/types.ts`; its `register(ctx)` introduces contributions through the per-module registries. Built-ins (`src/plugins/builtins.ts`) register first, then external plugins from `~/.config/agent/config.json` in order; later plugins can extend or replace anything. A failing plugin is skipped and reported, never fatal.
+A plugin is a folder with a `plugin.ts` default-exporting the contract in `src/plugins/types.ts`; its `register(ctx)` introduces contributions through the per-module registries. Built-ins (`src/plugins/builtins.ts`) register first, then external plugins from `~/.tack/config.json` in order; later plugins can extend or replace anything. A failing plugin is skipped and reported, never fatal.
 
 ```mermaid
 sequenceDiagram
@@ -59,7 +59,7 @@ sequenceDiagram
     participant P as each Plugin (builtins first, then config order)
     participant Reg as per-module registries
 
-    User->>Entry: agent [command]
+    User->>Entry: tack [command]
     Entry->>Entry: loadSettings()
     Entry->>Discover: registerPlugins(settings)
     loop builtinPlugins, then settings.plugins
@@ -77,7 +77,7 @@ sequenceDiagram
 ### Principles
 
 - Customizable and Extensible by supporting plugins
-- Plugins must not rely on eachother. This will make a circular dependencies.
+- Plugins must not rely on eachother. This will make a circular dependencies and this is a hard violation.
 
 ## Conventions
 

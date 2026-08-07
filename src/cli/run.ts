@@ -1,4 +1,5 @@
 import { appInfo } from "../app-info"
+import { describeError } from "../lib/error"
 import { printCliHelp, printHelp } from "./help"
 import { resolveCli } from "./registry"
 import type { CliContext } from "./types"
@@ -32,7 +33,7 @@ export async function runCli(args: string[], ctx: CliContext): Promise<void> {
   try {
     await resolved.cli.run(resolved.args, ctx)
   } catch (error) {
-    ctx.print(error instanceof Error ? error.message : String(error))
+    ctx.print(describeError(error))
     process.exit(1)
   }
 }

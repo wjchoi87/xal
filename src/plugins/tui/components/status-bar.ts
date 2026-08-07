@@ -43,7 +43,7 @@ export class StatusBar {
 
   constructor(
     ctx: RenderContext,
-    private readonly model: string,
+    private model: string,
     private mode: PermissionMode,
   ) {
     this.view = row(ctx, { height: STATUS_ROWS, paddingLeft: 2, paddingRight: 2 })
@@ -68,6 +68,11 @@ export class StatusBar {
   setMode(mode: PermissionMode): void {
     this.mode = mode
     this.renderMode()
+  }
+
+  setModel(model: string): void {
+    this.model = model
+    this.renderMeta()
   }
 
   private renderMode(): void {
@@ -105,11 +110,23 @@ export class StatusBar {
     return this.state === "streaming" || this.state === "running_tool"
   }
 
+  resetUsage(): void {
+    this.inputTokens = 0
+    this.outputTokens = 0
+    this.renderMeta()
+  }
+
   setUsage(usage: Usage | undefined): void {
     if (!usage) return
     this.inputTokens += usage.inputTokens ?? 0
     this.outputTokens += usage.outputTokens ?? 0
-    this.meta.content = `${this.model} · ↑${formatTokens(this.inputTokens)} ↓${formatTokens(this.outputTokens)}`
+    this.renderMeta()
+  }
+
+  private renderMeta(): void {
+    const used = this.inputTokens + this.outputTokens > 0
+    const tokens = used ? ` · ↑${formatTokens(this.inputTokens)} ↓${formatTokens(this.outputTokens)}` : ""
+    this.meta.content = `${this.model}${tokens}`
   }
 
   private toggleSpinner(active: boolean): void {

@@ -8,6 +8,9 @@ export class AgentEventController {
     const { scrollback, live, statusBar } = this.screen
 
     switch (event.type) {
+      case "session_started":
+        this.screen.startSession(event.model, event.mode)
+        break
       case "state_changed":
         statusBar.setState(event.state)
         if (event.state !== "idle") break
@@ -26,8 +29,18 @@ export class AgentEventController {
         break
       case "reasoning_delta":
         break
+      case "assistant_message":
+        if (!scrollback.endStream()) scrollback.append({ kind: "text", text: event.text })
+        break
+      case "reasoning_summary":
+        if (!scrollback.endStream()) scrollback.append({ kind: "reasoning", text: event.text })
+        break
       case "mode_changed":
         statusBar.setMode(event.mode)
+        break
+      case "model_changed":
+        statusBar.setModel(event.model)
+        scrollback.append({ kind: "info", text: `model: ${event.model} · ${event.provider}` })
         break
       case "approval_requested":
         live.request(event.callId, event.tool, event.title, event.readOnly)
@@ -46,7 +59,7 @@ export class AgentEventController {
           kind: "tool",
           tool: event.tool,
           title: event.title,
-          readOnly: finished?.readOnly ?? false,
+          readOnly: event.readOnly,
           denial: event.denial,
           output: event.output,
           elapsed: finished?.elapsed,

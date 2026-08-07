@@ -1,6 +1,7 @@
+import { mkdir } from "node:fs/promises"
 import { join } from "node:path"
 import { asString, isRecord } from "../lib/json"
-import { configDir } from "./paths"
+import { agentHome } from "./paths"
 
 export interface Settings {
   plugins: string[]
@@ -13,7 +14,7 @@ export interface Settings {
 let current: Settings = { plugins: [], pluginConfig: {} }
 
 export function settingsPath(): string {
-  return join(configDir(), "config.json")
+  return join(agentHome(), "config.json")
 }
 
 export function settings(): Settings {
@@ -23,6 +24,20 @@ export function settings(): Settings {
 export async function loadSettings(): Promise<Settings> {
   current = await readSettings()
   return current
+}
+
+export async function saveSettings(patch: Partial<Settings>): Promise<void> {
+  let raw: Record<string, unknown> = {}
+  const file = Bun.file(settingsPath())
+  if (await file.exists()) {
+    try {
+      const parsed: unknown = await file.json()
+      if (isRecord(parsed)) raw = parsed
+    } catch {}
+  }
+  await mkdir(agentHome(), { recursive: true })
+  await Bun.write(settingsPath(), JSON.stringify({ ...raw, ...patch }, null, 2) + "\n")
+  current = { ...current, ...patch }
 }
 
 async function readSettings(): Promise<Settings> {

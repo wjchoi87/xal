@@ -1,6 +1,12 @@
+import type { SessionSummary } from "../sessions/types"
+
+export interface UiOptions {
+  resume?: SessionSummary
+}
+
 export interface Ui {
   id: string
-  start(): Promise<void>
+  start(options?: UiOptions): Promise<void>
 }
 
 const uis = new Map<string, Ui>()

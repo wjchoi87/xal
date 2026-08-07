@@ -1,16 +1,27 @@
 import { homedir } from "node:os"
 import { join } from "node:path"
-import { appInfo } from "../app-info"
+import { appEnvVar, appInfo } from "../app-info"
 
-export function configDir(): string {
-  const base = process.env.XDG_CONFIG_HOME?.trim() || join(homedir(), ".config")
-  return join(base, appInfo.name)
+export function agentHome(): string {
+  return process.env[appEnvVar("HOME")]?.trim() || join(homedir(), `.${appInfo.name}`)
 }
 
 export function credentialsPath(): string {
-  return join(configDir(), "credentials.json")
+  return join(agentHome(), "credentials.json")
 }
 
 export function cacheDir(): string {
-  return join(configDir(), "cache")
+  return join(agentHome(), "cache")
+}
+
+export function sessionsDir(): string {
+  return join(agentHome(), "sessions")
+}
+
+export function projectSlug(cwd: string): string {
+  return cwd.replace(/[^a-zA-Z0-9]+/g, "-")
+}
+
+export function projectSessionsDir(cwd: string): string {
+  return join(sessionsDir(), projectSlug(cwd))
 }

@@ -1,6 +1,6 @@
 import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
-import { configDir } from "../config/paths"
+import { agentHome } from "../config/paths"
 import { asStringArray, isRecord } from "../lib/json"
 
 interface StoreFile {
@@ -11,7 +11,7 @@ interface StoreFile {
 const emptyFile = (): StoreFile => ({ version: 1, projects: {} })
 
 function permissionsPath(): string {
-  return join(configDir(), "permissions.json")
+  return join(agentHome(), "permissions.json")
 }
 
 async function loadFile(): Promise<StoreFile> {

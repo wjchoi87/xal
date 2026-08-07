@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { join } from "node:path"
-import { appInfo } from "../../app-info"
+import { appEnvVar } from "../../app-info"
 import { cacheDir } from "../../config/paths"
 import { asBoolean, asNumber, asString, isRecord } from "../../lib/json"
 import type { ModelInfo } from "../../providers/types"
@@ -111,12 +111,8 @@ export async function listModels(): Promise<ModelInfo[]> {
   }))
 }
 
-function modelOverrideEnvVar(): string {
-  return appInfo.name.toUpperCase().replace(/[^A-Z0-9]/g, "_") + "_MODEL"
-}
-
 export async function defaultModel(): Promise<string> {
-  const override = process.env[modelOverrideEnvVar()]?.trim()
+  const override = process.env[appEnvVar("MODEL")]?.trim()
   if (override) return override
   return BACKEND_MODEL_IDS[0]!
 }

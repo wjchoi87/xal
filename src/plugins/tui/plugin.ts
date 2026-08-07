@@ -6,7 +6,7 @@ const plugin: Plugin = {
     const events = ctx.events
     ctx.registerUi({
       id: "tui",
-      start: async () => (await import("./app")).startTui(events),
+      start: async (options) => (await import("./app")).startTui(events, options),
     })
   },
 }

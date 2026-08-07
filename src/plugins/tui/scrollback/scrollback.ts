@@ -16,8 +16,20 @@ export class Scrollback {
   private readonly blocks: Block[] = []
   private stream: Stream | undefined
   private expanded = false
+  private committed = 0
+  private origin: number
 
-  constructor(private readonly renderer: CliRenderer) {}
+  constructor(
+    private readonly renderer: CliRenderer,
+    startRow: number,
+    private readonly onCommit: (rows: number) => void,
+  ) {
+    this.origin = startRow
+  }
+
+  get rows(): number {
+    return this.origin + this.committed
+  }
 
   append(block: Block): void {
     this.endStream()
@@ -35,13 +47,22 @@ export class Scrollback {
     this.flush(stream, false)
   }
 
-  endStream(): void {
+  endStream(): boolean {
     const stream = this.stream
-    if (!stream) return
+    if (!stream) return false
     this.stream = undefined
-    if (stream.block.text.length > 0) this.flush(stream, true)
+    const flushed = stream.block.text.length > 0
+    if (flushed) this.flush(stream, true)
     else this.drop(stream.block)
     stream.surface.destroy()
+    return flushed
+  }
+
+  clear(): void {
+    this.endStream()
+    this.blocks.length = 0
+    this.reset()
+    this.renderer.resetSplitFooterForReplay({ clearSavedLines: true })
   }
 
   toggleExpanded(): void {
@@ -56,6 +77,7 @@ export class Scrollback {
       this.stream = undefined
     }
     this.renderer.resetSplitFooterForReplay({ clearSavedLines: true })
+    this.reset()
     for (const block of this.blocks) {
       if (block === streaming?.block) continue
       this.emit(block)
@@ -63,6 +85,11 @@ export class Scrollback {
     if (!streaming) return
     this.stream = this.openStream(streaming.block)
     this.flush(this.stream, false)
+  }
+
+  private reset(): void {
+    this.origin = 0
+    this.committed = 0
   }
 
   private drop(block: Block): void {
@@ -90,7 +117,10 @@ export class Scrollback {
     stream.surface.render()
     const target = final ? stream.surface.height : stream.surface.height - 1
     if (target <= stream.committed) return
+    const rows = target - stream.committed
+    this.onCommit(rows)
     stream.surface.commitRows(stream.committed, target)
+    this.committed += rows
     stream.committed = target
   }
 
@@ -99,7 +129,9 @@ export class Scrollback {
     try {
       surface.root.add(renderBlock(surface.renderContext, block, this.expanded))
       surface.render()
+      this.onCommit(surface.height)
       surface.commitRows(0, surface.height)
+      this.committed += surface.height
     } finally {
       surface.destroy()
     }

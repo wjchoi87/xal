@@ -22,9 +22,3 @@ export function formatTokens(tokens: number): string {
   if (tokens < 10_000) return `${(tokens / 1000).toFixed(1)}k`
   return `${Math.round(tokens / 1000)}k`
 }
-
-export function compactPath(path: string): string {
-  const home = process.env.HOME
-  if (!home || (path !== home && !path.startsWith(`${home}/`))) return path
-  return `~${path.slice(home.length)}`
-}

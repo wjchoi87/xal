@@ -36,11 +36,17 @@ export interface StreamRequest {
   signal?: AbortSignal
 }
 
+export interface ConnectContext {
+  print(line: string): void
+  ask?(question: string): Promise<string>
+}
+
 export interface Provider {
   id: string
   name: string
   aliases: string[]
   isLoggedIn(): Promise<boolean>
+  connect?(ctx: ConnectContext): Promise<void>
   listModels(): Promise<ModelInfo[]>
   defaultModel(): Promise<string>
   stream(request: StreamRequest): AsyncIterable<StreamEvent>

@@ -1,8 +1,10 @@
 import { registerPrompt, registerPromptFull } from "../agent/prompt"
 import { registerCli } from "../cli/registry"
-import { configDir } from "../config/paths"
+import { registerCommand } from "../commands/registry"
+import { agentHome } from "../config/paths"
 import type { Settings } from "../config/settings"
 import { events, type PluginFailure, type PluginStatus } from "../events"
+import { describeError } from "../lib/error"
 import { contributeRules } from "../permissions/rules"
 import { registerPolicyRule } from "../permissions/service"
 import { registerProvider } from "../providers/registry"
@@ -29,6 +31,7 @@ function contextFor(plugin: Plugin, settings: Settings): PluginContext {
     registerTool,
     registerProvider,
     registerCli,
+    registerCommand,
     registerPrompt,
     registerPromptFull,
     registerPolicyRule,
@@ -37,10 +40,6 @@ function contextFor(plugin: Plugin, settings: Settings): PluginContext {
     registerToolRenderer,
     setTheme,
   }
-}
-
-function describeError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }
 
 function registerPlugin(plugin: Plugin, settings: Settings): RegisteredPlugin {
@@ -64,7 +63,7 @@ export async function registerPlugins(settings: Settings): Promise<PluginStatus>
 
   for (const spec of settings.plugins) {
     try {
-      const plugin = await importPlugin(spec, configDir())
+      const plugin = await importPlugin(spec, agentHome())
       registered.push(registerPlugin(plugin, settings))
     } catch (error) {
       failures.push({ plugin: spec, phase: "register", reason: describeError(error) })
