@@ -45,7 +45,7 @@ export function inputColors(): {
     placeholderColor: resolveColor(COLORS.faint),
     selectionBg: colorsEnabled ? COLORS.selection : COLORS.foreground,
     selectionFg: COLORS.background,
-    cursorColor: COLORS.foreground,
+    cursorColor: COLORS.border,
   }
 }
 

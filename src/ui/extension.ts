@@ -13,7 +13,6 @@ export interface ToolRenderer {
 export interface ThemeColors {
   foreground: RGBA
   background: RGBA
-  userBackground: RGBA
   dim: RGBA
   faint: RGBA
   accent: RGBA

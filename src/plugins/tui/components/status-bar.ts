@@ -1,7 +1,6 @@
 import {
   RenderableEvents,
   StyledText,
-  TextAttributes,
   type BoxRenderable,
   type RenderContext,
   type RGBA,
@@ -53,7 +52,6 @@ export class StatusBar {
       content: model,
       flexShrink: 0,
       marginLeft: 1,
-      attributes: TextAttributes.DIM,
       color: COLORS.faint,
     })
     this.view.add(this.activity)

@@ -4,8 +4,7 @@ import { themeOverrides, type ThemeColors } from "../../../ui/extension"
 export const COLORS: ThemeColors = {
   foreground: RGBA.defaultForeground(),
   background: RGBA.defaultBackground(),
-  userBackground: RGBA.fromIndex(8),
-  dim: RGBA.fromIndex(8),
+  dim: RGBA.fromIndex(0),
   faint: RGBA.fromIndex(8),
   accent: RGBA.fromIndex(12),
   agent: RGBA.fromIndex(13),

@@ -75,15 +75,15 @@ function banner(ctx: RenderContext, block: BannerBlock): Renderable {
 }
 
 function bubble(ctx: RenderContext, block: UserBlock): Renderable {
-  const box = row(ctx, { alignItems: "flex-start", padding: 1, ...background(COLORS.userBackground) })
-  box.add(paragraph(ctx, { content: block.text, flexGrow: 1, background: COLORS.userBackground }))
+  const box = row(ctx, { alignItems: "flex-start", padding: 1, ...background(COLORS.dim) })
+  box.add(paragraph(ctx, { content: block.text, flexGrow: 1, background: COLORS.dim }))
   box.add(
     label(ctx, {
       content: formatTimestamp(block.sentAt),
       flexShrink: 0,
       marginLeft: 2,
       attributes: TextAttributes.DIM,
-      background: COLORS.userBackground,
+      background: COLORS.dim,
     }),
   )
   return box
