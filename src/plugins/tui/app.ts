@@ -33,6 +33,7 @@ export async function startTui(events: EventService, options: UiOptions = {}): P
     clearOnShutdown: false,
     screenMode: "split-footer",
     footerHeight: COMPOSER_ROWS + STATUS_ROWS,
+    useKittyKeyboard: { allKeysAsEscapes: true, reportText: true },
     backgroundColor: COLORS.background,
     onDestroy() {
       process.off("exit", restoreTerminal)
@@ -42,9 +43,9 @@ export async function startTui(events: EventService, options: UiOptions = {}): P
   process.on("exit", restoreTerminal)
   renderer.setTerminalTitle(`${appInfo.name} — ${compactPath(process.cwd())}`)
 
-  const input = new InputQueue((text) => session.send(text))
+  const input = new InputQueue((submission) => session.send(submission))
   const screen = new Screen(renderer, session, startRow, {
-    submit: (text) => input.submit(text),
+    submit: (submission) => input.submit(submission),
     approve: (scope, pattern) => session.approve(scope, pattern),
     deny: () => session.deny(),
     cancel: () => session.interrupt(),
@@ -74,12 +75,17 @@ export async function startTui(events: EventService, options: UiOptions = {}): P
   screen.view.on(RenderableEvents.DESTROYED, unsubscribe)
 
   let lastWidth = renderer.terminalWidth
+  let lastHeight = renderer.terminalHeight
   let replayTimer: ReturnType<typeof setTimeout> | undefined
   renderer.on(CliRenderEvents.RESIZE, () => {
-    if (renderer.terminalWidth === lastWidth) return
+    if (renderer.terminalWidth === lastWidth && renderer.terminalHeight === lastHeight) return
     lastWidth = renderer.terminalWidth
+    lastHeight = renderer.terminalHeight
     clearTimeout(replayTimer)
-    replayTimer = setTimeout(() => screen.scrollback.replay(), RESIZE_DEBOUNCE_MS)
+    replayTimer = setTimeout(() => {
+      screen.composer.reflow()
+      screen.scrollback.replay()
+    }, RESIZE_DEBOUNCE_MS)
   })
 
   const quit = (): void => {

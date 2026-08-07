@@ -48,7 +48,15 @@ export function buildMessages(instructions: string, items: ConversationItem[]): 
     switch (item.type) {
       case "user_message":
         flushAssistant()
-        messages.push({ role: "user", content: item.text })
+        messages.push({
+          role: "user",
+          content:
+            item.images.length === 0
+              ? item.text
+              : [item.text, `[${item.images.length} image attachment${item.images.length === 1 ? "" : "s"} omitted]`]
+                  .filter(Boolean)
+                  .join("\n\n"),
+        })
         break
       case "assistant_message":
         currentAssistant().content = item.text

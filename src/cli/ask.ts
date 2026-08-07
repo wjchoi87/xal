@@ -80,7 +80,7 @@ export const askCli: Cli = {
             break
         }
       })
-      session.send(text)
+      session.send({ text, images: [] })
     })
     ctx.print("")
   },

@@ -8,10 +8,11 @@ import { prepareConversation } from "../providers/conversation"
 import { ProviderError } from "../providers/errors"
 import type {
   ConversationItem,
-  Provider,
   ProviderOutputItem,
+  Provider,
   ThinkingEffort,
   ToolCallItem,
+  UserInput,
   Usage,
 } from "../providers/types"
 import { SessionRecorder } from "../sessions/recorder"
@@ -224,10 +225,14 @@ export class AgentSession {
     return () => this.listeners.delete(listener)
   }
 
-  send(text: string): boolean {
+  send(input: UserInput): boolean {
     if (this.state !== "idle") return false
-    this.pushItem({ type: "user_message", text })
-    this.emit({ type: "user_message", text, sentAt: Date.now() })
+    if (input.images.length > 0 && !this.provider.capabilities.imageInput) {
+      this.emit({ type: "error", message: `${this.provider.name} does not support image input` })
+      return false
+    }
+    this.pushItem({ type: "user_message", ...input })
+    this.emit({ type: "user_message", text: input.text, imageCount: input.images.length, sentAt: Date.now() })
     const controller = new AbortController()
     const provider = this.provider
     const model = this.model

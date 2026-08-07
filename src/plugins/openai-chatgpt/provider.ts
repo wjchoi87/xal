@@ -7,6 +7,7 @@ export const openaiChatgptProvider: Provider = {
   id: PROVIDER_ID,
   name: "OpenAI (ChatGPT subscription)",
   aliases: ["chatgpt"],
+  capabilities: { imageInput: true },
   isLoggedIn,
   connect: login,
   listModels,

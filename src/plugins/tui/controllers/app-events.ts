@@ -1,15 +1,16 @@
 import type { AppEvent, PluginFailure } from "../../../events"
+import type { UserInput } from "../../../providers/types"
 import type { Screen } from "../screen"
 
 export class InputQueue {
   private ready = false
-  private pending: string | undefined
+  private pending: UserInput | undefined
 
-  constructor(private readonly send: (text: string) => boolean) {}
+  constructor(private readonly send: (input: UserInput) => boolean) {}
 
-  submit(text: string): boolean {
-    if (this.ready) return this.send(text)
-    this.pending = text
+  submit(input: UserInput): boolean {
+    if (this.ready) return this.send(input)
+    this.pending = input
     return true
   }
 

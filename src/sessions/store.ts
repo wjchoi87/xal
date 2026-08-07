@@ -1,5 +1,7 @@
+import { createReadStream } from "node:fs"
 import { readdir } from "node:fs/promises"
 import { join } from "node:path"
+import { createInterface } from "node:readline"
 import type { AgentEvent } from "../agent/events"
 import { projectSessionsDir, sessionsDir } from "../config/paths"
 import type { ConversationItem } from "../providers/types"
@@ -32,28 +34,26 @@ async function projectDirs(): Promise<string[]> {
 }
 
 async function summarize(path: string): Promise<SessionSummary | undefined> {
-  let text: string
-  try {
-    text = await Bun.file(path).text()
-  } catch {
-    return undefined
-  }
-
   let meta: SessionMeta | undefined
   let heading = ""
   let messages = 0
+  const lines = createInterface({ input: createReadStream(path, { encoding: "utf8" }), crlfDelay: Infinity })
 
-  for (const line of text.split("\n")) {
-    if (!line) continue
-    const record = parseRecord(line)
-    if (!record) continue
-    if (record.type === "meta") {
-      meta = record.meta
-      continue
+  try {
+    for await (const line of lines) {
+      if (!line || line.startsWith('{"type":"item"')) continue
+      const record = parseRecord(line)
+      if (!record) continue
+      if (record.type === "meta") {
+        meta = record.meta
+        continue
+      }
+      if (record.type !== "event" || record.event.type !== "user_message") continue
+      messages++
+      if (!heading) heading = title(record.event.text) || (record.event.imageCount > 0 ? `[Image #1]` : "")
     }
-    if (record.type !== "event" || record.event.type !== "user_message") continue
-    messages++
-    if (!heading) heading = title(record.event.text)
+  } catch {
+    return undefined
   }
 
   if (!meta || messages === 0) return undefined
@@ -95,8 +95,12 @@ export async function loadSession(path: string): Promise<LoadedSession | undefin
 export async function listSessions(cwd?: string): Promise<SessionSummary[]> {
   const dirs = cwd === undefined ? await projectDirs() : [projectSessionsDir(cwd)]
   const files = (await Promise.all(dirs.map(sessionFiles))).flat()
-  const summaries = await Promise.all(files.map(summarize))
-  return summaries.flatMap((summary) => (summary ? [summary] : [])).sort((a, b) => b.updatedAt - a.updatedAt)
+  const summaries: SessionSummary[] = []
+  for (const file of files) {
+    const summary = await summarize(file)
+    if (summary) summaries.push(summary)
+  }
+  return summaries.sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
 export async function latestSession(cwd: string): Promise<SessionSummary | undefined> {

@@ -5,9 +5,9 @@ import type { CommandContext, SelectRequest } from "../../commands/types"
 import { describeError } from "../../lib/error"
 import { compactPath } from "../../lib/path"
 import type { PermissionMode } from "../../permissions/types"
-import type { ThinkingEffort } from "../../providers/types"
+import type { ThinkingEffort, UserInput } from "../../providers/types"
 import { CommandPalette, PALETTE_CHROME_ROWS } from "./components/command-palette"
-import { Composer, COMPOSER_ROWS } from "./components/composer"
+import { Composer } from "./components/composer"
 import { LiveTools } from "./components/live-tools"
 import { Picker } from "./components/picker"
 import { PermissionPopover, type PermissionPopoverActions } from "./components/permission-popover"
@@ -17,7 +17,7 @@ import { column } from "./lib/renderables"
 import { Scrollback } from "./scrollback/scrollback"
 
 export interface ScreenActions extends PermissionPopoverActions {
-  submit(text: string): boolean
+  submit(input: UserInput): boolean
 }
 
 const SCROLLBACK_GAP_ROWS = 1
@@ -57,12 +57,22 @@ export class Screen {
       () => this.syncFooter(),
     )
     this.composer = new Composer(renderer, {
-      submit: (text) => actions.submit(text),
+      submit: (input) => {
+        if (input.images.length === 0 || this.session.currentProvider.capabilities.imageInput) {
+          return actions.submit(input)
+        }
+        this.scrollback.append({
+          kind: "error",
+          text: `${this.session.currentProvider.name} does not support image input`,
+        })
+        return false
+      },
       run: (line) => this.runCommand(line),
       change: (value) => {
         this.placePalette()
         this.palette.update(value, this.paletteLimit())
       },
+      resize: () => this.syncFooter(),
     })
     this.statusBar = new StatusBar(renderer, session.currentModel, session.currentThinking, session.currentMode)
 
@@ -129,7 +139,7 @@ export class Screen {
     const paletteRows = this.palette.visible ? this.palette.height : 0
     if (this.paletteBelow || overlaid) this.reserved = 0
     else this.reserved = Math.max(this.reserved, paletteRows)
-    const editing = COMPOSER_ROWS + Math.max(paletteRows, this.reserved)
+    const editing = this.composer.rows + Math.max(paletteRows, this.reserved)
     const overlayRows = this.permission.visible
       ? this.permission.height
       : this.secret.visible
@@ -145,7 +155,7 @@ export class Screen {
   }
 
   private closedFooterRows(): number {
-    return this.live.height + COMPOSER_ROWS + STATUS_ROWS
+    return this.live.height + this.composer.rows + STATUS_ROWS
   }
 
   private spaceBelowFooter(): number {

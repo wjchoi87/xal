@@ -1,7 +1,7 @@
 import type { AgentEvent, DenialCause } from "../agent/events"
 import { asBoolean, asNumber, asString, isJsonObject, isRecord } from "../lib/json"
 import { isPermissionMode } from "../permissions/types"
-import type { ConversationItem, ProviderReplay, ThinkingEffort, Usage } from "../providers/types"
+import type { ConversationItem, ImageInput, ProviderReplay, ThinkingEffort, Usage } from "../providers/types"
 import type { SessionMeta, SessionRecord } from "./types"
 
 export function isPersistable(event: AgentEvent): boolean {
@@ -46,7 +46,12 @@ function parseEvent(raw: unknown): AgentEvent | undefined {
     case "user_message": {
       const text = asString(raw.text)
       if (text === undefined) return undefined
-      return { type: "user_message", text, sentAt: asNumber(raw.sentAt) ?? 0 }
+      return {
+        type: "user_message",
+        text,
+        imageCount: asNumber(raw.imageCount) ?? 0,
+        sentAt: asNumber(raw.sentAt) ?? 0,
+      }
     }
     case "assistant_message": {
       const text = asString(raw.text)
@@ -136,13 +141,33 @@ function replay(raw: Record<string, unknown>): ProviderReplay | undefined | fals
   return parseReplay(raw.replay) ?? false
 }
 
+function parseImage(raw: unknown): ImageInput | undefined {
+  if (!isRecord(raw)) return undefined
+  const mediaType = asString(raw.mediaType)
+  const data = asString(raw.data)
+  if ((mediaType !== "image/png" && mediaType !== "image/jpeg") || !data) return undefined
+  if (data.length % 4 !== 0 || !/^[a-zA-Z0-9+/]+={0,2}$/.test(data)) return undefined
+  return { mediaType, data }
+}
+
+function parseImages(raw: unknown): ImageInput[] | undefined {
+  if (raw === undefined) return []
+  if (!Array.isArray(raw)) return undefined
+  const images = raw.flatMap((image) => {
+    const parsed = parseImage(image)
+    return parsed ? [parsed] : []
+  })
+  return images.length === raw.length ? images : undefined
+}
+
 function parseItem(raw: unknown): ConversationItem | undefined {
   if (!isRecord(raw)) return undefined
 
   switch (asString(raw.type)) {
     case "user_message": {
       const text = asString(raw.text)
-      return text === undefined ? undefined : { type: "user_message", text }
+      const images = parseImages(raw.images)
+      return text === undefined || !images ? undefined : { type: "user_message", text, images }
     }
     case "assistant_message": {
       const text = asString(raw.text)

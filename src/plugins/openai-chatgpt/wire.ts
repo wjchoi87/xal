@@ -124,7 +124,18 @@ export function buildInput(items: ConversationItem[], target: ConversationTarget
   return items.flatMap((item): JsonObject[] => {
     switch (item.type) {
       case "user_message":
-        return [{ role: "user", content: [{ type: "input_text", text: item.text }] }]
+        return [
+          {
+            role: "user",
+            content: [
+              ...(item.text ? [{ type: "input_text", text: item.text }] : []),
+              ...item.images.map((image) => ({
+                type: "input_image",
+                image_url: `data:${image.mediaType};base64,${image.data}`,
+              })),
+            ],
+          },
+        ]
       case "assistant_message":
         return [
           replayData(item, target) ?? {

@@ -6,9 +6,18 @@ export interface ProviderReplay {
   data: JsonObject
 }
 
-export interface UserMessageItem {
-  type: "user_message"
+export interface ImageInput {
+  mediaType: "image/png" | "image/jpeg"
+  data: string
+}
+
+export interface UserInput {
   text: string
+  images: ImageInput[]
+}
+
+export interface UserMessageItem extends UserInput {
+  type: "user_message"
 }
 
 export interface AssistantMessageItem {
@@ -98,6 +107,7 @@ export interface Provider {
   id: string
   name: string
   aliases: string[]
+  capabilities: { imageInput: boolean }
   isLoggedIn(): Promise<boolean>
   connect?(ctx: ConnectContext): Promise<boolean>
   listModels(): Promise<ModelInfo[]>

@@ -9,6 +9,7 @@ export interface BannerBlock {
 export interface UserBlock {
   kind: "user"
   text: string
+  imageCount: number
   sentAt: number
 }
 

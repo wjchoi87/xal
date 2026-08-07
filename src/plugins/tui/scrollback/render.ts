@@ -76,7 +76,14 @@ function banner(ctx: RenderContext, block: BannerBlock): Renderable {
 
 function bubble(ctx: RenderContext, block: UserBlock): Renderable {
   const box = row(ctx, { alignItems: "flex-start", padding: 1, ...background(COLORS.dim) })
-  box.add(paragraph(ctx, { content: block.text, flexGrow: 1, background: COLORS.dim }))
+  const images = Array.from({ length: block.imageCount }, (_, index) => `[Image #${index + 1}]`).join(" ")
+  box.add(
+    paragraph(ctx, {
+      content: [block.text, images].filter(Boolean).join("\n"),
+      flexGrow: 1,
+      background: COLORS.dim,
+    }),
+  )
   box.add(
     label(ctx, {
       content: formatTimestamp(block.sentAt),

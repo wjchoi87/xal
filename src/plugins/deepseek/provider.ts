@@ -8,6 +8,7 @@ export const deepSeekProvider: Provider = {
   id: PROVIDER_ID,
   name: "DeepSeek",
   aliases: [],
+  capabilities: { imageInput: false },
   isLoggedIn,
   connect,
   listModels,

@@ -89,6 +89,8 @@ sequenceDiagram
 - No tests.
 - Write simple and readable code and avoid extra complexity.
 - If a constant will be used only one time, Do not overengineer to make it `const`. this reduces the code readability.
+- Do not re-invent the wheel. use existing solutions.
+- Do not patch symptoms. Fix the root cause.
 
 ## Linting & Formatting
 

@@ -18,7 +18,7 @@ export type AgentEvent =
   | { type: "mode_changed"; mode: PermissionMode }
   | { type: "model_changed"; provider: string; model: string }
   | { type: "thinking_changed"; thinking?: ThinkingEffort }
-  | { type: "user_message"; text: string; sentAt: number }
+  | { type: "user_message"; text: string; imageCount: number; sentAt: number }
   | { type: "text_delta"; text: string }
   | { type: "reasoning_summary_delta"; text: string }
   | { type: "reasoning_delta"; text: string }

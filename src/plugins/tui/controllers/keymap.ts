@@ -41,12 +41,23 @@ export function bindKeys(renderer: CliRenderer, deps: KeymapDeps): void {
         screen.syncFooter()
         return
       }
+      if (!screen.overlayVisible && screen.composer.clear()) return
       handleInterrupt()
       return
     }
     if (key.ctrl && key.name === "o") {
       key.preventDefault()
       screen.scrollback.toggleExpanded()
+      return
+    }
+    if (key.ctrl && key.name === "v" && !key.repeated && !screen.overlayVisible) {
+      key.preventDefault()
+      screen.statusBar.setNotice("Pasting image…")
+      void screen.composer.pasteImage().then((pasted) => {
+        screen.statusBar.setNotice(pasted ? "Image attached" : "No image found in clipboard")
+        const timer = setTimeout(() => screen.statusBar.clearNotice(), QUIT_WINDOW_MS)
+        timer.unref()
+      })
       return
     }
     if (key.ctrl && key.name === "u" && !screen.overlayVisible) {
@@ -67,6 +78,15 @@ export function bindKeys(renderer: CliRenderer, deps: KeymapDeps): void {
     if (screen.picker.handleKey(key.name)) {
       key.preventDefault()
       screen.syncFooter()
+      return
+    }
+    if (
+      !screen.overlayVisible &&
+      (key.shift || key.meta) &&
+      (key.name === "return" || key.name === "enter" || key.name === "kpenter" || key.name === "linefeed")
+    ) {
+      key.preventDefault()
+      screen.composer.newLine()
       return
     }
     if (key.shift && key.name === "tab") {
