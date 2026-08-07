@@ -1,7 +1,7 @@
 import type { AgentEvent, DenialCause } from "../agent/events"
-import { asBoolean, asNumber, asString, isRecord } from "../lib/json"
+import { asBoolean, asNumber, asString, isJsonObject, isRecord } from "../lib/json"
 import { isPermissionMode } from "../permissions/types"
-import type { Usage } from "../providers/types"
+import type { ConversationItem, ProviderReplay, Usage } from "../providers/types"
 import type { SessionMeta, SessionRecord } from "./types"
 
 export function isPersistable(event: AgentEvent): boolean {
@@ -16,7 +16,12 @@ function parseDenial(value: unknown): DenialCause | undefined {
 
 function parseUsage(value: unknown): Usage | undefined {
   if (!isRecord(value)) return undefined
-  return { inputTokens: asNumber(value.inputTokens), outputTokens: asNumber(value.outputTokens) }
+  return {
+    totalInputTokens: asNumber(value.totalInputTokens),
+    cacheReadInputTokens: asNumber(value.cacheReadInputTokens),
+    cacheWriteInputTokens: asNumber(value.cacheWriteInputTokens),
+    outputTokens: asNumber(value.outputTokens),
+  }
 }
 
 function parseEvent(raw: unknown): AgentEvent | undefined {
@@ -55,7 +60,7 @@ function parseEvent(raw: unknown): AgentEvent | undefined {
       }
     }
     case "turn_ended":
-      return { type: "turn_ended", usage: parseUsage(raw.usage) }
+      return { type: "turn_ended", usage: parseUsage(raw.usage), context: parseUsage(raw.context) }
     case "turn_interrupted":
       return { type: "turn_interrupted" }
     case "mode_changed": {
@@ -81,13 +86,67 @@ function parseEvent(raw: unknown): AgentEvent | undefined {
 
 function parseMeta(raw: unknown): SessionMeta | undefined {
   if (!isRecord(raw)) return undefined
+  if (asNumber(raw.version) !== 1) return undefined
   const id = asString(raw.id)
   const cwd = asString(raw.cwd)
   const provider = asString(raw.provider)
   const model = asString(raw.model)
   const mode = asString(raw.mode)
   if (!id || !cwd || !provider || !model || !mode || !isPermissionMode(mode)) return undefined
-  return { id, cwd, provider, model, mode, startedAt: asNumber(raw.startedAt) ?? 0 }
+  return { version: 1, id, cwd, provider, model, mode, startedAt: asNumber(raw.startedAt) ?? 0 }
+}
+
+function parseReplay(raw: unknown): ProviderReplay | undefined {
+  if (!isRecord(raw)) return undefined
+  const provider = asString(raw.provider)
+  const model = asString(raw.model)
+  if (!provider || !model || !isJsonObject(raw.data)) return undefined
+  return { provider, model, data: raw.data }
+}
+
+function replay(raw: Record<string, unknown>): ProviderReplay | undefined | false {
+  if (raw.replay === undefined) return undefined
+  return parseReplay(raw.replay) ?? false
+}
+
+function parseItem(raw: unknown): ConversationItem | undefined {
+  if (!isRecord(raw)) return undefined
+
+  switch (asString(raw.type)) {
+    case "user_message": {
+      const text = asString(raw.text)
+      return text === undefined ? undefined : { type: "user_message", text }
+    }
+    case "assistant_message": {
+      const text = asString(raw.text)
+      const providerReplay = replay(raw)
+      if (text === undefined || providerReplay === false) return undefined
+      return { type: "assistant_message", text, replay: providerReplay }
+    }
+    case "reasoning": {
+      const summary = asString(raw.summary)
+      const providerReplay = replay(raw)
+      if (summary === undefined || providerReplay === false) return undefined
+      return { type: "reasoning", summary, replay: providerReplay }
+    }
+    case "tool_call": {
+      const callId = asString(raw.callId)
+      const name = asString(raw.name)
+      const providerReplay = replay(raw)
+      if (!callId || !name || !isJsonObject(raw.args) || providerReplay === false) return undefined
+      return { type: "tool_call", callId, name, args: raw.args, replay: providerReplay }
+    }
+    case "tool_result": {
+      const callId = asString(raw.callId)
+      const name = asString(raw.name)
+      const output = asString(raw.output)
+      const isError = asBoolean(raw.isError)
+      if (!callId || !name || output === undefined || isError === undefined) return undefined
+      return { type: "tool_result", callId, name, output, isError }
+    }
+    default:
+      return undefined
+  }
 }
 
 export function parseRecord(line: string): SessionRecord | undefined {
@@ -104,8 +163,10 @@ export function parseRecord(line: string): SessionRecord | undefined {
       const meta = parseMeta(raw.meta)
       return meta ? { type: "meta", meta } : undefined
     }
-    case "item":
-      return isRecord(raw.item) ? { type: "item", item: raw.item } : undefined
+    case "item": {
+      const item = parseItem(raw.item)
+      return item ? { type: "item", item } : undefined
+    }
     case "event": {
       const event = parseEvent(raw.event)
       return event ? { type: "event", event } : undefined

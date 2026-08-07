@@ -37,8 +37,8 @@ export class StatusBar {
   private state: AgentState = "idle"
   private loading: string | undefined
   private notice: string | undefined
-  private inputTokens = 0
-  private outputTokens = 0
+  private contextInputTokens: number | undefined
+  private contextCacheReadInputTokens: number | undefined
 
   constructor(
     ctx: RenderContext,
@@ -58,7 +58,10 @@ export class StatusBar {
     this.view.add(this.meta)
     this.view.add(this.modeLabel)
     this.renderMode()
-    this.view.onSizeChange = () => this.render()
+    this.view.onSizeChange = () => {
+      this.renderMeta()
+      this.render()
+    }
     this.view.on(RenderableEvents.DESTROYED, () => this.spinner.stop())
     this.render()
   }
@@ -109,22 +112,30 @@ export class StatusBar {
   }
 
   resetUsage(): void {
-    this.inputTokens = 0
-    this.outputTokens = 0
+    this.contextInputTokens = undefined
+    this.contextCacheReadInputTokens = undefined
     this.renderMeta()
   }
 
-  setUsage(usage: Usage | undefined): void {
-    if (!usage) return
-    this.inputTokens += usage.inputTokens ?? 0
-    this.outputTokens += usage.outputTokens ?? 0
+  setUsage(context: Usage | undefined): void {
+    if (context) {
+      this.contextInputTokens = context.totalInputTokens
+      this.contextCacheReadInputTokens = context.cacheReadInputTokens
+    }
     this.renderMeta()
   }
 
   private renderMeta(): void {
-    const used = this.inputTokens + this.outputTokens > 0
-    const tokens = used ? ` · ↑${formatTokens(this.inputTokens)} ↓${formatTokens(this.outputTokens)}` : ""
-    this.meta.content = `${this.model}${tokens}`
+    if (this.contextInputTokens === undefined) {
+      this.meta.content = this.model
+      return
+    }
+
+    const cache = this.contextCacheReadInputTokens
+    const hitRate =
+      cache === undefined || this.contextInputTokens === 0 ? undefined : (cache / this.contextInputTokens) * 100
+    const cached = hitRate === undefined ? "" : ` · ${hitRate.toFixed(0)}% cached`
+    this.meta.content = `${this.model} · ctx ${formatTokens(this.contextInputTokens)}${cached}`
   }
 
   private toggleSpinner(active: boolean): void {

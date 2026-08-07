@@ -70,7 +70,7 @@ export class AgentEventController {
         scrollback.append({ kind: "info", text: "Interrupted" })
         break
       case "turn_ended":
-        statusBar.setUsage(event.usage)
+        statusBar.setUsage(event.context)
         break
       case "error":
         scrollback.append({ kind: "error", text: event.message })

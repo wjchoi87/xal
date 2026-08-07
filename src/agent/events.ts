@@ -27,6 +27,6 @@ export type AgentEvent =
       output: string
       denial?: DenialCause
     }
-  | { type: "turn_ended"; usage?: Usage }
+  | { type: "turn_ended"; usage?: Usage; context?: Usage }
   | { type: "turn_interrupted" }
   | { type: "error"; message: string }

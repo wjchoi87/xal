@@ -1,11 +1,12 @@
-import { asNumber, asString, isRecord } from "../../lib/json"
-import type { ConversationItem, Usage } from "../../providers/types"
+import { asNumber, asString, isJsonObject, isRecord, type JsonObject, type JsonValue } from "../../lib/json"
+import type { ConversationItem, ProviderOutputItem, ProviderReplay, Usage } from "../../providers/types"
+import type { ConversationTarget } from "../../providers/conversation"
 
 export type WireSseEvent =
   | { type: "output_text_delta"; delta: string }
   | { type: "reasoning_summary_delta"; delta: string }
   | { type: "reasoning_delta"; delta: string }
-  | { type: "item_done"; item: ConversationItem }
+  | { type: "item_done"; item: JsonObject }
   | { type: "terminal"; usage?: Usage }
   | { type: "failure"; message: string }
 
@@ -31,7 +32,7 @@ export function parseSseEvent(raw: unknown): WireSseEvent | undefined {
       return { type: "reasoning_delta", delta }
     }
     case "response.output_item.done": {
-      if (!isRecord(raw.item)) return undefined
+      if (!isJsonObject(raw.item)) return { type: "failure", message: "response item was not valid JSON" }
       return { type: "item_done", item: raw.item }
     }
     case "response.completed":
@@ -39,9 +40,15 @@ export function parseSseEvent(raw: unknown): WireSseEvent | undefined {
     case "response.incomplete": {
       const usageRaw = isRecord(raw.response) ? raw.response.usage : undefined
       if (!isRecord(usageRaw)) return { type: "terminal" }
+      const inputDetails = isRecord(usageRaw.input_tokens_details) ? usageRaw.input_tokens_details : undefined
       return {
         type: "terminal",
-        usage: { inputTokens: asNumber(usageRaw.input_tokens), outputTokens: asNumber(usageRaw.output_tokens) },
+        usage: {
+          totalInputTokens: asNumber(usageRaw.input_tokens),
+          cacheReadInputTokens: inputDetails ? asNumber(inputDetails.cached_tokens) : undefined,
+          cacheWriteInputTokens: inputDetails ? asNumber(inputDetails.cache_write_tokens) : undefined,
+          outputTokens: asNumber(usageRaw.output_tokens),
+        },
       }
     }
     case "response.failed": {
@@ -58,23 +65,91 @@ export function parseSseEvent(raw: unknown): WireSseEvent | undefined {
   }
 }
 
-export interface WireFunctionCall {
-  callId: string
-  name: string
-  args: Record<string, unknown>
+function replay(item: JsonObject, target: ConversationTarget): ProviderReplay {
+  return { provider: target.provider, model: target.model, data: item }
 }
 
-export function parseFunctionCall(item: ConversationItem): WireFunctionCall | undefined {
-  if (item.type !== "function_call") return undefined
-  const callId = asString(item.call_id)
-  const name = asString(item.name)
-  if (!callId || !name) return undefined
-  let args: Record<string, unknown> = {}
-  try {
-    const parsed: unknown = JSON.parse(asString(item.arguments) ?? "{}")
-    if (isRecord(parsed)) args = parsed
-  } catch {}
-  return { callId, name, args }
+function blockText(value: JsonValue | undefined, type: string): string {
+  if (!Array.isArray(value)) throw new Error("response message content was not an array")
+  return value
+    .flatMap((block) => {
+      if (!isRecord(block) || asString(block.type) !== type) return []
+      const text = asString(block.text)
+      return text === undefined ? [] : [text]
+    })
+    .join("")
+}
+
+export function parseOutputItem(item: JsonObject, target: ConversationTarget): ProviderOutputItem | undefined {
+  switch (asString(item.type)) {
+    case "message": {
+      if (asString(item.role) !== "assistant") throw new Error("response message had an invalid role")
+      return {
+        type: "assistant_message",
+        text: blockText(item.content, "output_text"),
+        replay: replay(item, target),
+      }
+    }
+    case "reasoning":
+      return {
+        type: "reasoning",
+        summary: blockText(item.summary, "summary_text"),
+        replay: replay(item, target),
+      }
+    case "function_call": {
+      const callId = asString(item.call_id)
+      const name = asString(item.name)
+      const argumentsText = asString(item.arguments)
+      if (!callId || !name || argumentsText === undefined) throw new Error("response tool call was incomplete")
+      let args: unknown
+      try {
+        args = JSON.parse(argumentsText)
+      } catch {
+        throw new Error(`response tool call ${name} had invalid JSON arguments`)
+      }
+      if (!isJsonObject(args)) throw new Error(`response tool call ${name} arguments were not an object`)
+      return { type: "tool_call", callId, name, args, replay: replay(item, target) }
+    }
+    default:
+      return undefined
+  }
+}
+
+function replayData(item: { replay?: ProviderReplay }, target: ConversationTarget): JsonObject | undefined {
+  if (item.replay?.provider !== target.provider || item.replay.model !== target.model) return undefined
+  return item.replay.data
+}
+
+export function buildInput(items: ConversationItem[], target: ConversationTarget): JsonObject[] {
+  return items.flatMap((item): JsonObject[] => {
+    switch (item.type) {
+      case "user_message":
+        return [{ role: "user", content: [{ type: "input_text", text: item.text }] }]
+      case "assistant_message":
+        return [
+          replayData(item, target) ?? {
+            type: "message",
+            role: "assistant",
+            content: [{ type: "output_text", text: item.text }],
+          },
+        ]
+      case "reasoning": {
+        const data = replayData(item, target)
+        return data ? [data] : []
+      }
+      case "tool_call":
+        return [
+          replayData(item, target) ?? {
+            type: "function_call",
+            call_id: item.callId,
+            name: item.name,
+            arguments: JSON.stringify(item.args),
+          },
+        ]
+      case "tool_result":
+        return [{ type: "function_call_output", call_id: item.callId, output: item.output }]
+    }
+  })
 }
 
 export interface TokenResponse {

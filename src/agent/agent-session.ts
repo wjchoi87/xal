@@ -4,7 +4,8 @@ import { describeError } from "../lib/error"
 import { rememberRule } from "../permissions/rules"
 import { evaluatePolicy } from "../permissions/service"
 import type { PermissionMode, PermissionScope } from "../permissions/types"
-import type { ConversationItem, Provider, Usage } from "../providers/types"
+import { prepareConversation } from "../providers/conversation"
+import type { ConversationItem, Provider, ProviderOutputItem, ToolCallItem, Usage } from "../providers/types"
 import { SessionRecorder } from "../sessions/recorder"
 import type { LoadedSession, SessionMeta } from "../sessions/types"
 import { getTool, listTools } from "../tools/registry"
@@ -27,12 +28,6 @@ export interface ResumeTarget {
 
 type StreamKind = "assistant" | "reasoning"
 
-interface PendingToolCall {
-  callId: string
-  name: string
-  args: Record<string, unknown>
-}
-
 interface ApprovalResult {
   decision: "allow" | "deny"
   scope?: PermissionScope
@@ -49,6 +44,15 @@ const denialMessages: Record<DenialCause, string> = {
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError"
+}
+
+function addUsage(total: Usage | undefined, usage: Usage): Usage {
+  return {
+    totalInputTokens: (total?.totalInputTokens ?? 0) + (usage.totalInputTokens ?? 0),
+    cacheReadInputTokens: (total?.cacheReadInputTokens ?? 0) + (usage.cacheReadInputTokens ?? 0),
+    cacheWriteInputTokens: (total?.cacheWriteInputTokens ?? 0) + (usage.cacheWriteInputTokens ?? 0),
+    outputTokens: (total?.outputTokens ?? 0) + (usage.outputTokens ?? 0),
+  }
 }
 
 export class AgentSession {
@@ -94,8 +98,15 @@ export class AgentSession {
     return this.provider
   }
 
+  get hasModelOutput(): boolean {
+    return this.items.some(
+      (item) => item.type === "assistant_message" || item.type === "reasoning" || item.type === "tool_call",
+    )
+  }
+
   private meta(): SessionMeta {
     return {
+      version: 1,
       id: this.sessionId,
       cwd: process.cwd(),
       provider: this.provider.id,
@@ -132,11 +143,13 @@ export class AgentSession {
     return true
   }
 
-  setModel(provider: Provider, model: string): void {
-    if (this.provider === provider && this.model === model) return
+  setModel(provider: Provider, model: string): boolean {
+    if (this.state !== "idle") return false
+    if (this.provider === provider && this.model === model) return true
     this.provider = provider
     this.model = model
     this.emit({ type: "model_changed", provider: provider.id, model })
+    return true
   }
 
   setMode(mode: PermissionMode): void {
@@ -152,11 +165,13 @@ export class AgentSession {
 
   send(text: string): boolean {
     if (this.state !== "idle") return false
-    this.pushItem({ role: "user", content: [{ type: "input_text", text }] })
+    this.pushItem({ type: "user_message", text })
     this.emit({ type: "user_message", text, sentAt: Date.now() })
     const controller = new AbortController()
+    const provider = this.provider
+    const model = this.model
     this.abortController = controller
-    void this.runTurn(controller.signal)
+    void this.runTurn(controller.signal, provider, model)
       .catch((error) => {
         this.emit({ type: "error", message: describeError(error) })
       })
@@ -231,21 +246,22 @@ export class AgentSession {
     this.emit({ type: "state_changed", state })
   }
 
-  private addToolOutput(callId: string, output: string): void {
-    this.pushItem({ type: "function_call_output", call_id: callId, output })
+  private addToolOutput(call: ToolCallItem, output: string, isError: boolean): void {
+    this.pushItem({ type: "tool_result", callId: call.callId, name: call.name, output, isError })
   }
 
-  private async runTurn(signal: AbortSignal): Promise<void> {
-    let lastUsage: Usage | undefined
+  private async runTurn(signal: AbortSignal, provider: Provider, model: string): Promise<void> {
+    let turnUsage: Usage | undefined
+    let context: Usage | undefined
 
     while (true) {
-      const pendingItems: ConversationItem[] = []
-      const toolCalls: PendingToolCall[] = []
+      const pendingItems: ProviderOutputItem[] = []
+      const toolCalls: ToolCallItem[] = []
       this.setState("streaming")
 
       try {
-        for await (const event of this.provider.stream({
-          model: this.model,
+        for await (const event of provider.stream({
+          model,
           instructions: composeSystemPrompt({
             appName: appInfo.name,
             platform: `${process.platform} ${release()}`,
@@ -253,7 +269,7 @@ export class AgentSession {
             tools: listTools(),
             mode: this.mode,
           }),
-          input: this.items,
+          input: prepareConversation(this.items, { provider: provider.id, model }),
           tools: listTools().map(({ name, description, parameters }) => ({ name, description, parameters })),
           sessionId: this.id,
           signal,
@@ -270,19 +286,20 @@ export class AgentSession {
               break
             case "item_done":
               pendingItems.push(event.item)
+              if (event.item.type === "tool_call") toolCalls.push(event.item)
               break
-            case "tool_call":
-              toolCalls.push({ callId: event.callId, name: event.name, args: event.args })
+            case "done": {
+              if (!event.usage) break
+              context = event.usage
+              turnUsage = addUsage(turnUsage, event.usage)
               break
-            case "done":
-              lastUsage = event.usage ?? lastUsage
-              break
+            }
           }
         }
       } catch (error) {
         if (isAbortError(error) || signal.aborted) {
           this.flushStream()
-          for (const item of pendingItems.filter((item) => item.type === "message")) this.pushItem(item)
+          for (const item of pendingItems.filter((item) => item.type === "assistant_message")) this.pushItem(item)
           this.emit({ type: "turn_interrupted" })
           return
         }
@@ -294,7 +311,7 @@ export class AgentSession {
       for (const item of pendingItems) this.pushItem(item)
 
       if (toolCalls.length === 0) {
-        this.emit({ type: "turn_ended", usage: lastUsage })
+        this.emit({ type: "turn_ended", usage: turnUsage, context })
         return
       }
 
@@ -309,9 +326,9 @@ export class AgentSession {
     }
   }
 
-  private async handleToolCall(call: PendingToolCall, signal: AbortSignal): Promise<void> {
+  private async handleToolCall(call: ToolCallItem, signal: AbortSignal): Promise<void> {
     if (signal.aborted) {
-      this.addToolOutput(call.callId, "Interrupted by user before execution.")
+      this.addToolOutput(call, "Interrupted by user before execution.", true)
       return
     }
 
@@ -319,7 +336,7 @@ export class AgentSession {
     const title = tool?.title(call.args) ?? JSON.stringify(call.args)
     if (!tool) {
       const message = `Unknown tool: ${call.name}`
-      this.addToolOutput(call.callId, message)
+      this.addToolOutput(call, message, true)
       this.emit({
         type: "tool_finished",
         callId: call.callId,
@@ -345,7 +362,7 @@ export class AgentSession {
 
     if (decision === "deny") {
       const cause = this.mode === "plan" && !readOnly ? "plan" : "policy"
-      this.denyToolCall(call.callId, call.name, title, readOnly, cause)
+      this.denyToolCall(call, title, readOnly, cause)
       return
     }
 
@@ -364,7 +381,7 @@ export class AgentSession {
       })
       const result = await asked
       if (result.decision === "deny") {
-        this.denyToolCall(call.callId, call.name, title, readOnly, result.cause ?? "user", result.message)
+        this.denyToolCall(call, title, readOnly, result.cause ?? "user", result.message)
         return
       }
     }
@@ -372,25 +389,26 @@ export class AgentSession {
     this.setState("running_tool")
     this.emit({ type: "tool_started", callId: call.callId, tool: call.name, title, readOnly })
     let output: string
+    let isError = false
     try {
       output = (await tool.execute(call.args, signal)).output
     } catch (error) {
       output = `Tool failed: ${describeError(error)}`
+      isError = true
     }
-    this.addToolOutput(call.callId, output)
+    this.addToolOutput(call, output, isError)
     this.emit({ type: "tool_finished", callId: call.callId, tool: call.name, title, readOnly, output })
   }
 
   private denyToolCall(
-    callId: string,
-    tool: string,
+    call: ToolCallItem,
     title: string,
     readOnly: boolean,
     denial: DenialCause,
     message?: string,
   ): void {
     const output = message ?? denialMessages[denial]
-    this.addToolOutput(callId, output)
-    this.emit({ type: "tool_finished", callId, tool, title, readOnly, output, denial })
+    this.addToolOutput(call, output, true)
+    this.emit({ type: "tool_finished", callId: call.callId, tool: call.name, title, readOnly, output, denial })
   }
 }

@@ -1,7 +1,7 @@
 import { appInfo } from "../../app-info"
 import type { StreamEvent, StreamRequest } from "../../providers/types"
-import { ensureAccessToken } from "./oauth"
-import { parseErrorDetail, parseFunctionCall, parseSseEvent } from "./wire"
+import { ensureAccessToken, PROVIDER_ID } from "./oauth"
+import { buildInput, parseErrorDetail, parseOutputItem, parseSseEvent } from "./wire"
 
 const RESPONSES_URL = "https://chatgpt.com/backend-api/codex/responses"
 
@@ -34,7 +34,7 @@ function buildBody(request: StreamRequest): string {
     store: false,
     stream: true,
     instructions: request.instructions,
-    input: request.input,
+    input: buildInput(request.input, { provider: PROVIDER_ID, model: request.model }),
     tools: request.tools.map((tool) => ({
       type: "function",
       name: tool.name,
@@ -133,9 +133,8 @@ export async function* streamResponse(request: StreamRequest): AsyncGenerator<St
         yield { type: "reasoning_delta", text: event.delta }
         break
       case "item_done": {
-        yield { type: "item_done", item: event.item }
-        const call = parseFunctionCall(event.item)
-        if (call) yield { type: "tool_call", callId: call.callId, name: call.name, args: call.args }
+        const item = parseOutputItem(event.item, { provider: PROVIDER_ID, model: request.model })
+        if (item) yield { type: "item_done", item }
         break
       }
       case "terminal":

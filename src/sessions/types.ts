@@ -3,6 +3,7 @@ import type { PermissionMode } from "../permissions/types"
 import type { ConversationItem } from "../providers/types"
 
 export interface SessionMeta {
+  version: 1
   id: string
   cwd: string
   provider: string
