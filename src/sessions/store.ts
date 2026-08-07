@@ -41,7 +41,7 @@ async function summarize(path: string): Promise<SessionSummary | undefined> {
 
   try {
     for await (const line of lines) {
-      if (!line || line.startsWith('{"type":"item"')) continue
+      if (!line) continue
       const record = parseRecord(line)
       if (!record) continue
       if (record.type === "meta") {

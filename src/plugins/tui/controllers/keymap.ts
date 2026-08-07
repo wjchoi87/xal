@@ -55,7 +55,7 @@ export function bindKeys(renderer: CliRenderer, deps: KeymapDeps): void {
       screen.statusBar.setNotice("Pasting image…")
       void screen.composer.pasteImage().then((pasted) => {
         screen.statusBar.setNotice(pasted ? "Image attached" : "No image found in clipboard")
-        const timer = setTimeout(() => screen.statusBar.clearNotice(), QUIT_WINDOW_MS)
+        const timer = setTimeout(() => screen.statusBar.clearNotice(), 2_000)
         timer.unref()
       })
       return

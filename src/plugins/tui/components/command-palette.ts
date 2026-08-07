@@ -10,7 +10,7 @@ export const PALETTE_CHROME_ROWS = 3
 const MAX_ROWS = 6
 const NAME_WIDTH = 22
 
-export interface CommandPaletteActions {
+interface CommandPaletteActions {
   complete(line: string): void
   run(line: string): void
 }

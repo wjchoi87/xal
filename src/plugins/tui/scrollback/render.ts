@@ -22,7 +22,7 @@ import type { BannerBlock, Block, NoticeBlock, StreamBlock, ToolBlock, UserBlock
 
 const GUTTER = 2
 
-export interface StreamView {
+interface StreamView {
   view: Renderable
   text: TextRenderable
 }

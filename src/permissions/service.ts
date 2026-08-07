@@ -36,12 +36,3 @@ export async function evaluatePolicy(request: PermissionRequest): Promise<Policy
   if (request.mode === "plan") return "deny"
   return "allow"
 }
-
-export type {
-  PermissionMode,
-  PermissionRequest,
-  PermissionRules,
-  PermissionScope,
-  PolicyDecision,
-  PolicyRule,
-} from "./types"

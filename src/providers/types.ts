@@ -69,6 +69,17 @@ export interface Usage {
 
 export type ThinkingEffort = "none" | "low" | "medium" | "high" | "xhigh" | "max"
 
+export function isThinkingEffort(value: unknown): value is ThinkingEffort {
+  return (
+    value === "none" ||
+    value === "low" ||
+    value === "medium" ||
+    value === "high" ||
+    value === "xhigh" ||
+    value === "max"
+  )
+}
+
 export interface ThinkingOptions {
   options: ThinkingEffort[]
   default: ThinkingEffort

@@ -1,3 +1,4 @@
+import { asString } from "../../lib/json"
 import type { Tool } from "../../tools/types"
 
 const MAX_OUTPUT_CHARS = 30_000
@@ -8,7 +9,7 @@ const READ_ONLY_COMMAND =
 export const COMPOUND_COMMAND = /[;|&\n`<>(){}]/
 
 export function commandOf(args: Record<string, unknown>): string {
-  return String(args.command ?? "").trim()
+  return asString(args.command)?.trim() ?? ""
 }
 
 function truncateMiddle(text: string, max: number): string {
@@ -36,7 +37,7 @@ export const bashTool: Tool = {
   prompt:
     "Use bash for shell work: builds, tests, git. Use the grep and glob tools to search instead of rg, find, or ls, and read, write, and edit for file contents instead of cat, sed, or heredocs. Prefer non-interactive commands; anything needing a TTY will hang.",
   title(args) {
-    return String(args.command ?? "")
+    return asString(args.command) ?? ""
   },
   readOnly(args) {
     const command = commandOf(args)

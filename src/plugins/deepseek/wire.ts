@@ -1,4 +1,4 @@
-import { asNumber, asString, isJsonObject, isRecord, type JsonObject } from "../../lib/json"
+import { asNumber, asString, isRecord, type JsonObject } from "../../lib/json"
 import type {
   AssistantMessageItem,
   ConversationItem,
@@ -9,6 +9,7 @@ import type {
   Usage,
 } from "../../providers/types"
 import { ProviderError } from "../../providers/errors"
+import { parseToolArgs } from "../../providers/transport"
 import { PROVIDER_ID } from "./api"
 
 export interface ToolCallDelta {
@@ -130,10 +131,17 @@ export function parseChunk(raw: unknown): Chunk | undefined {
 }
 
 export function requestThinking(effort: ThinkingEffort | undefined): JsonObject {
-  if (effort === "none") return { thinking: { type: "disabled" } }
-  return {
-    thinking: { type: "enabled" },
-    reasoning_effort: effort === "low" || effort === "max" ? effort : "high",
+  switch (effort) {
+    case "none":
+      return { thinking: { type: "disabled" } }
+    case "low":
+    case "max":
+      return { thinking: { type: "enabled" }, reasoning_effort: effort }
+    case "medium":
+    case "high":
+    case "xhigh":
+    case undefined:
+      return { thinking: { type: "enabled" }, reasoning_effort: "high" }
   }
 }
 
@@ -154,20 +162,11 @@ export function assistantItem(model: string, text: string): AssistantMessageItem
 }
 
 export function toolCallItem(model: string, callId: string, name: string, argumentsText: string): ToolCallItem {
-  let args: unknown
-  try {
-    args = JSON.parse(argumentsText)
-  } catch {
-    throw new ProviderError(`DeepSeek tool call ${name} had invalid JSON arguments`, { retryable: false })
-  }
-  if (!isJsonObject(args)) {
-    throw new ProviderError(`DeepSeek tool call ${name} arguments were not an object`, { retryable: false })
-  }
   return {
     type: "tool_call",
     callId,
     name,
-    args,
+    args: parseToolArgs("DeepSeek", name, argumentsText),
     replay: replay(model, {
       id: callId,
       type: "function",

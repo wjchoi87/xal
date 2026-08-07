@@ -8,7 +8,7 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
-export function isJsonValue(value: unknown): value is JsonValue {
+function isJsonValue(value: unknown): value is JsonValue {
   if (value === null) return true
   if (typeof value === "string" || typeof value === "boolean") return true
   if (typeof value === "number") return Number.isFinite(value)

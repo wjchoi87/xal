@@ -1,4 +1,4 @@
-export type OutputLineKind = "plain" | "faint" | "added" | "removed" | "hunk" | "error"
+type OutputLineKind = "plain" | "faint" | "added" | "removed" | "hunk" | "error"
 
 export interface OutputLine {
   number: string

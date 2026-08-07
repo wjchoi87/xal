@@ -3,7 +3,7 @@ import { join } from "node:path"
 import { appEnvVar } from "../../app-info"
 import { cacheDir } from "../../config/paths"
 import { asBoolean, asNumber, asString, asStringArray, isRecord } from "../../lib/json"
-import type { ModelInfo, ThinkingEffort, ThinkingOptions } from "../../providers/types"
+import { isThinkingEffort, type ModelInfo, type ThinkingEffort, type ThinkingOptions } from "../../providers/types"
 
 const MODELS_URL = "https://models.dev/api.json"
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000
@@ -30,17 +30,6 @@ type MetadataMap = Record<string, ModelMetadata>
 
 let memo: MetadataMap | undefined
 
-function isThinkingEffort(value: string): value is ThinkingEffort {
-  return (
-    value === "none" ||
-    value === "low" ||
-    value === "medium" ||
-    value === "high" ||
-    value === "xhigh" ||
-    value === "max"
-  )
-}
-
 function parseThinking(raw: unknown): ThinkingEffort[] | undefined {
   if (!Array.isArray(raw)) return undefined
   for (const option of raw) {
@@ -55,23 +44,35 @@ function cachePath(): string {
   return join(cacheDir(), "models.json")
 }
 
-function parseMetadataEntry(raw: unknown): ModelMetadata | undefined {
+function parseNetworkEntry(raw: unknown): ModelMetadata | undefined {
   if (!isRecord(raw)) return undefined
   const limit = isRecord(raw.limit) ? raw.limit : undefined
   return {
     name: asString(raw.name),
     reasoning: asBoolean(raw.reasoning),
-    contextWindow: asNumber(raw.contextWindow) ?? (limit ? asNumber(limit.context) : undefined),
-    maxOutput: asNumber(raw.maxOutput) ?? (limit ? asNumber(limit.output) : undefined),
+    contextWindow: limit ? asNumber(limit.context) : undefined,
+    maxOutput: limit ? asNumber(limit.output) : undefined,
     thinking: parseThinking(raw.reasoning_options),
   }
 }
 
-function parseMetadataMap(raw: unknown): MetadataMap {
+function parseCachedEntry(raw: unknown): ModelMetadata | undefined {
+  if (!isRecord(raw)) return undefined
+  const thinking = asStringArray(raw.thinking).filter(isThinkingEffort)
+  return {
+    name: asString(raw.name),
+    reasoning: asBoolean(raw.reasoning),
+    contextWindow: asNumber(raw.contextWindow),
+    maxOutput: asNumber(raw.maxOutput),
+    thinking: thinking.length > 0 ? thinking : undefined,
+  }
+}
+
+function parseMetadataMap(raw: unknown, parseEntry: (raw: unknown) => ModelMetadata | undefined): MetadataMap {
   if (!isRecord(raw)) return {}
   const metadata: MetadataMap = {}
   for (const id of BACKEND_MODEL_IDS) {
-    const entry = parseMetadataEntry(raw[id])
+    const entry = parseEntry(raw[id])
     if (entry) metadata[id] = entry
   }
   return metadata
@@ -87,7 +88,7 @@ async function readCache(): Promise<{ fetchedAt: number; metadata: MetadataMap }
   if (!isRecord(parsed)) return undefined
   const fetchedAt = asNumber(parsed.fetchedAt)
   if (fetchedAt === undefined) return undefined
-  return { fetchedAt, metadata: parseMetadataMap(parsed.metadata) }
+  return { fetchedAt, metadata: parseMetadataMap(parsed.metadata, parseCachedEntry) }
 }
 
 async function writeCache(metadata: MetadataMap): Promise<void> {
@@ -102,7 +103,7 @@ async function fetchMetadata(): Promise<MetadataMap> {
   if (!response.ok) throw new Error(`models.dev returned ${response.status}`)
   const data: unknown = await response.json()
   if (!isRecord(data) || !isRecord(data.openai)) return {}
-  return parseMetadataMap(data.openai.models)
+  return parseMetadataMap(data.openai.models, parseNetworkEntry)
 }
 
 async function loadMetadata(): Promise<MetadataMap> {

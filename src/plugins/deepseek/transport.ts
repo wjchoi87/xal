@@ -1,5 +1,5 @@
-import { describeError } from "../../lib/error"
 import { ProviderError } from "../../providers/errors"
+import { sseEvents, streamError } from "../../providers/transport"
 import type { StreamEvent, StreamRequest, Usage } from "../../providers/types"
 import { deepSeekFetch } from "./api"
 import { apiKey } from "./auth"
@@ -10,8 +10,6 @@ interface PendingToolCall {
   name: string
   arguments: string
 }
-
-type SseEvent = { done: true } | { done: false; data: unknown }
 
 function buildBody(request: StreamRequest): string {
   return JSON.stringify({
@@ -30,40 +28,6 @@ function buildBody(request: StreamRequest): string {
           })),
         }),
   })
-}
-
-async function* sseEvents(body: ReadableStream<Uint8Array>): AsyncGenerator<SseEvent> {
-  const reader = body.getReader()
-  const decoder = new TextDecoder()
-  let buffer = ""
-  try {
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      buffer = (buffer + decoder.decode(value, { stream: true })).replaceAll("\r\n", "\n")
-      let boundary: number
-      while ((boundary = buffer.indexOf("\n\n")) !== -1) {
-        const raw = buffer.slice(0, boundary)
-        buffer = buffer.slice(boundary + 2)
-        const data = raw
-          .split("\n")
-          .filter((line) => line.startsWith("data:"))
-          .map((line) => line.slice(5).trim())
-          .join("\n")
-        if (!data) continue
-        if (data === "[DONE]") {
-          yield { done: true }
-          continue
-        }
-        try {
-          const parsed: unknown = JSON.parse(data)
-          yield { done: false, data: parsed }
-        } catch {}
-      }
-    }
-  } finally {
-    reader.releaseLock()
-  }
 }
 
 export async function* streamResponse(request: StreamRequest): AsyncGenerator<StreamEvent> {
@@ -109,8 +73,7 @@ export async function* streamResponse(request: StreamRequest): AsyncGenerator<St
       }
     }
   } catch (error) {
-    if (request.signal?.aborted || error instanceof ProviderError) throw error
-    throw new ProviderError(`DeepSeek stream failed: ${describeError(error)}`, { retryable: true })
+    streamError("DeepSeek", error, request.signal)
   }
 
   if (!terminal) throw new ProviderError("DeepSeek stream ended unexpectedly", { retryable: true })

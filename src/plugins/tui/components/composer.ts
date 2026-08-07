@@ -10,6 +10,7 @@ import {
   type RenderContext,
 } from "@opentui/core"
 import { appInfo } from "../../../app-info"
+import { asNumber, asString, isRecord } from "../../../lib/json"
 import type { ImageInput, UserInput } from "../../../providers/types"
 import { label, row } from "../lib/renderables"
 import { COLORS, resolveColor } from "../theme/colors"
@@ -17,7 +18,7 @@ import { border, inputColors } from "../theme/styles"
 
 export const COMPOSER_ROWS = 4
 
-export interface ComposerActions {
+interface ComposerActions {
   submit(input: UserInput): boolean
   run(line: string): void
   change(value: string): void
@@ -36,31 +37,16 @@ interface PastedImage {
 }
 
 function isPastedContent(value: unknown): value is PastedContent {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "kind" in value &&
-    value.kind === "pasted-content" &&
-    "text" in value &&
-    typeof value.text === "string"
-  )
+  return isRecord(value) && value.kind === "pasted-content" && asString(value.text) !== undefined
 }
 
 function isPastedImage(value: unknown): value is PastedImage {
+  if (!isRecord(value) || value.kind !== "pasted-image" || asNumber(value.number) === undefined) return false
+  const image = value.image
   return (
-    typeof value === "object" &&
-    value !== null &&
-    "kind" in value &&
-    value.kind === "pasted-image" &&
-    "number" in value &&
-    typeof value.number === "number" &&
-    "image" in value &&
-    typeof value.image === "object" &&
-    value.image !== null &&
-    "mediaType" in value.image &&
-    (value.image.mediaType === "image/png" || value.image.mediaType === "image/jpeg") &&
-    "data" in value.image &&
-    typeof value.image.data === "string"
+    isRecord(image) &&
+    (image.mediaType === "image/png" || image.mediaType === "image/jpeg") &&
+    asString(image.data) !== undefined
   )
 }
 

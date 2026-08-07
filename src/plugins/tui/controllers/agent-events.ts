@@ -64,10 +64,8 @@ export class AgentEventController {
         scrollback.endStream()
         live.start(event.callId, event.tool, event.title, event.readOnly)
         break
-      case "tool_finished": {
+      case "tool_finished":
         this.screen.dismissApproval()
-        scrollback.endStream()
-        const finished = live.finish(event.callId)
         scrollback.append({
           kind: "tool",
           tool: event.tool,
@@ -75,10 +73,9 @@ export class AgentEventController {
           readOnly: event.readOnly,
           denial: event.denial,
           output: event.output,
-          elapsed: finished?.elapsed,
+          elapsed: live.finish(event.callId),
         })
         break
-      }
       case "turn_interrupted":
         scrollback.append({ kind: "info", text: "Interrupted" })
         break

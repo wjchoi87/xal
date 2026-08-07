@@ -11,13 +11,7 @@ interface LiveRow {
   view: BoxRenderable
   status: TextRenderable
   createdAt: number
-  readOnly: boolean
   phase: LivePhase
-}
-
-export interface FinishedTool {
-  readOnly: boolean
-  elapsed: string
 }
 
 export class LiveTools {
@@ -48,7 +42,7 @@ export class LiveTools {
     this.render()
   }
 
-  finish(callId: string): FinishedTool | undefined {
+  finish(callId: string): string | undefined {
     const existing = this.rows.get(callId)
     if (!existing) return undefined
     this.rows.delete(callId)
@@ -56,7 +50,7 @@ export class LiveTools {
     existing.view.destroyRecursively()
     if (this.rows.size === 0) this.spinner.stop()
     this.sync()
-    return { readOnly: existing.readOnly, elapsed: formatDuration(Date.now() - existing.createdAt) }
+    return formatDuration(Date.now() - existing.createdAt)
   }
 
   clear(): void {
@@ -77,7 +71,7 @@ export class LiveTools {
     const status = label(this.ctx, { content: "", flexShrink: 0, marginLeft: 1 })
     view.add(status)
     this.view.add(view)
-    this.rows.set(callId, { view, status, createdAt: Date.now(), readOnly, phase })
+    this.rows.set(callId, { view, status, createdAt: Date.now(), phase })
     this.sync()
     this.render()
   }

@@ -57,12 +57,34 @@ function lastState(loaded: LoadedSession): {
     mode: loaded.meta.mode,
   }
   for (const event of loaded.events) {
-    if (event.type === "model_changed") {
-      state.provider = event.provider
-      state.model = event.model
+    switch (event.type) {
+      case "model_changed":
+        state.provider = event.provider
+        state.model = event.model
+        break
+      case "thinking_changed":
+        state.thinking = event.thinking
+        break
+      case "mode_changed":
+        state.mode = event.mode
+        break
+      case "session_started":
+      case "state_changed":
+      case "user_message":
+      case "text_delta":
+      case "reasoning_summary_delta":
+      case "reasoning_delta":
+      case "assistant_message":
+      case "reasoning_summary":
+      case "retry_scheduled":
+      case "approval_requested":
+      case "tool_started":
+      case "tool_finished":
+      case "turn_ended":
+      case "turn_interrupted":
+      case "error":
+        break
     }
-    if (event.type === "thinking_changed") state.thinking = event.thinking
-    if (event.type === "mode_changed") state.mode = event.mode
   }
   return state
 }

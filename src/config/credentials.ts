@@ -18,13 +18,6 @@ export interface ApiKeyCredential {
 
 export type Credential = OAuthCredential | ApiKeyCredential
 
-interface CredentialsFile {
-  version: 1
-  providers: Record<string, Credential>
-}
-
-const emptyFile = (): CredentialsFile => ({ version: 1, providers: {} })
-
 function parseCredential(raw: unknown): Credential | undefined {
   if (!isRecord(raw)) return undefined
   if (raw.type === "api_key") {
@@ -40,47 +33,45 @@ function parseCredential(raw: unknown): Credential | undefined {
   return { type: "oauth", access, refresh, expires, accountId }
 }
 
-async function loadFile(): Promise<CredentialsFile> {
+async function loadProviders(): Promise<Record<string, Credential>> {
   let parsed: unknown
   try {
     parsed = JSON.parse(await readFile(credentialsPath(), "utf8"))
   } catch {
-    return emptyFile()
+    return {}
   }
-  if (!isRecord(parsed) || !isRecord(parsed.providers)) return emptyFile()
+  if (!isRecord(parsed) || !isRecord(parsed.providers)) return {}
   const providers: Record<string, Credential> = {}
   for (const [providerId, raw] of Object.entries(parsed.providers)) {
     const credential = parseCredential(raw)
     if (credential) providers[providerId] = credential
   }
-  return { version: 1, providers }
+  return providers
 }
 
-export async function loadCredential(providerId: string): Promise<Credential | undefined> {
-  const file = await loadFile()
-  return file.providers[providerId]
-}
-
-export async function saveCredential(providerId: string, credential: Credential): Promise<void> {
-  const file = await loadFile()
-  file.providers[providerId] = credential
+async function saveProviders(providers: Record<string, Credential>): Promise<void> {
   const path = credentialsPath()
   const dir = dirname(path)
   await mkdir(dir, { recursive: true })
   const tmp = join(dir, `.credentials.${process.pid}.${Date.now()}.tmp`)
-  await writeFile(tmp, JSON.stringify(file, null, 2) + "\n", { mode: 0o600 })
+  await writeFile(tmp, JSON.stringify({ providers }, null, 2) + "\n", { mode: 0o600 })
   await rename(tmp, path)
   await chmod(path, 0o600)
 }
 
+export async function loadCredential(providerId: string): Promise<Credential | undefined> {
+  return (await loadProviders())[providerId]
+}
+
+export async function saveCredential(providerId: string, credential: Credential): Promise<void> {
+  const providers = await loadProviders()
+  providers[providerId] = credential
+  await saveProviders(providers)
+}
+
 export async function deleteCredential(providerId: string): Promise<void> {
-  const file = await loadFile()
-  if (!(providerId in file.providers)) return
-  delete file.providers[providerId]
-  const path = credentialsPath()
-  await mkdir(dirname(path), { recursive: true })
-  const tmp = join(dirname(path), `.credentials.${process.pid}.${Date.now()}.tmp`)
-  await writeFile(tmp, JSON.stringify(file, null, 2) + "\n", { mode: 0o600 })
-  await rename(tmp, path)
-  await chmod(path, 0o600)
+  const providers = await loadProviders()
+  if (!(providerId in providers)) return
+  delete providers[providerId]
+  await saveProviders(providers)
 }

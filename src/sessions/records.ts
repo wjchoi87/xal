@@ -1,7 +1,14 @@
 import type { AgentEvent, DenialCause } from "../agent/events"
 import { asBoolean, asNumber, asString, isJsonObject, isRecord } from "../lib/json"
 import { isPermissionMode } from "../permissions/types"
-import type { ConversationItem, ImageInput, ProviderReplay, ThinkingEffort, Usage } from "../providers/types"
+import {
+  isThinkingEffort,
+  type ConversationItem,
+  type ImageInput,
+  type ProviderReplay,
+  type ThinkingEffort,
+  type Usage,
+} from "../providers/types"
 import type { SessionMeta, SessionRecord } from "./types"
 
 export function isPersistable(event: AgentEvent): boolean {
@@ -25,18 +32,7 @@ function parseUsage(value: unknown): Usage | undefined {
 }
 
 function parseThinking(value: unknown): ThinkingEffort | undefined {
-  const effort = asString(value)
-  if (
-    effort === "none" ||
-    effort === "low" ||
-    effort === "medium" ||
-    effort === "high" ||
-    effort === "xhigh" ||
-    effort === "max"
-  ) {
-    return effort
-  }
-  return undefined
+  return isThinkingEffort(value) ? value : undefined
 }
 
 function parseEvent(raw: unknown): AgentEvent | undefined {
@@ -136,9 +132,10 @@ function parseReplay(raw: unknown): ProviderReplay | undefined {
   return model ? { provider, model, data: raw.data } : undefined
 }
 
-function replay(raw: Record<string, unknown>): ProviderReplay | undefined | false {
-  if (raw.replay === undefined) return undefined
-  return parseReplay(raw.replay) ?? false
+function parseOptionalReplay(raw: Record<string, unknown>): { replay?: ProviderReplay } | undefined {
+  if (raw.replay === undefined) return {}
+  const replay = parseReplay(raw.replay)
+  return replay ? { replay } : undefined
 }
 
 function parseImage(raw: unknown): ImageInput | undefined {
@@ -171,22 +168,22 @@ function parseItem(raw: unknown): ConversationItem | undefined {
     }
     case "assistant_message": {
       const text = asString(raw.text)
-      const providerReplay = replay(raw)
-      if (text === undefined || providerReplay === false) return undefined
-      return { type: "assistant_message", text, replay: providerReplay }
+      const replay = parseOptionalReplay(raw)
+      if (text === undefined || !replay) return undefined
+      return { type: "assistant_message", text, ...replay }
     }
     case "reasoning": {
       const summary = asString(raw.summary)
-      const providerReplay = replay(raw)
-      if (summary === undefined || providerReplay === false) return undefined
-      return { type: "reasoning", summary, replay: providerReplay }
+      const replay = parseOptionalReplay(raw)
+      if (summary === undefined || !replay) return undefined
+      return { type: "reasoning", summary, ...replay }
     }
     case "tool_call": {
       const callId = asString(raw.callId)
       const name = asString(raw.name)
-      const providerReplay = replay(raw)
-      if (!callId || !name || !isJsonObject(raw.args) || providerReplay === false) return undefined
-      return { type: "tool_call", callId, name, args: raw.args, replay: providerReplay }
+      const replay = parseOptionalReplay(raw)
+      if (!callId || !name || !isJsonObject(raw.args) || !replay) return undefined
+      return { type: "tool_call", callId, name, args: raw.args, ...replay }
     }
     case "tool_result": {
       const callId = asString(raw.callId)

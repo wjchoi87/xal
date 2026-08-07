@@ -1,4 +1,4 @@
-import { displayPath } from "../../lib/path"
+import { displayPath, resolveFilePath } from "../../lib/path"
 
 const TIMEOUT_MS = 30_000
 const MAX_OUTPUT_CHARS = 30_000
@@ -10,8 +10,8 @@ export interface RgOutcome {
 
 export function targetArgs(path: string | undefined): string[] {
   if (!path) return []
-  const target = displayPath(path)
-  return target === process.cwd() ? [] : [target]
+  if (resolveFilePath(path) === process.cwd()) return []
+  return [displayPath(path)]
 }
 
 function rgPath(): string {

@@ -1,6 +1,7 @@
 import { asNumber, asString, isJsonObject, isRecord, type JsonObject, type JsonValue } from "../../lib/json"
-import type { ConversationItem, ProviderOutputItem, ProviderReplay, Usage } from "../../providers/types"
 import type { ConversationTarget } from "../../providers/conversation"
+import { parseToolArgs } from "../../providers/transport"
+import type { ConversationItem, ProviderOutputItem, ProviderReplay, Usage } from "../../providers/types"
 
 export type WireSseEvent =
   | { type: "output_text_delta"; delta: string }
@@ -101,14 +102,13 @@ export function parseOutputItem(item: JsonObject, target: ConversationTarget): P
       const name = asString(item.name)
       const argumentsText = asString(item.arguments)
       if (!callId || !name || argumentsText === undefined) throw new Error("response tool call was incomplete")
-      let args: unknown
-      try {
-        args = JSON.parse(argumentsText)
-      } catch {
-        throw new Error(`response tool call ${name} had invalid JSON arguments`)
+      return {
+        type: "tool_call",
+        callId,
+        name,
+        args: parseToolArgs("ChatGPT", name, argumentsText),
+        replay: replay(item, target),
       }
-      if (!isJsonObject(args)) throw new Error(`response tool call ${name} arguments were not an object`)
-      return { type: "tool_call", callId, name, args, replay: replay(item, target) }
     }
     default:
       return undefined
@@ -175,16 +175,4 @@ export function parseTokenResponse(raw: unknown): TokenResponse {
   const expiresInSeconds = asNumber(raw.expires_in)
   if (!accessToken || !expiresInSeconds) throw new Error("token response missing access_token or expires_in")
   return { accessToken, refreshToken: asString(raw.refresh_token), expiresInSeconds }
-}
-
-export function parseErrorDetail(text: string): string | undefined {
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(text)
-  } catch {
-    return undefined
-  }
-  if (!isRecord(parsed)) return undefined
-  const nested = isRecord(parsed.error) ? asString(parsed.error.message) : undefined
-  return nested ?? asString(parsed.detail)
 }

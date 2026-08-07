@@ -45,7 +45,7 @@ sequenceDiagram
 
 ### CLI
 
-`src/cli` owns the entry-point surface: `runCli(args, ctx)` dispatches, and the registry is seeded with the built-in roots (`connect`, `models`, `ask`) so they exist the moment the module is imported — no bootstrap step, no ordering rule against plugin registration. A root without a `run` is a namespace that only prints its subcommands; plugins fill it in through `ctx.registerCli(cli, parent)`, and registering under a parent that does not exist fails the plugin, not the process. Providers are not wired this way: `connect` and `models` resolve any registered provider through `providers/catalog`, so `tack connect chatgpt` and `tack models chatgpt` work because the ChatGPT plugin calls `ctx.registerProvider` — never `ctx.registerCli`.
+`src/cli` owns the entry-point surface: `runCli(args, ctx)` dispatches, and the registry is seeded with the built-in roots so they exist the moment the module is imported — no bootstrap step, no ordering rule against plugin registration. A root without a `run` is a namespace that only prints its subcommands; plugins fill it in through `ctx.registerCli(cli, parent)`, and registering under a parent that does not exist fails the plugin, not the process. Providers are not wired this way: `connect` and `models` resolve any registered provider through `providers/catalog`, so `tack connect chatgpt` and `tack models chatgpt` work because the ChatGPT plugin calls `ctx.registerProvider` — never `ctx.registerCli`.
 
 ### Plugins
 
@@ -83,14 +83,20 @@ sequenceDiagram
 
 - Early returns over nested conditions.
 - Typed wire boundaries; narrow `unknown` with `lib/json` guards, never `as` casts.
-- Typed event unions at seams; exhaustive switches.
+- Typed unions at seams; handle every case so a new one cannot slip through silently.
 - No code comments.
 - No backward compatibility. only clean solutions.
 - No tests.
 - Write simple and readable code and avoid extra complexity.
 - If a constant will be used only one time, Do not overengineer to make it `const`. this reduces the code readability.
-- Do not re-invent the wheel. use existing solutions.
+- Do not write what already exists; reuse it or extract it to one shared place.
 - Do not patch symptoms. Fix the root cause.
+- Fail loudly. Never swallow an error, and never write data after ignoring one.
+- Whatever you write, you must read back in the same shape.
+- Build on guarantees, not coincidences.
+- Everything must have a consumer today; delete what nothing uses.
+- Update docs in the same change that changes the behavior.
+- Leave every file you touch consistent with the rules and its neighbors.
 
 ## Linting & Formatting
 

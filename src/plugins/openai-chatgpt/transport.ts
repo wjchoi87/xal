@@ -1,9 +1,9 @@
-import { appInfo } from "../../app-info"
-import { describeError } from "../../lib/error"
+import { appEnvVar, appInfo } from "../../app-info"
 import { ProviderError } from "../../providers/errors"
+import { errorDetail, httpError, providerFetch, sseEvents, streamError } from "../../providers/transport"
 import type { StreamEvent, StreamRequest } from "../../providers/types"
 import { ensureAccessToken, PROVIDER_ID } from "./oauth"
-import { buildInput, parseErrorDetail, parseOutputItem, parseSseEvent } from "./wire"
+import { buildInput, parseOutputItem, parseSseEvent } from "./wire"
 
 const RESPONSES_URL = "https://chatgpt.com/backend-api/codex/responses"
 
@@ -43,76 +43,19 @@ function buildBody(request: StreamRequest): string {
   })
 }
 
-function retryAfterMs(value: string | null): number | undefined {
-  if (!value) return undefined
-  const seconds = Number(value)
-  if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1_000
-  const date = Date.parse(value)
-  if (Number.isNaN(date)) return undefined
-  return Math.max(0, date - Date.now())
-}
-
 async function raiseForStatus(response: Response): Promise<never> {
   const text = await response.text().catch(() => "")
   if (response.status === 404 && /usage_limit_reached|usage_not_included|rate_limit_exceeded/.test(text)) {
     throw new ProviderError("usage limit reached for your ChatGPT plan — try again later", { retryable: false })
   }
-  if (response.status === 429) {
-    const delayMs = retryAfterMs(response.headers.get("retry-after"))
-    throw new ProviderError(delayMs === undefined ? "rate limited" : `rate limited — retry in ${delayMs / 1_000}s`, {
-      retryable: true,
-      retryAfterMs: delayMs,
-    })
-  }
-  const detail = parseErrorDetail(text) ?? text.slice(0, 500)
+  const detail = errorDetail(text) ?? text.slice(0, 500)
   if (/model is not supported/i.test(detail)) {
     throw new ProviderError(
-      `${detail} — run \`${appInfo.name} models\` to see accepted models, or set ${appInfo.name.toUpperCase().replace(/[^A-Z0-9]/g, "_")}_MODEL`,
+      `${detail} — run \`${appInfo.name} models\` to see accepted models, or set ${appEnvVar("MODEL")}`,
       { retryable: false },
     )
   }
-  throw new ProviderError(`request failed (${response.status}): ${detail}`, {
-    retryable: response.status === 408 || response.status >= 500,
-    retryAfterMs: retryAfterMs(response.headers.get("retry-after")),
-  })
-}
-
-async function fetchResponse(run: () => Promise<Response>, signal?: AbortSignal): Promise<Response> {
-  try {
-    return await run()
-  } catch (error) {
-    if (signal?.aborted || (error instanceof Error && error.name === "AbortError")) throw error
-    throw new ProviderError(`request failed: ${describeError(error)}`, { retryable: true })
-  }
-}
-
-async function* sseJsonEvents(body: ReadableStream<Uint8Array>): AsyncGenerator<unknown> {
-  const decoder = new TextDecoder()
-  const reader = body.getReader()
-  let buffer = ""
-  try {
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
-      let separatorIndex: number
-      while ((separatorIndex = buffer.indexOf("\n\n")) !== -1) {
-        const rawEvent = buffer.slice(0, separatorIndex)
-        buffer = buffer.slice(separatorIndex + 2)
-        const data = rawEvent
-          .split("\n")
-          .filter((line) => line.startsWith("data:"))
-          .map((line) => line.slice(5).trim())
-          .join("")
-        if (!data || data === "[DONE]") continue
-        try {
-          yield JSON.parse(data) as unknown
-        } catch {}
-      }
-    }
-  } finally {
-    reader.releaseLock()
-  }
+  throw httpError("ChatGPT", response, detail)
 }
 
 export async function* streamResponse(request: StreamRequest): AsyncGenerator<StreamEvent> {
@@ -125,18 +68,19 @@ export async function* streamResponse(request: StreamRequest): AsyncGenerator<St
       signal: request.signal,
     })
 
-  let response = await fetchResponse(doFetch, request.signal)
+  let response = await providerFetch("ChatGPT", doFetch, request.signal)
   if (response.status === 401) {
     auth = await ensureAccessToken(true)
-    response = await fetchResponse(doFetch, request.signal)
+    response = await providerFetch("ChatGPT", doFetch, request.signal)
   }
   if (!response.ok) await raiseForStatus(response)
-  if (!response.body) throw new ProviderError("response had no body", { retryable: true })
+  if (!response.body) throw new ProviderError("ChatGPT response had no body", { retryable: true })
 
   let terminal = false
   try {
-    for await (const raw of sseJsonEvents(response.body)) {
-      const event = parseSseEvent(raw)
+    for await (const raw of sseEvents(response.body)) {
+      if (raw.done) continue
+      const event = parseSseEvent(raw.data)
       if (!event) continue
       switch (event.type) {
         case "output_text_delta":
@@ -163,8 +107,7 @@ export async function* streamResponse(request: StreamRequest): AsyncGenerator<St
       if (terminal) break
     }
   } catch (error) {
-    if (request.signal?.aborted || error instanceof ProviderError) throw error
-    throw new ProviderError(`stream failed: ${describeError(error)}`, { retryable: true })
+    streamError("ChatGPT", error, request.signal)
   }
-  if (!terminal) throw new ProviderError("stream ended unexpectedly", { retryable: true })
+  if (!terminal) throw new ProviderError("ChatGPT stream ended unexpectedly", { retryable: true })
 }

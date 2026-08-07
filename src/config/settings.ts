@@ -1,7 +1,7 @@
 import { mkdir } from "node:fs/promises"
 import { join } from "node:path"
 import { asString, isRecord } from "../lib/json"
-import type { ThinkingEffort } from "../providers/types"
+import { isThinkingEffort, type ThinkingEffort } from "../providers/types"
 import { agentHome } from "./paths"
 
 export interface Settings {
@@ -15,7 +15,7 @@ export interface Settings {
 
 let current: Settings = { plugins: [], pluginConfig: {}, thinking: {} }
 
-export function settingsPath(): string {
+function settingsPath(): string {
   return join(agentHome(), "config.json")
 }
 
@@ -32,10 +32,11 @@ export async function saveSettings(patch: Partial<Settings>): Promise<void> {
   let raw: Record<string, unknown> = {}
   const file = Bun.file(settingsPath())
   if (await file.exists()) {
-    try {
-      const parsed: unknown = await file.json()
-      if (isRecord(parsed)) raw = parsed
-    } catch {}
+    const parsed: unknown = await file.json().catch(() => undefined)
+    if (!isRecord(parsed)) {
+      throw new Error(`${settingsPath()} is malformed — fix or delete it before changing settings`)
+    }
+    raw = parsed
   }
   await mkdir(agentHome(), { recursive: true })
   await Bun.write(settingsPath(), JSON.stringify({ ...raw, ...patch }, null, 2) + "\n")
@@ -70,16 +71,7 @@ async function readSettings(): Promise<Settings> {
       if (!isRecord(models)) continue
       const efforts: Record<string, ThinkingEffort> = {}
       for (const [model, value] of Object.entries(models)) {
-        if (
-          value === "none" ||
-          value === "low" ||
-          value === "medium" ||
-          value === "high" ||
-          value === "xhigh" ||
-          value === "max"
-        ) {
-          efforts[model] = value
-        }
+        if (isThinkingEffort(value)) efforts[model] = value
       }
       thinking[provider] = efforts
     }

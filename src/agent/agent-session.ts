@@ -1,4 +1,5 @@
 import { release } from "node:os"
+import { setTimeout as sleep } from "node:timers/promises"
 import { appInfo } from "../app-info"
 import { describeError } from "../lib/error"
 import { rememberRule } from "../permissions/rules"
@@ -49,6 +50,16 @@ interface ApprovalResult {
   message?: string
 }
 
+interface StreamRound {
+  received: boolean
+  items: ProviderOutputItem[]
+}
+
+interface TurnUsage {
+  turn?: Usage
+  context?: Usage
+}
+
 const denialMessages: Record<DenialCause, string> = {
   user: "User denied permission to run this action.",
   policy: "Blocked by the active permission rules.",
@@ -57,23 +68,6 @@ const denialMessages: Record<DenialCause, string> = {
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError"
-}
-
-function waitForRetry(delayMs: number, signal: AbortSignal): Promise<void> {
-  if (signal.aborted) return Promise.reject(new DOMException("The operation was aborted", "AbortError"))
-
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      signal.removeEventListener("abort", onAbort)
-      resolve()
-    }, delayMs)
-    const onAbort = () => {
-      clearTimeout(timeout)
-      signal.removeEventListener("abort", onAbort)
-      reject(new DOMException("The operation was aborted", "AbortError"))
-    }
-    signal.addEventListener("abort", onAbort, { once: true })
-  })
 }
 
 function addUsage(total: Usage | undefined, usage: Usage): Usage {
@@ -323,98 +317,19 @@ export class AgentSession {
     model: string,
     thinking: ThinkingEffort | undefined,
   ): Promise<void> {
-    let turnUsage: Usage | undefined
-    let context: Usage | undefined
+    const usage: TurnUsage = {}
 
     while (true) {
-      const pendingItems: ProviderOutputItem[] = []
-      const toolCalls: ToolCallItem[] = []
       this.setState("streaming")
-      let attempt = 1
-
-      while (true) {
-        let receivedEvent = false
-        try {
-          for await (const event of provider.stream({
-            model,
-            thinking,
-            instructions: composeSystemPrompt({
-              appName: appInfo.name,
-              platform: `${process.platform} ${release()}`,
-              cwd: process.cwd(),
-              tools: listTools(),
-              mode: this.mode,
-            }),
-            input: prepareConversation(this.items, { provider: provider.id, model }),
-            tools: listTools().map(({ name, description, parameters }) => ({ name, description, parameters })),
-            sessionId: this.id,
-            signal,
-          })) {
-            receivedEvent = true
-            switch (event.type) {
-              case "text_delta":
-                this.stream("assistant", event.text)
-                break
-              case "reasoning_summary_delta":
-                this.stream("reasoning", event.text)
-                break
-              case "reasoning_delta":
-                this.emit({ type: "reasoning_delta", text: event.text })
-                break
-              case "item_done":
-                pendingItems.push(event.item)
-                if (event.item.type === "tool_call") toolCalls.push(event.item)
-                break
-              case "done": {
-                if (!event.usage) break
-                context = event.usage
-                turnUsage = addUsage(turnUsage, event.usage)
-                break
-              }
-            }
-          }
-          break
-        } catch (error) {
-          if (isAbortError(error) || signal.aborted) {
-            this.flushStream()
-            for (const item of pendingItems.filter((item) => item.type === "assistant_message")) this.pushItem(item)
-            this.emit({ type: "turn_interrupted" })
-            return
-          }
-          if (
-            !(error instanceof ProviderError) ||
-            !error.retryable ||
-            receivedEvent ||
-            attempt >= MAX_PROVIDER_ATTEMPTS
-          ) {
-            this.flushStream()
-            throw error
-          }
-
-          const delayMs = error.retryAfterMs ?? 1_000 * 2 ** (attempt - 1)
-          attempt += 1
-          this.emit({
-            type: "retry_scheduled",
-            attempt,
-            maxAttempts: MAX_PROVIDER_ATTEMPTS,
-            delayMs,
-            message: error.message,
-          })
-          try {
-            await waitForRetry(delayMs, signal)
-          } catch (waitError) {
-            if (!isAbortError(waitError) && !signal.aborted) throw waitError
-            this.emit({ type: "turn_interrupted" })
-            return
-          }
-        }
-      }
+      const items = await this.streamRound(signal, provider, model, thinking, usage)
+      if (!items) return
 
       this.flushStream()
-      for (const item of pendingItems) this.pushItem(item)
+      for (const item of items) this.pushItem(item)
 
+      const toolCalls = items.filter((item): item is ToolCallItem => item.type === "tool_call")
       if (toolCalls.length === 0) {
-        this.emit({ type: "turn_ended", usage: turnUsage, context })
+        this.emit({ type: "turn_ended", usage: usage.turn, context: usage.context })
         return
       }
 
@@ -425,6 +340,104 @@ export class AgentSession {
       if (signal.aborted) {
         this.emit({ type: "turn_interrupted" })
         return
+      }
+    }
+  }
+
+  private async streamRound(
+    signal: AbortSignal,
+    provider: Provider,
+    model: string,
+    thinking: ThinkingEffort | undefined,
+    usage: TurnUsage,
+  ): Promise<ProviderOutputItem[] | undefined> {
+    let attempt = 1
+
+    while (true) {
+      const round: StreamRound = { received: false, items: [] }
+      try {
+        await this.consumeStream(signal, provider, model, thinking, round, usage)
+        return round.items
+      } catch (error) {
+        if (isAbortError(error) || signal.aborted) {
+          this.flushStream()
+          for (const item of round.items.filter((item) => item.type === "assistant_message")) this.pushItem(item)
+          this.emit({ type: "turn_interrupted" })
+          return undefined
+        }
+        if (
+          !(error instanceof ProviderError) ||
+          !error.retryable ||
+          round.received ||
+          attempt >= MAX_PROVIDER_ATTEMPTS
+        ) {
+          this.flushStream()
+          throw error
+        }
+
+        const delayMs = error.retryAfterMs ?? 1_000 * 2 ** (attempt - 1)
+        attempt += 1
+        this.emit({
+          type: "retry_scheduled",
+          attempt,
+          maxAttempts: MAX_PROVIDER_ATTEMPTS,
+          delayMs,
+          message: error.message,
+        })
+        try {
+          await sleep(delayMs, undefined, { signal })
+        } catch (waitError) {
+          if (!isAbortError(waitError) && !signal.aborted) throw waitError
+          this.emit({ type: "turn_interrupted" })
+          return undefined
+        }
+      }
+    }
+  }
+
+  private async consumeStream(
+    signal: AbortSignal,
+    provider: Provider,
+    model: string,
+    thinking: ThinkingEffort | undefined,
+    round: StreamRound,
+    usage: TurnUsage,
+  ): Promise<void> {
+    for await (const event of provider.stream({
+      model,
+      thinking,
+      instructions: composeSystemPrompt({
+        appName: appInfo.name,
+        platform: `${process.platform} ${release()}`,
+        cwd: process.cwd(),
+        tools: listTools(),
+        mode: this.mode,
+      }),
+      input: prepareConversation(this.items, { provider: provider.id, model }),
+      tools: listTools().map(({ name, description, parameters }) => ({ name, description, parameters })),
+      sessionId: this.id,
+      signal,
+    })) {
+      round.received = true
+      switch (event.type) {
+        case "text_delta":
+          this.stream("assistant", event.text)
+          break
+        case "reasoning_summary_delta":
+          this.stream("reasoning", event.text)
+          break
+        case "reasoning_delta":
+          this.emit({ type: "reasoning_delta", text: event.text })
+          break
+        case "item_done":
+          round.items.push(event.item)
+          break
+        case "done": {
+          if (!event.usage) break
+          usage.context = event.usage
+          usage.turn = addUsage(usage.turn, event.usage)
+          break
+        }
       }
     }
   }
