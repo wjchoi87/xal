@@ -1,6 +1,8 @@
 import { release } from "node:os"
+import { dirname } from "node:path"
 import { setTimeout as sleep } from "node:timers/promises"
 import { appInfo } from "../app-info"
+import { projectSessionsDir } from "../config/paths"
 import { describeError } from "../lib/error"
 import { rememberRule } from "../permissions/rules"
 import { evaluatePolicy } from "../permissions/service"
@@ -19,6 +21,7 @@ import type {
 import { SessionRecorder } from "../sessions/recorder"
 import type { LoadedSession, SessionMeta } from "../sessions/types"
 import { getTool, listTools } from "../tools/registry"
+import { boundToolOutput, toolOutputDirectory } from "../tools/output"
 import type { AgentEvent, AgentState, DenialCause } from "./events"
 import { composeSystemPrompt } from "./prompt"
 
@@ -85,6 +88,7 @@ export class AgentSession {
   private items: ConversationItem[] = []
   private readonly listeners = new Set<(event: AgentEvent) => void>()
   private readonly recorder: SessionRecorder | undefined
+  private outputDirectory: string
   private provider: Provider
   private model: string
   private thinking: ThinkingEffort | undefined
@@ -98,6 +102,7 @@ export class AgentSession {
     this.provider = deps.provider
     this.model = deps.model
     this.thinking = deps.thinking
+    this.outputDirectory = toolOutputDirectory(projectSessionsDir(process.cwd()), this.sessionId)
     if (deps.persist) {
       this.recorder = new SessionRecorder((message) => this.emit({ type: "error", message }))
       this.recorder.start(this.meta())
@@ -150,6 +155,7 @@ export class AgentSession {
   reset(): boolean {
     if (this.state !== "idle") return false
     this.sessionId = crypto.randomUUID()
+    this.outputDirectory = toolOutputDirectory(projectSessionsDir(process.cwd()), this.sessionId)
     this.startedAt = Date.now()
     this.items = []
     this.streaming = undefined
@@ -169,6 +175,7 @@ export class AgentSession {
     if (this.state !== "idle") return false
     const { meta } = target.session
     this.sessionId = meta.id
+    this.outputDirectory = toolOutputDirectory(dirname(target.path), this.sessionId)
     this.startedAt = meta.startedAt
     this.items = [...target.session.items]
     this.streaming = undefined
@@ -505,11 +512,19 @@ export class AgentSession {
     this.setState("running_tool")
     this.emit({ type: "tool_started", callId: call.callId, tool: call.name, title, readOnly })
     let output: string
-    let isError = false
     try {
       output = (await tool.execute(call.args, signal)).output
     } catch (error) {
       output = `Tool failed: ${describeError(error)}`
+      this.addToolOutput(call, output, true)
+      this.emit({ type: "tool_finished", callId: call.callId, tool: call.name, title, readOnly, output })
+      return
+    }
+    let isError = false
+    try {
+      output = await boundToolOutput(this.outputDirectory, output)
+    } catch (error) {
+      output = `Tool completed, but its output could not be saved: ${describeError(error)}. The operation may have changed state; inspect it before retrying.`
       isError = true
     }
     this.addToolOutput(call, output, isError)

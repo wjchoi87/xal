@@ -1,4 +1,6 @@
-# core
+# Tack
+
+A small, customizable terminal coding harness built around a headless agent core and plugins.
 
 To install dependencies:
 
@@ -12,4 +14,6 @@ To run:
 bun dev
 ```
 
-This project was created using `bun create tui`. [create-tui](https://git.new/create-tui) is the easiest way to get started with OpenTUI.
+## Tool output
+
+Tool results larger than 2,000 lines or 50 KiB are represented by a head-and-tail preview. Tack saves the complete result in the current session directory and includes its absolute path in the preview. Saved output remains available for as long as the session does.

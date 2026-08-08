@@ -1,7 +1,11 @@
+import { parseBoundedToolOutput } from "../../../tools/output"
 import { displayWidth } from "../lib/text"
 import { isNotice } from "./lines"
 
 export function summarizeToolOutput(output: string): string {
+  const bounded = parseBoundedToolOutput(output)
+  if (bounded) return `${bounded.lines.toLocaleString()} ${bounded.lines === 1 ? "line" : "lines"} · truncated`
+
   const lines = output
     .split("\n")
     .filter((line) => !isNotice(line))
@@ -15,7 +19,9 @@ export function summarizeToolOutput(output: string): string {
 }
 
 export function toolOutputFailed(output: string): boolean {
-  const exitCode = /\(exit code (\d+)\)\s*$/.exec(output)
+  const exitCode = /\(exit code (\d+)\)(?:\n\nFull output saved to: .+)?\s*$/.exec(output)
   if (exitCode && exitCode[1] !== "0") return true
-  return /(?:^|\n)Tool failed:|\(timed out after |\(interrupted by user\)/.test(output)
+  return /(?:^|\n)(?:Tool failed:|Tool completed, but its output could not be saved:)|\(timed out after |\(interrupted by user\)/.test(
+    output,
+  )
 }

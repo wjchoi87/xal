@@ -9,6 +9,7 @@ import {
 } from "@opentui/core"
 import type { DenialCause } from "../../../agent/events"
 import { appInfo } from "../../../app-info"
+import { parseBoundedToolOutput } from "../../../tools/output"
 import { getToolRenderer } from "../../../ui/extension"
 import { commandLabel, settledStatus, type ToolOutcome } from "../components/tool-status"
 import { formatTimestamp } from "../lib/format"
@@ -114,11 +115,17 @@ const denialSummary: Record<DenialCause, string> = {
 
 function tool(ctx: RenderContext, block: ToolBlock, expanded: boolean): Renderable {
   const toolRenderer = getToolRenderer(block.tool)
-  const failed = toolRenderer?.failed?.(block.output) ?? toolOutputFailed(block.output)
+  const bounded = parseBoundedToolOutput(block.output)
+  const coreFailed = toolOutputFailed(block.output)
+  const failed = coreFailed || (toolRenderer?.failed?.(block.output) ?? false)
   const outcome: ToolOutcome = block.denial ? "denied" : failed ? "failure" : "success"
   const summary = block.denial
     ? denialSummary[block.denial]
-    : (toolRenderer?.summarize?.(block.output) ?? summarizeToolOutput(block.output))
+    : bounded
+      ? summarizeToolOutput(block.output)
+      : coreFailed
+        ? "failed"
+        : (toolRenderer?.summarize?.(block.output) ?? summarizeToolOutput(block.output))
 
   const box = column(ctx, { paddingLeft: GUTTER, paddingRight: GUTTER })
   const head = row(ctx, { height: 1, alignItems: "center" })
@@ -136,10 +143,17 @@ function tool(ctx: RenderContext, block: ToolBlock, expanded: boolean): Renderab
   if (!(expanded || toolRenderer?.alwaysExpanded) || block.output.length === 0) return box
 
   const width = Math.max(1, ctx.width - GUTTER * 2 - 4)
-  const maxRows = toolRenderer?.maxRows ?? MAX_OUTPUT_ROWS
-  const output = toolRenderer?.renderOutput?.(block.output, width) ?? renderToolOutput(block.output, width, maxRows)
+  const coreOutput = bounded || coreFailed
+  const maxRows = coreOutput ? MAX_OUTPUT_ROWS : (toolRenderer?.maxRows ?? MAX_OUTPUT_ROWS)
+  const customOutput = coreOutput ? undefined : toolRenderer?.renderOutput?.(block.output, width)
+  const output = customOutput ?? renderToolOutput(block.output, width, maxRows)
   const body = detailPanel(ctx, { marginLeft: 2 })
-  body.add(label(ctx, { content: output.content, height: output.rows }))
+  const content = label(ctx, { content: output.content, height: output.rows })
+  if (!customOutput) {
+    content.wrapMode = "char"
+    content.truncate = false
+  }
+  body.add(content)
   box.add(body)
   return box
 }

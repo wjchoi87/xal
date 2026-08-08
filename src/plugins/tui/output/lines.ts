@@ -8,7 +8,8 @@ export interface OutputLine {
 
 const NOTICE = /^\((?:exit code \d+|interrupted by user|timed out after .+)\)$/
 const EXIT_CODE = /^\(exit code (\d+)\)$/
-const FAILURE_PREFIX = /^(?:Tool failed:|\(interrupted by user\)|\(timed out after )/
+const FAILURE_PREFIX =
+  /^(?:Tool failed:|Tool completed, but its output could not be saved:|\(interrupted by user\)|\(timed out after )/
 const CONTROL_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g
 
 export function isNotice(text: string): boolean {
@@ -30,7 +31,9 @@ export function classifyLine(text: string): OutputLine {
 }
 
 export function cropLines(lines: OutputLine[], maxRows: number): OutputLine[] {
+  if (maxRows <= 0) return []
   if (lines.length <= maxRows) return lines
+  if (maxRows === 1) return [{ number: "", text: `… ${lines.length} lines omitted`, kind: "faint" }]
   const visible = lines.slice(-(maxRows - 1))
   return [{ number: "", text: `… ${lines.length - visible.length} earlier lines omitted`, kind: "faint" }, ...visible]
 }
