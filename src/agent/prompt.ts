@@ -25,10 +25,6 @@ export function registerPrompt(section: PromptSection): void {
   sections.set(section.id, [section])
 }
 
-export function registerPromptFull(section: PromptSection): void {
-  sections.set(section.id, [section])
-}
-
 export function composeSystemPrompt(ctx: PromptContext): string {
   return [...sections.values()]
     .map((parts) =>

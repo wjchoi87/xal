@@ -4,12 +4,8 @@ import { deepSeekFetch } from "./api"
 import { apiKey } from "./auth"
 
 function modelInfo(id: string): ModelInfo {
-  if (id === "deepseek-v4-flash") {
-    return { id, name: "DeepSeek V4 Flash", contextWindow: 1_000_000, maxOutput: 384_000, reasoning: true }
-  }
-  if (id === "deepseek-v4-pro") {
-    return { id, name: "DeepSeek V4 Pro", contextWindow: 1_000_000, maxOutput: 384_000, reasoning: true }
-  }
+  if (id === "deepseek-v4-flash") return { id, name: "DeepSeek V4 Flash", contextWindow: 1_000_000 }
+  if (id === "deepseek-v4-pro") return { id, name: "DeepSeek V4 Pro", contextWindow: 1_000_000 }
   return { id, name: id }
 }
 

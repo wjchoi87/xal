@@ -21,7 +21,7 @@ import type {
 import { SessionRecorder } from "../sessions/recorder"
 import type { LoadedSession, SessionMeta } from "../sessions/types"
 import { getTool, listTools } from "../tools/registry"
-import { boundToolOutput, toolOutputDirectory } from "../tools/output"
+import { boundToolOutput, TOOL_FAILED_PREFIX, TOOL_OUTPUT_UNSAVED_PREFIX, toolOutputDirectory } from "../tools/output"
 import type { AgentEvent, AgentState, DenialCause } from "./events"
 import { composeSystemPrompt } from "./prompt"
 
@@ -314,8 +314,8 @@ export class AgentSession {
     this.emit({ type: "state_changed", state })
   }
 
-  private addToolOutput(call: ToolCallItem, output: string, isError: boolean): void {
-    this.pushItem({ type: "tool_result", callId: call.callId, name: call.name, output, isError })
+  private addToolOutput(call: ToolCallItem, output: string): void {
+    this.pushItem({ type: "tool_result", callId: call.callId, output })
   }
 
   private async runTurn(
@@ -451,7 +451,7 @@ export class AgentSession {
 
   private async handleToolCall(call: ToolCallItem, signal: AbortSignal): Promise<void> {
     if (signal.aborted) {
-      this.addToolOutput(call, "Interrupted by user before execution.", true)
+      this.addToolOutput(call, "Interrupted by user before execution.")
       return
     }
 
@@ -459,7 +459,7 @@ export class AgentSession {
     const title = tool?.title(call.args) ?? JSON.stringify(call.args)
     if (!tool) {
       const message = `Unknown tool: ${call.name}`
-      this.addToolOutput(call, message, true)
+      this.addToolOutput(call, message)
       this.emit({
         type: "tool_finished",
         callId: call.callId,
@@ -515,19 +515,17 @@ export class AgentSession {
     try {
       output = (await tool.execute(call.args, signal)).output
     } catch (error) {
-      output = `Tool failed: ${describeError(error)}`
-      this.addToolOutput(call, output, true)
+      output = `${TOOL_FAILED_PREFIX}${describeError(error)}`
+      this.addToolOutput(call, output)
       this.emit({ type: "tool_finished", callId: call.callId, tool: call.name, title, readOnly, output })
       return
     }
-    let isError = false
     try {
       output = await boundToolOutput(this.outputDirectory, output)
     } catch (error) {
-      output = `Tool completed, but its output could not be saved: ${describeError(error)}. The operation may have changed state; inspect it before retrying.`
-      isError = true
+      output = `${TOOL_OUTPUT_UNSAVED_PREFIX}${describeError(error)}. The operation may have changed state; inspect it before retrying.`
     }
-    this.addToolOutput(call, output, isError)
+    this.addToolOutput(call, output)
     this.emit({ type: "tool_finished", callId: call.callId, tool: call.name, title, readOnly, output })
   }
 
@@ -539,7 +537,7 @@ export class AgentSession {
     message?: string,
   ): void {
     const output = message ?? denialMessages[denial]
-    this.addToolOutput(call, output, true)
+    this.addToolOutput(call, output)
     this.emit({ type: "tool_finished", callId: call.callId, tool: call.name, title, readOnly, output, denial })
   }
 }

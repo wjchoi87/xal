@@ -1,6 +1,5 @@
-import { registerPrompt, registerPromptFull } from "../agent/prompt"
+import { registerPrompt } from "../agent/prompt"
 import { registerCli } from "../cli/registry"
-import { registerCommand } from "../commands/registry"
 import { agentHome } from "../config/paths"
 import type { Settings } from "../config/settings"
 import { events, type PluginFailure, type PluginStatus } from "../events"
@@ -9,7 +8,7 @@ import { contributeRules } from "../permissions/rules"
 import { registerPolicyRule } from "../permissions/service"
 import { registerProvider } from "../providers/registry"
 import { registerTool } from "../tools/registry"
-import { registerToolRenderer, setTheme } from "../ui/extension"
+import { registerToolRenderer } from "../ui/extension"
 import { registerUi } from "../ui/registry"
 import { builtinPlugins } from "./builtins"
 import { importPlugin } from "./load"
@@ -31,14 +30,11 @@ function contextFor(plugin: Plugin, settings: Settings): PluginContext {
     registerTool,
     registerProvider,
     registerCli,
-    registerCommand,
     registerPrompt,
-    registerPromptFull,
     registerPolicyRule,
     registerPermissionRules: contributeRules,
     registerUi,
     registerToolRenderer,
-    setTheme,
   }
 }
 

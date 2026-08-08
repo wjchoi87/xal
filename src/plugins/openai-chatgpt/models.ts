@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { appEnvVar } from "../../app-info"
 import { cacheDir } from "../../config/paths"
-import { asBoolean, asNumber, asString, asStringArray, isRecord } from "../../lib/json"
+import { asNumber, asString, asStringArray, isRecord } from "../../lib/json"
 import { isThinkingEffort, type ModelInfo, type ThinkingEffort, type ThinkingOptions } from "../../providers/types"
 
 const MODELS_URL = "https://models.dev/api.json"
@@ -20,9 +20,7 @@ const BACKEND_MODEL_IDS = [
 
 interface ModelMetadata {
   name?: string
-  reasoning?: boolean
   contextWindow?: number
-  maxOutput?: number
   thinking?: ThinkingEffort[]
 }
 
@@ -49,9 +47,7 @@ function parseNetworkEntry(raw: unknown): ModelMetadata | undefined {
   const limit = isRecord(raw.limit) ? raw.limit : undefined
   return {
     name: asString(raw.name),
-    reasoning: asBoolean(raw.reasoning),
     contextWindow: limit ? asNumber(limit.context) : undefined,
-    maxOutput: limit ? asNumber(limit.output) : undefined,
     thinking: parseThinking(raw.reasoning_options),
   }
 }
@@ -61,9 +57,7 @@ function parseCachedEntry(raw: unknown): ModelMetadata | undefined {
   const thinking = asStringArray(raw.thinking).filter(isThinkingEffort)
   return {
     name: asString(raw.name),
-    reasoning: asBoolean(raw.reasoning),
     contextWindow: asNumber(raw.contextWindow),
-    maxOutput: asNumber(raw.maxOutput),
     thinking: thinking.length > 0 ? thinking : undefined,
   }
 }
@@ -130,8 +124,6 @@ export async function listModels(): Promise<ModelInfo[]> {
     id,
     name: metadata[id]?.name ?? id,
     contextWindow: metadata[id]?.contextWindow,
-    maxOutput: metadata[id]?.maxOutput,
-    reasoning: metadata[id]?.reasoning,
   }))
 }
 

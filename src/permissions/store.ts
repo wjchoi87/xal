@@ -1,6 +1,6 @@
-import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises"
-import { dirname, join } from "node:path"
+import { join } from "node:path"
 import { agentHome } from "../config/paths"
+import { readJsonFile, writeSecureJson } from "../lib/fs"
 import { asStringArray, isRecord } from "../lib/json"
 
 interface StoreFile {
@@ -8,25 +8,27 @@ interface StoreFile {
   projects: Record<string, { allow: string[] }>
 }
 
-const emptyFile = (): StoreFile => ({ version: 1, projects: {} })
-
 function permissionsPath(): string {
   return join(agentHome(), "permissions.json")
 }
 
 async function loadFile(): Promise<StoreFile> {
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(await readFile(permissionsPath(), "utf8"))
-  } catch {
-    return emptyFile()
+  const path = permissionsPath()
+  const parsed = await readJsonFile(path)
+  if (parsed === undefined) return { version: 1, projects: {} }
+  if (!isRecord(parsed) || !isRecord(parsed.projects)) {
+    throw new Error(`${path} is malformed — fix or delete it`)
   }
-  if (!isRecord(parsed) || !isRecord(parsed.projects)) return emptyFile()
   const projects: Record<string, { allow: string[] }> = {}
   for (const [project, raw] of Object.entries(parsed.projects)) {
-    if (!isRecord(raw)) continue
+    if (!isRecord(raw) || !Array.isArray(raw.allow)) {
+      throw new Error(`${path} is malformed — fix or delete it`)
+    }
     const allow = asStringArray(raw.allow)
-    if (allow.length > 0) projects[project] = { allow }
+    if (allow.length !== raw.allow.length) {
+      throw new Error(`${path} is malformed — fix or delete it`)
+    }
+    projects[project] = { allow }
   }
   return { version: 1, projects }
 }
@@ -39,7 +41,8 @@ export async function loadProjectRules(project: string): Promise<string[]> {
 let pending: Promise<void> = Promise.resolve()
 
 export function saveProjectRule(project: string, pattern: string): Promise<void> {
-  pending = pending.then(() => writeProjectRule(project, pattern))
+  const write = (): Promise<void> => writeProjectRule(project, pattern)
+  pending = pending.then(write, write)
   return pending
 }
 
@@ -48,12 +51,5 @@ async function writeProjectRule(project: string, pattern: string): Promise<void>
   const allow = file.projects[project]?.allow ?? []
   if (allow.includes(pattern)) return
   file.projects[project] = { allow: [...allow, pattern] }
-
-  const path = permissionsPath()
-  const dir = dirname(path)
-  await mkdir(dir, { recursive: true })
-  const tmp = join(dir, `.permissions.${process.pid}.${Date.now()}.tmp`)
-  await writeFile(tmp, JSON.stringify(file, null, 2) + "\n", { mode: 0o600 })
-  await rename(tmp, path)
-  await chmod(path, 0o600)
+  await writeSecureJson(permissionsPath(), file)
 }

@@ -33,20 +33,8 @@ const plugin: Plugin = {
     ctx.registerTool(bashTool)
     ctx.registerPermissionRules({ ask: DANGEROUS })
     ctx.registerPolicyRule({
-      id: "bash-compound-command",
       evaluate: (request) =>
         request.tool === "bash" && COMPOUND_COMMAND.test(commandOf(request.args)) ? "ask" : undefined,
-    })
-    ctx.registerToolRenderer({
-      tool: "bash",
-      waitingLabel(title) {
-        if (/\b(?:bun|cargo|npm|pnpm|yarn)?\s*(?:run\s+)?(?:test|pytest|jest|vitest)\b/i.test(title)) {
-          return "Waiting for tests"
-        }
-        if (/\b(?:build|compile|tsc)\b/i.test(title)) return "Waiting for build"
-        if (/\b(?:install|add)\b/i.test(title)) return "Waiting for install"
-        return "Waiting for command"
-      },
     })
   },
 }

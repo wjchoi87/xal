@@ -14,7 +14,6 @@ export interface PermissionRequest {
 }
 
 export interface PolicyRule {
-  id: string
   evaluate(request: PermissionRequest): PolicyDecision | undefined
 }
 

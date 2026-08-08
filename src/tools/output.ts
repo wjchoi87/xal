@@ -3,12 +3,18 @@ import { join, resolve } from "node:path"
 
 const MAX_OUTPUT_LINES = 2_000
 const MAX_OUTPUT_BYTES = 50 * 1024
-const TRUNCATION_NOTICE = /(?:^|\n)\.\.\. output truncated \((\d+) lines, (\d+) bytes\) \.\.\.(?:\n|$)/
+const TRUNCATION_NOTICE = /(?:^|\n)\.\.\. output truncated \((\d+) lines, \d+ bytes\) \.\.\.(?:\n|$)/
 const RECOVERY_PATH = /(?:^|\n)Full output saved to: (.+)$/
+
+export const TOOL_FAILED_PREFIX = "Tool failed: "
+export const TOOL_OUTPUT_UNSAVED_PREFIX = "Tool completed, but its output could not be saved: "
+
+export function toolFailed(output: string): boolean {
+  return output.startsWith(TOOL_FAILED_PREFIX) || output.startsWith(TOOL_OUTPUT_UNSAVED_PREFIX)
+}
 
 export interface BoundedToolOutputInfo {
   lines: number
-  bytes: number
   path: string
 }
 
@@ -21,10 +27,9 @@ export function parseBoundedToolOutput(output: string): BoundedToolOutputInfo | 
   const recovery = RECOVERY_PATH.exec(output)
   if (!notice || !recovery) return undefined
   const lines = Number(notice[1])
-  const bytes = Number(notice[2])
   const path = recovery[1]
-  if (!Number.isSafeInteger(lines) || !Number.isSafeInteger(bytes) || !path) return undefined
-  return { lines, bytes, path }
+  if (!Number.isSafeInteger(lines) || !path) return undefined
+  return { lines, path }
 }
 
 function lineCount(text: string): number {

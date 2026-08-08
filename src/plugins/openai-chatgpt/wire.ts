@@ -1,5 +1,5 @@
 import { asNumber, asString, isJsonObject, isRecord, type JsonObject, type JsonValue } from "../../lib/json"
-import type { ConversationTarget } from "../../providers/conversation"
+import { replayMatches, type ConversationTarget } from "../../providers/conversation"
 import { parseToolArgs } from "../../providers/transport"
 import type { ConversationItem, ProviderOutputItem, ProviderReplay, Usage } from "../../providers/types"
 
@@ -116,8 +116,7 @@ export function parseOutputItem(item: JsonObject, target: ConversationTarget): P
 }
 
 function replayData(item: { replay?: ProviderReplay }, target: ConversationTarget): JsonObject | undefined {
-  if (item.replay?.provider !== target.provider || item.replay.model !== target.model) return undefined
-  return item.replay.data
+  return replayMatches(item.replay, target) ? item.replay.data : undefined
 }
 
 export function buildInput(items: ConversationItem[], target: ConversationTarget): JsonObject[] {

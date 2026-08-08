@@ -30,8 +30,8 @@ export function resolveCli(args: string[]): ResolvedCli | undefined {
   const subName = args[1]
   if (subName) {
     const sub = children.get(name)?.get(subName)
-    if (sub) return { cli: sub, path: [name, subName], args: args.slice(2) }
+    if (sub) return { cli: sub, args: args.slice(2) }
   }
 
-  return { cli, path: [name], args: args.slice(1) }
+  return { cli, args: args.slice(1) }
 }

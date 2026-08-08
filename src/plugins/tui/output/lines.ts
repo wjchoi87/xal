@@ -1,3 +1,5 @@
+import { toolFailed } from "../../../tools/output"
+
 type OutputLineKind = "plain" | "faint" | "added" | "removed" | "hunk" | "error"
 
 export interface OutputLine {
@@ -8,8 +10,7 @@ export interface OutputLine {
 
 const NOTICE = /^\((?:exit code \d+|interrupted by user|timed out after .+)\)$/
 const EXIT_CODE = /^\(exit code (\d+)\)$/
-const FAILURE_PREFIX =
-  /^(?:Tool failed:|Tool completed, but its output could not be saved:|\(interrupted by user\)|\(timed out after )/
+const FAILURE_NOTICE = /^\((?:interrupted by user\)|timed out after )/
 const CONTROL_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g
 
 export function isNotice(text: string): boolean {
@@ -24,9 +25,10 @@ export function cleanLines(output: string): string[] {
 }
 
 export function classifyLine(text: string): OutputLine {
-  const exitCode = EXIT_CODE.exec(text.trim())
+  const trimmed = text.trim()
+  const exitCode = EXIT_CODE.exec(trimmed)
   if (exitCode) return { number: "", text: `exit code ${exitCode[1]}`, kind: "error" }
-  if (FAILURE_PREFIX.test(text.trim())) return { number: "", text, kind: "error" }
+  if (toolFailed(trimmed) || FAILURE_NOTICE.test(trimmed)) return { number: "", text, kind: "error" }
   return { number: "", text, kind: "plain" }
 }
 

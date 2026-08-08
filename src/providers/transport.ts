@@ -27,10 +27,13 @@ export async function* sseEvents(body: ReadableStream<Uint8Array>): AsyncGenerat
           yield { done: true }
           continue
         }
+        let parsed: unknown
         try {
-          const parsed: unknown = JSON.parse(data)
-          yield { done: false, data: parsed }
-        } catch {}
+          parsed = JSON.parse(data)
+        } catch {
+          throw new Error(`malformed SSE data: ${data.slice(0, 200)}`)
+        }
+        yield { done: false, data: parsed }
       }
     }
   } finally {

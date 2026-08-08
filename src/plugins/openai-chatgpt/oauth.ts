@@ -14,12 +14,6 @@ const REDIRECT_URI = `http://localhost:${REDIRECT_PORT}/auth/callback`
 const SCOPE = "openid profile email offline_access"
 const LOGIN_TIMEOUT_MS = 5 * 60 * 1000
 
-export class NotLoggedInError extends Error {
-  constructor() {
-    super(`not logged in — run: ${appInfo.name} login chatgpt`)
-  }
-}
-
 function base64url(bytes: Uint8Array): string {
   return Buffer.from(bytes).toString("base64").replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "")
 }
@@ -245,7 +239,7 @@ export async function isLoggedIn(): Promise<boolean> {
 
 export async function ensureAccessToken(forceRefresh = false): Promise<{ access: string; accountId: string }> {
   const credential = await loadCredential(PROVIDER_ID)
-  if (credential?.type !== "oauth") throw new NotLoggedInError()
+  if (credential?.type !== "oauth") throw new Error(`not logged in — run: ${appInfo.name} connect chatgpt`)
   if (!forceRefresh && credential.expires - 60_000 > Date.now()) {
     return { access: credential.access, accountId: credential.accountId }
   }

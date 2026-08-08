@@ -45,11 +45,11 @@ sequenceDiagram
 
 ### CLI
 
-`src/cli` owns the entry-point surface: `runCli(args, ctx)` dispatches, and the registry is seeded with the built-in roots so they exist the moment the module is imported — no bootstrap step, no ordering rule against plugin registration. A root without a `run` is a namespace that only prints its subcommands; plugins fill it in through `ctx.registerCli(cli, parent)`, and registering under a parent that does not exist fails the plugin, not the process. Providers are not wired this way: `connect` and `models` resolve any registered provider through `providers/catalog`, so `tack connect chatgpt` and `tack models chatgpt` work because the ChatGPT plugin calls `ctx.registerProvider` — never `ctx.registerCli`.
+`src/cli` owns the entry-point surface: `runCli(args, ctx)` dispatches, and the registry is seeded with the built-in roots so they exist the moment the module is imported — no bootstrap step, no ordering rule against plugin registration. A root without a `run` is a namespace that only prints its subcommands; plugins fill it in through `ctx.registerCli(cli, parent)`, and registering under a parent that does not exist fails the plugin, not the process. Providers are not wired this way: `connect` and `models` resolve a named provider through `providers/registry` and enumerate the choices through `providers/catalog`, so `tack connect chatgpt` and `tack models chatgpt` work because the ChatGPT plugin calls `ctx.registerProvider` — never `ctx.registerCli`.
 
 ### Plugins
 
-A plugin is a folder with a `plugin.ts` default-exporting the contract in `src/plugins/types.ts`; its `register(ctx)` introduces contributions through the per-module registries. Built-ins (`src/plugins/builtins.ts`) register first, then external plugins from `~/.tack/config.json` in order; later plugins can extend or replace anything. A failing plugin is skipped and reported, never fatal.
+A plugin is a folder with a `plugin.ts` default-exporting the contract in `src/plugins/types.ts`; its `register(ctx)` introduces contributions through the per-module registries and must stay synchronous — asynchronous work belongs in the optional `bootstrap(ctx)`, which runs as a second phase after every plugin has registered. Built-ins (`src/plugins/builtins.ts`) register first, then external plugins from `~/.tack/config.json` in order; later plugins can extend or replace any keyed contribution, while permission and policy rules only accumulate. A failing plugin is skipped and reported, never fatal.
 
 ```mermaid
 sequenceDiagram

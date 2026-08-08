@@ -2,12 +2,7 @@ import type { Plugin } from "../types"
 import { globTool } from "./glob"
 import { grepTool } from "./grep"
 
-function toolFailed(output: string): boolean {
-  return output.startsWith("Tool failed:")
-}
-
 function summarizeSearch(output: string): string {
-  if (toolFailed(output)) return "failed"
   const first = output.split("\n", 1)[0] ?? ""
   const matches = /^Found (\d+) matching lines$/.exec(first)
   if (matches) return `${matches[1]} matches`
@@ -22,8 +17,8 @@ const plugin: Plugin = {
   register(ctx) {
     ctx.registerTool(grepTool)
     ctx.registerTool(globTool)
-    ctx.registerToolRenderer({ tool: "grep", failed: toolFailed, summarize: summarizeSearch })
-    ctx.registerToolRenderer({ tool: "glob", failed: toolFailed, summarize: summarizeSearch })
+    ctx.registerToolRenderer({ tool: "grep", summarize: summarizeSearch })
+    ctx.registerToolRenderer({ tool: "glob", summarize: summarizeSearch })
   },
 }
 

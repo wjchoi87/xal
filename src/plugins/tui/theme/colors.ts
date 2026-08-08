@@ -1,5 +1,5 @@
 import { RGBA } from "@opentui/core"
-import { themeOverrides, type ThemeColors } from "../../../ui/extension"
+import type { ThemeColors } from "../../../ui/extension"
 
 export const COLORS: ThemeColors = {
   foreground: RGBA.defaultForeground(),
@@ -13,7 +13,6 @@ export const COLORS: ThemeColors = {
   warning: RGBA.fromIndex(11),
   border: RGBA.fromIndex(8),
   selection: RGBA.fromIndex(4),
-  ...themeOverrides(),
 }
 
 export const colorsEnabled = process.env.NO_COLOR === undefined

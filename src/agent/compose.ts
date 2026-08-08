@@ -9,9 +9,7 @@ import { AgentSession } from "./agent-session"
 
 export interface SessionSetup {
   session: AgentSession
-  provider: Provider
   model: string
-  thinking?: ThinkingEffort
 }
 
 export interface SessionOptions {
@@ -20,7 +18,7 @@ export interface SessionOptions {
   persist?: boolean
 }
 
-export function resolveProvider(id?: string): Provider {
+function resolveProvider(id?: string): Provider {
   const wanted = id ?? settings().provider
   if (wanted) {
     const provider = getProvider(wanted)
@@ -38,9 +36,7 @@ export async function createSession(options: SessionOptions = {}): Promise<Sessi
   const thinking = await resolveThinking(provider, model)
   return {
     session: new AgentSession({ provider, model, thinking, persist: options.persist }),
-    provider,
     model,
-    thinking,
   }
 }
 

@@ -12,13 +12,9 @@ class AppEventService implements EventService {
     }
   }
 
-  emit(event: AppEvent): void {
-    for (const listener of this.listeners) this.notify(listener, event)
-  }
-
   emitRetained(event: AppEvent): void {
     this.retained.set(event.type, event)
-    this.emit(event)
+    for (const listener of this.listeners) this.notify(listener, event)
   }
 
   subscribe(listener: (event: AppEvent) => void, replayRetained = false): () => void {

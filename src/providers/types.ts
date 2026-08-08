@@ -43,9 +43,7 @@ export interface ToolCallItem {
 export interface ToolResultItem {
   type: "tool_result"
   callId: string
-  name: string
   output: string
-  isError: boolean
 }
 
 export type ProviderOutputItem = AssistantMessageItem | ReasoningItem | ToolCallItem
@@ -56,8 +54,6 @@ export interface ModelInfo {
   id: string
   name: string
   contextWindow?: number
-  maxOutput?: number
-  reasoning?: boolean
 }
 
 export interface Usage {

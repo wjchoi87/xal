@@ -12,6 +12,5 @@ export interface Cli {
 
 export interface ResolvedCli {
   cli: Cli
-  path: string[]
   args: string[]
 }

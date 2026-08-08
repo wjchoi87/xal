@@ -4,7 +4,6 @@ export interface ToolRenderer {
   tool: string
   alwaysExpanded?: boolean
   maxRows?: number
-  waitingLabel?(title: string): string
   summarize?(output: string): string
   failed?(output: string): boolean
   renderOutput?(output: string, width: number): { content: StyledText; rows: number }
@@ -25,7 +24,6 @@ export interface ThemeColors {
 }
 
 const renderers = new Map<string, ToolRenderer>()
-let overrides: Partial<ThemeColors> = {}
 
 export function registerToolRenderer(renderer: ToolRenderer): void {
   renderers.set(renderer.tool, renderer)
@@ -33,12 +31,4 @@ export function registerToolRenderer(renderer: ToolRenderer): void {
 
 export function getToolRenderer(tool: string): ToolRenderer | undefined {
   return renderers.get(tool)
-}
-
-export function setTheme(values: Partial<ThemeColors>): void {
-  overrides = { ...overrides, ...values }
-}
-
-export function themeOverrides(): Partial<ThemeColors> {
-  return overrides
 }

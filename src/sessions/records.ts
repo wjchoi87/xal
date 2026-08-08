@@ -187,11 +187,9 @@ function parseItem(raw: unknown): ConversationItem | undefined {
     }
     case "tool_result": {
       const callId = asString(raw.callId)
-      const name = asString(raw.name)
       const output = asString(raw.output)
-      const isError = asBoolean(raw.isError)
-      if (!callId || !name || output === undefined || isError === undefined) return undefined
-      return { type: "tool_result", callId, name, output, isError }
+      if (!callId || output === undefined) return undefined
+      return { type: "tool_result", callId, output }
     }
     default:
       return undefined

@@ -15,7 +15,6 @@ export type AppEvent =
   | { type: "plugin_bootstrap_finished"; status: PluginStatus }
 
 export interface EventService {
-  emit(event: AppEvent): void
   emitRetained(event: AppEvent): void
   subscribe(listener: (event: AppEvent) => void, replayRetained?: boolean): () => void
 }

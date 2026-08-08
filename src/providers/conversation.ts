@@ -5,21 +5,24 @@ export interface ConversationTarget {
   model: string
 }
 
-function matches(replay: ProviderReplay | undefined, target: ConversationTarget): replay is ProviderReplay {
+export function replayMatches(
+  replay: ProviderReplay | undefined,
+  target: ConversationTarget,
+): replay is ProviderReplay {
   return replay?.provider === target.provider && (replay.model === undefined || replay.model === target.model)
 }
 
 function assistant(item: AssistantMessageItem, target: ConversationTarget): AssistantMessageItem {
-  if (matches(item.replay, target)) return item
+  if (replayMatches(item.replay, target)) return item
   return { type: "assistant_message", text: item.text }
 }
 
 function reasoning(item: ReasoningItem, target: ConversationTarget): ReasoningItem | undefined {
-  return matches(item.replay, target) ? item : undefined
+  return replayMatches(item.replay, target) ? item : undefined
 }
 
 function toolCall(item: ToolCallItem, target: ConversationTarget): ToolCallItem {
-  if (matches(item.replay, target)) return item
+  if (replayMatches(item.replay, target)) return item
   return { type: "tool_call", callId: item.callId, name: item.name, args: item.args }
 }
 
@@ -50,9 +53,7 @@ export function prepareConversation(items: ConversationItem[], target: Conversat
       result.push({
         type: "tool_result",
         callId: call.callId,
-        name: call.name,
         output: "Tool execution was interrupted before returning a result.",
-        isError: true,
       })
     }
     pending.clear()

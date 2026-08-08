@@ -1,6 +1,6 @@
 import { mkdir } from "node:fs/promises"
 import { join } from "node:path"
-import { asString, isRecord } from "../lib/json"
+import { asString, asStringArray, isRecord } from "../lib/json"
 import { isThinkingEffort, type ThinkingEffort } from "../providers/types"
 import { agentHome } from "./paths"
 
@@ -44,21 +44,15 @@ export async function saveSettings(patch: Partial<Settings>): Promise<void> {
 }
 
 async function readSettings(): Promise<Settings> {
-  const fallback: Settings = { plugins: [], pluginConfig: {}, thinking: {} }
   const file = Bun.file(settingsPath())
-  if (!(await file.exists())) return fallback
+  if (!(await file.exists())) return { plugins: [], pluginConfig: {}, thinking: {} }
 
-  let raw: unknown
-  try {
-    raw = await file.json()
-  } catch {
-    return fallback
+  const raw: unknown = await file.json().catch(() => undefined)
+  if (!isRecord(raw)) {
+    throw new Error(`${settingsPath()} is malformed — fix or delete it`)
   }
-  if (!isRecord(raw)) return fallback
 
-  const plugins = Array.isArray(raw.plugins)
-    ? raw.plugins.flatMap((entry) => (typeof entry === "string" ? [entry] : []))
-    : []
+  const plugins = asStringArray(raw.plugins)
   const pluginConfig: Record<string, Record<string, unknown>> = {}
   if (isRecord(raw.pluginConfig)) {
     for (const [name, value] of Object.entries(raw.pluginConfig)) {
