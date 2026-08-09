@@ -26,6 +26,7 @@ import {
 import type { CompactionTrigger } from "./compaction"
 import type { AgentEvent, AgentState, DenialCause, QueuedEntry } from "./events"
 import { activeHistory, type HistoryItem } from "./history"
+import { OutputLoopDetector, ToolLoopDetector, type OutputLoop, type ToolLoopAction } from "./loop-detection"
 import { composeSystemPrompt } from "./prompt"
 
 export interface AgentSessionDeps {
@@ -306,13 +307,14 @@ export class AgentSession {
     return this.queued.map((input) => ({ text: input.text, imageCount: input.images.length }))
   }
 
-  private drainQueue(): void {
-    if (this.queued.length === 0) return
+  private drainQueue(): boolean {
+    if (this.queued.length === 0) return false
     for (const input of this.queued.splice(0)) {
       this.pushItem({ type: "user_message", ...input })
       this.emit({ type: "user_message", text: input.text, imageCount: input.images.length, sentAt: Date.now() })
     }
     this.emit({ type: "queue_changed", entries: [] })
+    return true
   }
 
   private flushQueue(): void {
@@ -477,6 +479,7 @@ export class AgentSession {
     thinking: ThinkingEffort | undefined,
   ): Promise<void> {
     const usage: TurnUsage = {}
+    const toolLoops = new ToolLoopDetector()
 
     while (true) {
       await this.autoCompact(signal, provider, model, thinking)
@@ -484,7 +487,7 @@ export class AgentSession {
         this.emit({ type: "turn_interrupted" })
         return
       }
-      this.drainQueue()
+      if (this.drainQueue()) toolLoops.reset()
 
       this.setState("streaming")
       const items = await this.streamRound(signal, provider, model, thinking, usage)
@@ -500,9 +503,23 @@ export class AgentSession {
         return
       }
 
+      let loopError: Error | undefined
       for (const call of toolCalls) {
-        await this.handleToolCall(call, signal)
+        if (loopError) {
+          this.finishSkippedToolCall(call, "Not run because a repeated tool loop stopped the turn.")
+          continue
+        }
+        const loop = signal.aborted ? "allow" : toolLoops.inspect(call)
+        if (loop !== "allow") {
+          this.handleToolLoop(call, loop)
+          if (loop === "stop") {
+            loopError = new Error(`turn stopped after repeated ${call.name} tool calls`)
+          }
+          continue
+        }
+        toolLoops.record(call, await this.handleToolCall(call, signal))
       }
+      if (loopError) throw loopError
 
       if (signal.aborted) {
         this.emit({ type: "turn_interrupted" })
@@ -570,6 +587,26 @@ export class AgentSession {
     round: StreamRound,
     usage: TurnUsage,
   ): Promise<void> {
+    const outputLoops = {
+      assistant: new OutputLoopDetector(),
+      reasoning: new OutputLoopDetector(),
+      rawReasoning: new OutputLoopDetector(),
+    }
+    let assistantStreamed = false
+    let reasoningStreamed = false
+
+    const rejectLoop = (loop: OutputLoop | undefined, label: string): void => {
+      if (!loop) return
+      const description = loop === "repeated" ? "repeated text" : "low-novelty text"
+      throw new ProviderError(`model output loop detected in ${label}: ${description}`, { retryable: true })
+    }
+    const detectLoop = (detector: OutputLoopDetector, text: string, label: string): void => {
+      rejectLoop(detector.add(text), label)
+    }
+    const finishLoop = (detector: OutputLoopDetector, label: string): void => {
+      rejectLoop(detector.finish(), label)
+    }
+
     for await (const event of provider.stream({
       model,
       thinking,
@@ -588,18 +625,37 @@ export class AgentSession {
       round.received = true
       switch (event.type) {
         case "text_delta":
+          detectLoop(outputLoops.assistant, event.text, "assistant response")
+          assistantStreamed = true
           this.stream("assistant", event.text)
           break
         case "reasoning_summary_delta":
+          detectLoop(outputLoops.reasoning, event.text, "reasoning summary")
+          reasoningStreamed = true
           this.stream("reasoning", event.text)
           break
         case "reasoning_delta":
+          detectLoop(outputLoops.rawReasoning, event.text, "reasoning")
           this.emit({ type: "reasoning_delta", text: event.text })
           break
-        case "item_done":
+        case "item_done": {
+          if (event.item.type === "assistant_message") {
+            if (!assistantStreamed) detectLoop(outputLoops.assistant, event.item.text, "assistant response")
+            finishLoop(outputLoops.assistant, "assistant response")
+            assistantStreamed = false
+          }
+          if (event.item.type === "reasoning") {
+            if (!reasoningStreamed) detectLoop(outputLoops.reasoning, event.item.summary, "reasoning summary")
+            finishLoop(outputLoops.reasoning, "reasoning summary")
+            reasoningStreamed = false
+          }
           round.items.push(event.item)
           break
+        }
         case "done": {
+          finishLoop(outputLoops.assistant, "assistant response")
+          finishLoop(outputLoops.reasoning, "reasoning summary")
+          finishLoop(outputLoops.rawReasoning, "reasoning")
           if (!event.usage) break
           usage.context = event.usage
           usage.turn = addUsage(usage.turn, event.usage)
@@ -610,27 +666,33 @@ export class AgentSession {
     }
   }
 
-  private async handleToolCall(call: ToolCallItem, signal: AbortSignal): Promise<void> {
+  private handleToolLoop(call: ToolCallItem, action: Exclude<ToolLoopAction, "allow">): void {
+    const output =
+      action === "steer"
+        ? `Repeated tool call blocked: ${call.name} returned the same result twice for identical arguments. Use the existing result or change the approach.`
+        : `Repeated tool call blocked again: ${call.name} was requested with the same arguments after the loop warning.`
+    this.finishSkippedToolCall(call, output)
+  }
+
+  private finishSkippedToolCall(call: ToolCallItem, output: string): void {
+    const tool = getTool(call.name)
+    const title = tool?.title(call.args) ?? JSON.stringify(call.args)
+    const readOnly = tool?.readOnly?.(call.args) ?? false
+    this.finishToolCall(call, title, readOnly, output)
+  }
+
+  private async handleToolCall(call: ToolCallItem, signal: AbortSignal): Promise<string> {
     if (signal.aborted) {
-      this.addToolOutput(call, "Interrupted by user before execution.")
-      return
+      const output = "Interrupted by user before execution."
+      this.addToolOutput(call, output)
+      return output
     }
 
     const tool = getTool(call.name)
     const title = tool?.title(call.args) ?? JSON.stringify(call.args)
     if (!tool) {
       const message = `Unknown tool: ${call.name}`
-      this.addToolOutput(call, message)
-      this.emit({
-        type: "tool_finished",
-        callId: call.callId,
-        tool: call.name,
-        title,
-        readOnly: false,
-        output: message,
-        denial: "policy",
-      })
-      return
+      return this.finishToolCall(call, title, false, message, "policy")
     }
 
     const readOnly = tool.readOnly?.(call.args) ?? false
@@ -648,8 +710,7 @@ export class AgentSession {
 
     if (decision === "deny") {
       const cause = this.mode === "plan" && !readOnly ? "plan" : "policy"
-      this.denyToolCall(call, title, readOnly, cause)
-      return
+      return this.denyToolCall(call, title, readOnly, cause)
     }
 
     if (decision === "ask") {
@@ -667,8 +728,7 @@ export class AgentSession {
       })
       const result = await asked
       if (result.decision === "deny") {
-        this.denyToolCall(call, title, readOnly, result.cause ?? "user", result.message)
-        return
+        return this.denyToolCall(call, title, readOnly, result.cause ?? "user", result.message)
       }
     }
 
@@ -681,17 +741,34 @@ export class AgentSession {
       ).output
     } catch (error) {
       output = `${TOOL_FAILED_PREFIX}${describeError(error)}`
-      this.addToolOutput(call, output)
-      this.emit({ type: "tool_finished", callId: call.callId, tool: call.name, title, readOnly, output })
-      return
+      return this.finishToolCall(call, title, readOnly, output)
     }
     try {
       output = await boundToolOutput(this.outputDirectory, output)
     } catch (error) {
       output = `${TOOL_OUTPUT_UNSAVED_PREFIX}${describeError(error)}. The operation may have changed state; inspect it before retrying.`
     }
+    return this.finishToolCall(call, title, readOnly, output)
+  }
+
+  private finishToolCall(
+    call: ToolCallItem,
+    title: string,
+    readOnly: boolean,
+    output: string,
+    denial?: DenialCause,
+  ): string {
     this.addToolOutput(call, output)
-    this.emit({ type: "tool_finished", callId: call.callId, tool: call.name, title, readOnly, output })
+    this.emit({
+      type: "tool_finished",
+      callId: call.callId,
+      tool: call.name,
+      title,
+      readOnly,
+      output,
+      ...(denial ? { denial } : {}),
+    })
+    return output
   }
 
   private denyToolCall(
@@ -700,9 +777,8 @@ export class AgentSession {
     readOnly: boolean,
     denial: DenialCause,
     message?: string,
-  ): void {
+  ): string {
     const output = message ?? denialMessages[denial]
-    this.addToolOutput(call, output)
-    this.emit({ type: "tool_finished", callId: call.callId, tool: call.name, title, readOnly, output, denial })
+    return this.finishToolCall(call, title, readOnly, output, denial)
   }
 }
