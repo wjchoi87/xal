@@ -13,6 +13,10 @@ export const COLORS: ThemeColors = {
   warning: RGBA.fromIndex(11),
   border: RGBA.fromIndex(8),
   selection: RGBA.fromIndex(4),
+  code: RGBA.fromIndex(14),
+  keyword: RGBA.fromIndex(13),
+  literal: RGBA.fromIndex(10),
+  number: RGBA.fromIndex(11),
 }
 
 export const colorsEnabled = process.env.NO_COLOR === undefined

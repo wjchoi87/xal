@@ -1,10 +1,10 @@
-import { StyledText, stringToStyledText, stripAnsiSequences, type TextChunk } from "@opentui/core"
+import { StyledText, stringToStyledText, stripAnsiSequences, type RGBA, type TextChunk } from "@opentui/core"
 import { parseBoundedToolOutput } from "../../../tools/output"
 import { displayWidth, truncateToWidth } from "../lib/text"
 import { COLORS } from "../theme/colors"
 import { muted, paint } from "../theme/styles"
 import { parseDiff } from "./diff"
-import { classifyLine, cleanLines, cropLines, type OutputLine } from "./lines"
+import { classifyLine, cleanLines, cropLines, type OutputLine, type OutputLineKind } from "./lines"
 
 export const MAX_OUTPUT_ROWS = 8
 
@@ -12,20 +12,24 @@ function raw(text: string): TextChunk {
   return stringToStyledText(text).chunks[0]!
 }
 
-function contentChunk(line: OutputLine): TextChunk {
-  switch (line.kind) {
+export function lineColor(kind: OutputLineKind): RGBA {
+  switch (kind) {
     case "added":
-      return paint(COLORS.success, line.text)
+      return COLORS.success
     case "removed":
-      return paint(COLORS.error, line.text)
-    case "hunk":
-      return paint(COLORS.warning, line.text)
     case "error":
-      return paint(COLORS.error, line.text)
+      return COLORS.error
+    case "hunk":
+      return COLORS.warning
     case "faint":
     case "plain":
-      return muted(line.text)
+      return COLORS.faint
   }
+}
+
+function contentChunk(line: OutputLine): TextChunk {
+  if (line.kind === "faint" || line.kind === "plain") return muted(line.text)
+  return paint(lineColor(line.kind), line.text)
 }
 
 export function renderToolOutput(

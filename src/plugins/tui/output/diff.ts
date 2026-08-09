@@ -1,10 +1,15 @@
 import { classifyLine, isNotice, type OutputLine } from "./lines"
 
 const HUNK = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/
+const FILE_HEADER =
+  /^(?:diff |index |--- |\+\+\+ |old mode |new mode |new file |deleted file |similarity |rename |Binary files )/
 
 export function parseDiff(lines: string[]): OutputLine[] | undefined {
   if (!lines.some((line) => line.startsWith("@@"))) return undefined
+  return classifyDiff(lines)
+}
 
+export function classifyDiff(lines: string[]): OutputLine[] {
   const parsed: OutputLine[] = []
   let oldLine: number | undefined
   let newLine: number | undefined
@@ -21,24 +26,26 @@ export function parseDiff(lines: string[]): OutputLine[] | undefined {
       parsed.push({ number: "", text: line, kind: "hunk" })
       continue
     }
-    if (oldLine === undefined || newLine === undefined) {
+    if (FILE_HEADER.test(line)) {
+      oldLine = undefined
+      newLine = undefined
       parsed.push({ number: "", text: line, kind: "faint" })
       continue
     }
     if (line.startsWith("-")) {
-      parsed.push({ number: String(oldLine), text: line, kind: "removed" })
-      oldLine += 1
+      parsed.push({ number: lineNumber(oldLine), text: line, kind: "removed" })
+      if (oldLine !== undefined) oldLine += 1
       continue
     }
     if (line.startsWith("+")) {
-      parsed.push({ number: String(newLine), text: line, kind: "added" })
-      newLine += 1
+      parsed.push({ number: lineNumber(newLine), text: line, kind: "added" })
+      if (newLine !== undefined) newLine += 1
       continue
     }
-    if (line.startsWith(" ")) {
-      parsed.push({ number: String(newLine), text: line, kind: "plain" })
-      oldLine += 1
-      newLine += 1
+    if (line.startsWith(" ") || line === "") {
+      parsed.push({ number: lineNumber(newLine), text: line, kind: "plain" })
+      if (oldLine !== undefined) oldLine += 1
+      if (newLine !== undefined) newLine += 1
       continue
     }
     if (line.startsWith("\\")) {
@@ -51,4 +58,8 @@ export function parseDiff(lines: string[]): OutputLine[] | undefined {
   }
 
   return parsed
+}
+
+function lineNumber(value: number | undefined): string {
+  return value === undefined ? "" : String(value)
 }

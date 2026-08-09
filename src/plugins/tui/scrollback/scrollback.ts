@@ -1,6 +1,6 @@
 import type { CliRenderer, ScrollbackSurface, TextRenderable } from "@opentui/core"
 import type { Block, StreamBlock, StreamKind } from "./blocks"
-import { renderBlock, streamContent, streamView } from "./render"
+import { contentWidth, renderBlock, streamContent, streamView } from "./render"
 
 const FLUSH_MS = 50
 
@@ -92,6 +92,10 @@ export class Scrollback {
     this.committed = 0
   }
 
+  private liveRows(): number {
+    return Math.max(1, this.renderer.terminalHeight - this.renderer.footerHeight - 1)
+  }
+
   private drop(block: Block): void {
     const index = this.blocks.indexOf(block)
     if (index < 0) return
@@ -113,9 +117,13 @@ export class Scrollback {
   }
 
   private flush(stream: Stream, final: boolean): void {
-    stream.text.content = streamContent(stream.block)
+    const rendered = streamContent(stream.block, contentWidth(stream.surface.renderContext))
+    stream.text.content = rendered.content
+    stream.text.height = rendered.rows
     stream.surface.render()
-    const target = final ? stream.surface.height : stream.surface.height - 1
+    const pending = rendered.rows - rendered.stable
+    const held = final ? 0 : rendered.flowing ? Math.max(1, Math.min(pending, this.liveRows())) : pending
+    const target = stream.surface.height - held
     if (target <= stream.committed) return
     const rows = target - stream.committed
     this.onCommit(rows)

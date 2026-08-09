@@ -21,6 +21,10 @@ export interface ThemeColors {
   warning: RGBA
   border: RGBA
   selection: RGBA
+  code: RGBA
+  keyword: RGBA
+  literal: RGBA
+  number: RGBA
 }
 
 const renderers = new Map<string, ToolRenderer>()

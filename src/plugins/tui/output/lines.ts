@@ -1,6 +1,7 @@
 import { toolFailed } from "../../../tools/output"
+import { sanitize } from "../lib/text"
 
-type OutputLineKind = "plain" | "faint" | "added" | "removed" | "hunk" | "error"
+export type OutputLineKind = "plain" | "faint" | "added" | "removed" | "hunk" | "error"
 
 export interface OutputLine {
   number: string
@@ -11,14 +12,13 @@ export interface OutputLine {
 const NOTICE = /^\((?:exit code \d+|interrupted by user|timed out after .+)\)$/
 const EXIT_CODE = /^\(exit code (\d+)\)$/
 const FAILURE_NOTICE = /^\((?:interrupted by user\)|timed out after )/
-const CONTROL_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g
 
 export function isNotice(text: string): boolean {
   return NOTICE.test(text.trim())
 }
 
 export function cleanLines(output: string): string[] {
-  const clean = output.replace(/\r\n?/g, "\n").replace(CONTROL_CHARS, "").trimEnd()
+  const clean = sanitize(output).trimEnd()
   if (!clean) return ["(no output)"]
   const lines = clean.split("\n").filter((line) => line.trim() !== "(exit code 0)")
   return lines.length > 0 ? lines : ["(no output)"]

@@ -1,20 +1,12 @@
-import {
-  bold,
-  StyledText,
-  t,
-  TextAttributes,
-  type Renderable,
-  type RenderContext,
-  type TextRenderable,
-} from "@opentui/core"
+import { bold, t, TextAttributes, type Renderable, type RenderContext, type TextRenderable } from "@opentui/core"
 import type { DenialCause } from "../../../agent/events"
 import { appInfo } from "../../../app-info"
 import { parseBoundedToolOutput } from "../../../tools/output"
 import { getToolRenderer } from "../../../ui/extension"
 import { commandLabel, settledStatus, type ToolOutcome } from "../components/tool-status"
 import { formatTimestamp, formatTokens } from "../lib/format"
-import { renderInlineMarkdown } from "../lib/markdown"
 import { column, detailPanel, label, paragraph, row } from "../lib/renderables"
+import { renderMarkdown, type RenderedMarkdown } from "../markdown/render"
 import { MAX_OUTPUT_ROWS, renderToolOutput } from "../output/render"
 import { summarizeToolOutput, toolOutputFailed } from "../output/summary"
 import { COLORS } from "../theme/colors"
@@ -28,16 +20,18 @@ interface StreamView {
   text: TextRenderable
 }
 
-export function streamContent(block: StreamBlock): StyledText | string {
-  if (block.kind === "text") return block.text
-  return renderInlineMarkdown(block.text, COLORS.faint, TextAttributes.ITALIC)
+export function contentWidth(ctx: RenderContext): number {
+  return Math.max(1, ctx.width - GUTTER * 2)
+}
+
+export function streamContent(block: StreamBlock, width: number): RenderedMarkdown {
+  return renderMarkdown(block.text, width, block.kind === "reasoning")
 }
 
 export function streamView(ctx: RenderContext, block: StreamBlock): StreamView {
-  const text = paragraph(ctx, {
-    content: streamContent(block),
-    color: block.kind === "text" ? COLORS.foreground : COLORS.faint,
-  })
+  const rendered = streamContent(block, contentWidth(ctx))
+  const text = paragraph(ctx, { content: rendered.content, height: rendered.rows, wrapMode: "none" })
+  text.truncate = false
   return { view: frame(ctx, text), text }
 }
 
