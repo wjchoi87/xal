@@ -6,6 +6,10 @@ export function agentHome(): string {
   return process.env[appEnvVar("HOME")]?.trim() || join(homedir(), `.${appInfo.name}`)
 }
 
+export function projectConfigPath(root: string): string {
+  return join(root, `.${appInfo.name}`, "config.json")
+}
+
 export function credentialsPath(): string {
   return join(agentHome(), "credentials.json")
 }

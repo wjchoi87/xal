@@ -1,16 +1,5 @@
-import { stat } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
-import { isMissingPathError } from "../lib/error"
-
-async function pathExists(path: string): Promise<boolean> {
-  try {
-    await stat(path)
-    return true
-  } catch (error) {
-    if (isMissingPathError(error)) return false
-    throw error
-  }
-}
+import { pathExists } from "../lib/fs"
 
 export async function findProjectRoot(cwd: string): Promise<string> {
   const start = resolve(cwd)

@@ -1,9 +1,12 @@
 import { registerAgentCommands } from "./agent/commands"
+import { chooseOption } from "./cli/choose"
 import { runCli } from "./cli/run"
 import { askSecret } from "./cli/secret"
 import type { CliContext } from "./cli/types"
 import { loadSettings } from "./config/settings"
 import { bootstrapPlugins, registerPlugins } from "./plugins/discover"
+import { registerTrustClis } from "./project/cli"
+import { ensureWorkspaceTrust } from "./project/trust"
 import { registerProviderClis } from "./providers/cli"
 import { registerProviderCommands } from "./providers/commands"
 import { registerSessionClis } from "./sessions/cli"
@@ -26,6 +29,7 @@ function registerCore(): void {
   registerAgentCommands()
   registerSessionCommands()
   registerSessionClis()
+  registerTrustClis()
 }
 
 function normalize(args: string[]): string[] {
@@ -36,6 +40,11 @@ function normalize(args: string[]): string[] {
 
 async function main(input: string[]): Promise<void> {
   const args = normalize(input)
+  const trusted = await ensureWorkspaceTrust({
+    print: ctx.print,
+    choose: args.length === 0 && process.stdin.isTTY ? chooseOption : undefined,
+  })
+  if (!trusted) return
   const settings = await loadSettings()
   registerCore()
   const plugins = await registerPlugins(settings)

@@ -1,12 +1,23 @@
-import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises"
+import { chmod, mkdir, readFile, rename, stat, writeFile } from "node:fs/promises"
 import { basename, dirname, join } from "node:path"
+import { isMissingPathError } from "./error"
+
+export async function pathExists(path: string): Promise<boolean> {
+  try {
+    await stat(path)
+    return true
+  } catch (error) {
+    if (isMissingPathError(error)) return false
+    throw error
+  }
+}
 
 export async function readJsonFile(path: string): Promise<unknown> {
   let text: string
   try {
     text = await readFile(path, "utf8")
   } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") return undefined
+    if (isMissingPathError(error)) return undefined
     throw error
   }
   try {

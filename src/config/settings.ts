@@ -2,8 +2,9 @@ import { join } from "node:path"
 import { readJsonFile, writeSecureJson } from "../lib/fs"
 import { asString, asStringArray, isRecord } from "../lib/json"
 import { findProjectRoot } from "../project/root"
+import { isTrusted } from "../project/trust"
 import { isThinkingEffort, type ThinkingEffort } from "../providers/types"
-import { agentHome } from "./paths"
+import { agentHome, projectConfigPath } from "./paths"
 
 export interface Settings {
   plugins: string[]
@@ -18,10 +19,6 @@ let current: Settings = { plugins: [], pluginConfig: {}, thinking: {} }
 
 function userSettingsPath(): string {
   return join(agentHome(), "config.json")
-}
-
-async function projectSettingsPath(): Promise<string> {
-  return join(await findProjectRoot(process.cwd()), ".tack", "config.json")
 }
 
 export function settings(): Settings {
@@ -48,7 +45,9 @@ async function readSettings(): Promise<Settings> {
 }
 
 async function readProjectSettings(): Promise<Record<string, unknown>> {
-  return readSettingsFile(await projectSettingsPath())
+  const root = await findProjectRoot(process.cwd())
+  if (!(await isTrusted(root))) return {}
+  return readSettingsFile(projectConfigPath(root))
 }
 
 async function readSettingsFile(path: string): Promise<Record<string, unknown>> {
