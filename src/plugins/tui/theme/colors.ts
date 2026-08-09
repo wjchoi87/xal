@@ -1,5 +1,6 @@
 import { RGBA } from "@opentui/core"
 import type { ThemeColors } from "../../../ui/extension"
+import { terminalPresentation } from "../terminal"
 
 export const COLORS: ThemeColors = {
   foreground: RGBA.defaultForeground(),
@@ -19,7 +20,7 @@ export const COLORS: ThemeColors = {
   number: RGBA.fromIndex(11),
 }
 
-export const colorsEnabled = process.env.NO_COLOR === undefined
+export const colorsEnabled = terminalPresentation.colors
 
 export function resolveColor(value: RGBA): RGBA {
   return colorsEnabled ? value : COLORS.foreground

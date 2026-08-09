@@ -1,3 +1,5 @@
+import { terminalPresentation } from "../terminal"
+
 const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" })
 const CONTROL_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g
 
@@ -10,7 +12,7 @@ export function sanitize(text: string): string {
 }
 
 export function terminalGlyph(unicode: string, fallback: string): string {
-  if (process.env.TERM === "dumb") return fallback
+  if (!terminalPresentation.unicode) return fallback
   return displayWidth(unicode) === 1 ? unicode : fallback
 }
 
