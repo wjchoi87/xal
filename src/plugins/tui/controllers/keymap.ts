@@ -80,6 +80,26 @@ export function bindKeys(renderer: CliRenderer, deps: KeymapDeps): void {
       screen.syncFooter()
       return
     }
+    const unmodified = !key.ctrl && !key.meta && !key.shift
+    if (!screen.overlayVisible && unmodified && screen.tasks.handleKey(key.name)) {
+      key.preventDefault()
+      screen.syncFooter()
+      return
+    }
+    if (
+      !screen.overlayVisible &&
+      unmodified &&
+      key.name === "down" &&
+      !screen.tasks.focused &&
+      screen.tasks.count > 0 &&
+      screen.composer.empty
+    ) {
+      key.preventDefault()
+      screen.composer.blur()
+      screen.tasks.focus()
+      screen.syncFooter()
+      return
+    }
     if (
       !screen.overlayVisible &&
       (key.shift || key.meta) &&

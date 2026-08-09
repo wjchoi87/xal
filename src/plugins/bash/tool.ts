@@ -1,6 +1,7 @@
-import { spawn } from "node:child_process"
 import { asBoolean, asNumber, asString } from "../../lib/json"
 import type { Tool } from "../../tools/types"
+import { startJob } from "./jobs"
+import { killTree, spawnCommand } from "./process"
 import { sandboxAvailable, sandboxLaunch } from "./sandbox"
 
 const DEFAULT_TIMEOUT_S = 120
@@ -18,6 +19,10 @@ export function sandboxRequested(args: Record<string, unknown>): boolean {
   return sandboxAvailable() && asBoolean(args.sandbox) === true
 }
 
+export function backgroundRequested(args: Record<string, unknown>): boolean {
+  return asBoolean(args.background) === true
+}
+
 function timeoutSecondsOf(args: Record<string, unknown>): number {
   const requested = asNumber(args.timeout) ?? DEFAULT_TIMEOUT_S
   return Math.min(Math.max(Math.round(requested), 1), MAX_TIMEOUT_S)
@@ -32,6 +37,11 @@ function parameters(): Record<string, unknown> {
     timeout: {
       type: "number",
       description: `Timeout in seconds before the command is killed (default ${DEFAULT_TIMEOUT_S}, max ${MAX_TIMEOUT_S})`,
+    },
+    background: {
+      type: "boolean",
+      description:
+        "Run the command as a background job and return its job id immediately instead of waiting. The timeout does not apply. Read new output with bash_output and stop the job with bash_kill.",
     },
   }
   if (sandboxAvailable()) {
@@ -58,7 +68,7 @@ function description(): string {
 
 function guidance(): string {
   const base =
-    "Use bash for shell work: builds, tests, git. Use the grep and glob tools to search instead of rg, find, or ls, and read, write, and edit for file contents instead of cat, sed, or heredocs. Prefer non-interactive commands; anything needing a TTY will hang."
+    "Use bash for shell work: builds, tests, git. Use the grep and glob tools to search instead of rg, find, or ls, and read, write, and edit for file contents instead of cat, sed, or heredocs. Prefer non-interactive commands; anything needing a TTY will hang. Start long-lived processes like dev servers and watchers with background:true, follow them with bash_output (pass wait to block until new output or exit instead of sleeping between polls), and stop them with bash_kill; never background quick commands."
   if (!sandboxAvailable()) return base
   return `${base} Prefer sandbox:true — it runs without approval but blocks network access and writes outside the workspace and temp directories. Use sandbox:false when a command needs network or writes elsewhere, and if a sandboxed command fails because of those limits, retry it with sandbox:false.`
 }
@@ -72,6 +82,7 @@ export const bashTool: Tool = {
     return asString(args.command) ?? ""
   },
   readOnly(args) {
+    if (backgroundRequested(args)) return false
     const command = commandOf(args)
     if (COMPOUND_COMMAND.test(command)) return false
     return READ_ONLY_COMMAND.test(command)
@@ -91,13 +102,17 @@ export const bashTool: Tool = {
     if (!command) return { output: "(no command provided)" }
 
     const sandboxed = sandboxRequested(args)
-    const timeoutSeconds = timeoutSecondsOf(args)
     const launch = sandboxed ? sandboxLaunch(command, process.cwd()) : ["bash", "-c", command]
-    const proc = spawn(launch[0]!, launch.slice(1), {
-      cwd: process.cwd(),
-      stdio: ["ignore", "pipe", "pipe"],
-      detached: true,
-    })
+
+    if (backgroundRequested(args)) {
+      const job = startJob(command, spawnCommand(launch))
+      return {
+        output: `Started background job ${job.id}${sandboxed ? " (sandboxed)" : ""}. Read its output with bash_output and stop it with bash_kill.`,
+      }
+    }
+
+    const timeoutSeconds = timeoutSecondsOf(args)
+    const proc = spawnCommand(launch)
 
     let output = ""
     const collect = (chunk: Buffer): void => {
@@ -108,21 +123,12 @@ export const bashTool: Tool = {
     proc.stdout.on("data", collect)
     proc.stderr.on("data", collect)
 
-    const killTree = (): void => {
-      if (proc.pid === undefined || proc.exitCode !== null || proc.signalCode !== null) return
-      try {
-        process.kill(-proc.pid, "SIGKILL")
-      } catch {
-        proc.kill("SIGKILL")
-      }
-    }
-
     let timedOut = false
     const timeout = setTimeout(() => {
       timedOut = true
-      killTree()
+      killTree(proc)
     }, timeoutSeconds * 1000)
-    const onAbort = (): void => killTree()
+    const onAbort = (): void => killTree(proc)
     signal?.addEventListener("abort", onAbort)
 
     try {

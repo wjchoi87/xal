@@ -129,6 +129,10 @@ export class Composer {
     return this.currentRows
   }
 
+  get empty(): boolean {
+    return !this.input.plainText
+  }
+
   setValue(text: string): void {
     this.input.setText(text)
     this.input.gotoBufferEnd()

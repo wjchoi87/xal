@@ -1,4 +1,5 @@
 import type { Plugin } from "../types"
+import { bashKillTool, bashOutputTool } from "./job-tools"
 import { bashTool, commandOf, COMPOUND_COMMAND, sandboxRequested } from "./tool"
 
 const DANGEROUS = [
@@ -31,12 +32,17 @@ const plugin: Plugin = {
   name: "bash",
   register(ctx) {
     ctx.registerTool(bashTool)
+    ctx.registerTool(bashOutputTool)
+    ctx.registerTool(bashKillTool)
     ctx.registerPermissionRules({ ask: DANGEROUS })
     ctx.registerPolicyRule({
       evaluate: (request) =>
         request.tool === "bash" && !sandboxRequested(request.args) && COMPOUND_COMMAND.test(commandOf(request.args))
           ? "ask"
           : undefined,
+    })
+    ctx.registerPolicyRule({
+      evaluate: (request) => (request.tool === "bash_kill" ? "allow" : undefined),
     })
   },
 }

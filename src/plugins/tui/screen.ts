@@ -6,6 +6,7 @@ import { describeError } from "../../lib/error"
 import { compactPath } from "../../lib/path"
 import type { PermissionMode } from "../../permissions/types"
 import type { ThinkingEffort, UserInput } from "../../providers/types"
+import { BackgroundTasks } from "./components/background-tasks"
 import { CommandPalette, PALETTE_CHROME_ROWS } from "./components/command-palette"
 import { Composer } from "./components/composer"
 import { LiveTools } from "./components/live-tools"
@@ -34,6 +35,7 @@ export class Screen {
   readonly palette: CommandPalette
   readonly composer: Composer
   readonly statusBar: StatusBar
+  readonly tasks: BackgroundTasks
   private overlaid = false
   private paletteBelow = true
   private reserved = 0
@@ -78,6 +80,13 @@ export class Screen {
       resize: () => this.syncFooter(),
     })
     this.statusBar = new StatusBar(renderer, session.currentModel, session.currentThinking, session.currentMode)
+    this.tasks = new BackgroundTasks(renderer, {
+      changed: () => this.syncFooter(),
+      released: () => {
+        if (!this.overlayVisible) this.composer.focus()
+      },
+      error: (message) => this.scrollback.append({ kind: "error", text: message }),
+    })
 
     this.view.add(this.live.view)
     this.view.add(this.queued.view)
@@ -87,6 +96,7 @@ export class Screen {
     this.view.add(this.composer.view)
     this.view.add(this.palette.view)
     this.view.add(this.statusBar.view)
+    this.view.add(this.tasks.view)
     this.syncFooter()
   }
 
@@ -132,6 +142,7 @@ export class Screen {
       this.overlaid = overlaid
       this.composer.setVisible(!overlaid)
       if (overlaid) {
+        this.tasks.blur()
         this.composer.blur()
         this.picker.focus()
       } else {
@@ -150,7 +161,7 @@ export class Screen {
         ? this.secret.height
         : this.picker.height
     this.renderer.footerHeight =
-      this.live.height + this.queued.height + (overlaid ? overlayRows : editing) + STATUS_ROWS
+      this.live.height + this.queued.height + (overlaid ? overlayRows : editing) + STATUS_ROWS + this.tasks.height
   }
 
   private reclaim(rows: number): void {
@@ -160,7 +171,7 @@ export class Screen {
   }
 
   private closedFooterRows(): number {
-    return this.live.height + this.queued.height + this.composer.rows + STATUS_ROWS
+    return this.live.height + this.queued.height + this.composer.rows + STATUS_ROWS + this.tasks.height
   }
 
   private spaceBelowFooter(): number {
