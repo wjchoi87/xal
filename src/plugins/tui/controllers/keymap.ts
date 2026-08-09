@@ -118,6 +118,15 @@ export function bindKeys(renderer: CliRenderer, deps: KeymapDeps): void {
       key.preventDefault()
       return
     }
+    if (
+      !screen.overlayVisible &&
+      unmodified &&
+      (key.name === "up" || key.name === "down") &&
+      screen.composer.navigateHistory(key.name === "up" ? "older" : "newer")
+    ) {
+      key.preventDefault()
+      return
+    }
     if (key.name === "escape" && session.currentState !== "idle") session.interrupt("promote")
   })
 

@@ -16,6 +16,7 @@ import { QueuedInputs } from "./components/queued-inputs"
 import { SecretInput } from "./components/secret-input"
 import { StatusBar, STATUS_ROWS } from "./components/status-bar"
 import { column } from "./lib/renderables"
+import type { MessageHistory } from "./message-history"
 import { Scrollback } from "./scrollback/scrollback"
 
 export interface ScreenActions extends PermissionPopoverActions {
@@ -44,6 +45,7 @@ export class Screen {
     private readonly renderer: CliRenderer,
     private readonly session: AgentSession,
     startRow: number,
+    history: MessageHistory,
     actions: ScreenActions,
   ) {
     this.scrollback = new Scrollback(renderer, startRow, (rows) => this.reclaim(rows))
@@ -61,7 +63,7 @@ export class Screen {
       },
       () => this.syncFooter(),
     )
-    this.composer = new Composer(renderer, {
+    this.composer = new Composer(renderer, history, {
       submit: (input) => {
         if (input.images.length === 0 || this.session.currentProvider.capabilities.imageInput) {
           return actions.submit(input)
@@ -73,6 +75,7 @@ export class Screen {
         return false
       },
       run: (line) => this.runCommand(line),
+      error: (message) => this.scrollback.append({ kind: "error", text: message }),
       change: (value) => {
         this.placePalette()
         this.palette.update(value, this.paletteLimit())

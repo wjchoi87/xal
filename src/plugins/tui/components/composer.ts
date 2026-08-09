@@ -10,9 +10,11 @@ import {
   type RenderContext,
 } from "@opentui/core"
 import { appInfo } from "../../../app-info"
+import { describeError } from "../../../lib/error"
 import { asNumber, asString, isRecord } from "../../../lib/json"
 import type { ImageInput, UserInput } from "../../../providers/types"
 import { label, row } from "../lib/renderables"
+import type { MessageHistory } from "../message-history"
 import { COLORS, resolveColor } from "../theme/colors"
 import { border, inputColors } from "../theme/styles"
 
@@ -21,6 +23,7 @@ export const COMPOSER_ROWS = 4
 interface ComposerActions {
   submit(input: UserInput): boolean
   run(line: string): void
+  error(message: string): void
   change(value: string): void
   resize(): void
 }
@@ -77,6 +80,7 @@ export class Composer {
 
   constructor(
     private readonly ctx: RenderContext,
+    private readonly history: MessageHistory,
     private readonly actions: ComposerActions,
   ) {
     this.view = row(ctx, {
@@ -134,9 +138,8 @@ export class Composer {
   }
 
   setValue(text: string): void {
-    this.input.setText(text)
-    this.input.gotoBufferEnd()
-    this.reflow()
+    this.history.reset()
+    this.replaceInput({ text, images: [] })
   }
 
   clear(): boolean {
@@ -147,6 +150,7 @@ export class Composer {
 
   restore(inputs: UserInput[]): void {
     if (inputs.length === 0) return
+    this.history.reset()
     const hadDraft = this.input.plainText.length > 0
     this.input.gotoBufferHome()
     inputs.forEach((input, index) => {
@@ -164,6 +168,17 @@ export class Composer {
 
   newLine(): void {
     this.input.newLine()
+  }
+
+  navigateHistory(direction: "older" | "newer"): boolean {
+    const cursor = this.input.visualCursor
+    const row = this.input.editorView.getViewport().offsetY + cursor.visualRow
+    const boundary = direction === "older" ? row === 0 : row === this.input.editorView.getTotalVirtualLineCount() - 1
+    if (!boundary) return false
+    const recalled = direction === "older" ? this.history.older(this.value()) : this.history.newer()
+    if (!recalled) return false
+    this.replaceInput(recalled)
+    return true
   }
 
   async pasteImage(): Promise<boolean> {
@@ -248,7 +263,7 @@ export class Composer {
     })
   }
 
-  private submission(): UserInput {
+  private value(): UserInput {
     let text = this.input.plainText
     const pastes = this.input.extmarks
       .getAllForTypeId(this.pastedContentType)
@@ -265,9 +280,25 @@ export class Composer {
       text = text.slice(0, start) + edit.text + text.slice(end)
     }
     return {
-      text: text.trim(),
+      text,
       images: imageMarks.sort((left, right) => left.start - right.start).map((mark) => mark.image),
     }
+  }
+
+  private submission(): UserInput {
+    const input = this.value()
+    return { ...input, text: input.text.trim() }
+  }
+
+  private replaceInput(input: UserInput): void {
+    this.input.setText(input.text)
+    this.input.gotoBufferEnd()
+    input.images.forEach((image, index) => {
+      if (input.text || index > 0) this.input.insertText(" ")
+      this.attachImage(image)
+    })
+    this.input.gotoBufferEnd()
+    this.reflow()
   }
 
   private submit(): void {
@@ -278,6 +309,10 @@ export class Composer {
       this.actions.run(submission.text)
       return
     }
-    if (this.actions.submit(submission)) this.setValue("")
+    if (!this.actions.submit(submission)) return
+    void this.history
+      .record(submission.text)
+      .catch((error: unknown) => this.actions.error(`message history not saved: ${describeError(error)}`))
+    this.setValue("")
   }
 }

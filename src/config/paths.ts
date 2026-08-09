@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { appEnvVar, appInfo } from "../app-info"
@@ -28,4 +29,8 @@ function projectSlug(cwd: string): string {
 
 export function projectSessionsDir(cwd: string): string {
   return join(sessionsDir(), projectSlug(cwd))
+}
+
+export function projectMessageHistoryPath(root: string): string {
+  return join(agentHome(), "history", `${createHash("sha256").update(root).digest("hex")}.jsonl`)
 }

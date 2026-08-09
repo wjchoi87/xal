@@ -5,6 +5,7 @@ import { registerCommand } from "../../commands/registry"
 import type { EventService } from "../../events"
 import { describeError } from "../../lib/error"
 import { compactPath } from "../../lib/path"
+import { findProjectRoot } from "../../project/root"
 import type { UiOptions } from "../../ui/registry"
 import { AgentEventController } from "./controllers/agent-events"
 import { AppEventController, InputQueue } from "./controllers/app-events"
@@ -12,6 +13,7 @@ import { bindKeys } from "./controllers/keymap"
 import { COMPOSER_ROWS } from "./components/composer"
 import { STATUS_ROWS } from "./components/status-bar"
 import { cursorRow } from "./lib/cursor"
+import { MessageHistory } from "./message-history"
 import { Screen } from "./screen"
 import { COLORS } from "./theme/colors"
 
@@ -19,7 +21,8 @@ const RESIZE_DEBOUNCE_MS = 60
 const TERMINAL_RESET = "\u001b[r\u001b[<u\u001b[?25h"
 
 export async function startTui(events: EventService, options: UiOptions = {}): Promise<void> {
-  const { session, model } = await createSession({ persist: true })
+  const root = await findProjectRoot(process.cwd())
+  const [{ session, model }, history] = await Promise.all([createSession({ persist: true }), MessageHistory.load(root)])
 
   const startRow = await cursorRow()
   const { promise: destroyed, resolve: finishDestroy } = Promise.withResolvers<void>()
@@ -44,7 +47,7 @@ export async function startTui(events: EventService, options: UiOptions = {}): P
   renderer.setTerminalTitle(`${appInfo.name} — ${compactPath(process.cwd())}`)
 
   const input = new InputQueue((submission) => session.send(submission))
-  const screen = new Screen(renderer, session, startRow, {
+  const screen = new Screen(renderer, session, startRow, history, {
     submit: (submission) => input.submit(submission),
     approve: (scope, pattern) => session.approve(scope, pattern),
     deny: () => session.deny(),
