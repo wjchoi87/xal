@@ -35,7 +35,7 @@ export function streamView(ctx: RenderContext, block: StreamBlock): StreamView {
   return { view: frame(ctx, text), text }
 }
 
-export function renderBlock(ctx: RenderContext, block: Block, expanded: boolean): Renderable {
+export function renderBlock(ctx: RenderContext, block: Block, expanded: boolean, previous?: Block): Renderable {
   switch (block.kind) {
     case "banner":
       return frame(ctx, banner(ctx, block))
@@ -53,7 +53,7 @@ export function renderBlock(ctx: RenderContext, block: Block, expanded: boolean)
     case "reasoning":
       return streamView(ctx, block).view
     case "tool":
-      return tool(ctx, block, expanded)
+      return tool(ctx, block, expanded, previous?.kind === "tool")
   }
 }
 
@@ -126,7 +126,7 @@ const denialSummary: Record<DenialCause, string> = {
   plan: "plan mode",
 }
 
-function tool(ctx: RenderContext, block: ToolBlock, expanded: boolean): Renderable {
+function tool(ctx: RenderContext, block: ToolBlock, expanded: boolean, grouped: boolean): Renderable {
   const toolRenderer = getToolRenderer(block.tool)
   const bounded = parseBoundedToolOutput(block.output)
   const coreFailed = toolOutputFailed(block.output)
@@ -140,7 +140,8 @@ function tool(ctx: RenderContext, block: ToolBlock, expanded: boolean): Renderab
         ? "failed"
         : (toolRenderer?.summarize?.(block.output) ?? summarizeToolOutput(block.output))
 
-  const box = column(ctx, { paddingLeft: GUTTER, paddingRight: GUTTER })
+  const marginTop = grouped ? 0 : 1
+  const box = column(ctx)
   const head = row(ctx, { height: 1, alignItems: "center" })
   head.add(label(ctx, { content: block.readOnly ? ">" : "*", width: 2, color: COLORS.faint }))
   head.add(label(ctx, { content: commandLabel(block.tool, block.title), flexGrow: 1, flexShrink: 1, minWidth: 1 }))
@@ -153,7 +154,7 @@ function tool(ctx: RenderContext, block: ToolBlock, expanded: boolean): Renderab
   )
   box.add(head)
 
-  if (!(expanded || toolRenderer?.alwaysExpanded) || block.output.length === 0) return box
+  if (!(expanded || toolRenderer?.alwaysExpanded) || block.output.length === 0) return frame(ctx, box, marginTop)
 
   const width = Math.max(1, ctx.width - GUTTER * 2 - 4)
   const coreOutput = bounded || coreFailed
@@ -168,5 +169,5 @@ function tool(ctx: RenderContext, block: ToolBlock, expanded: boolean): Renderab
   }
   body.add(content)
   box.add(body)
-  return box
+  return frame(ctx, box, marginTop)
 }

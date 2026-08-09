@@ -98,7 +98,7 @@ export function bindKeys(renderer: CliRenderer, deps: KeymapDeps): void {
       key.preventDefault()
       return
     }
-    if (key.name === "escape" && session.currentState !== "idle") session.interrupt()
+    if (key.name === "escape" && session.currentState !== "idle") session.interrupt("promote")
   })
 
   renderer.keyInput.on("paste", (event) => {

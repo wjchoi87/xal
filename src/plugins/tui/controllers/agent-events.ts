@@ -37,6 +37,12 @@ export class AgentEventController {
       case "user_message":
         scrollback.append({ kind: "user", text: event.text, imageCount: event.imageCount, sentAt: event.sentAt })
         break
+      case "queue_changed":
+        this.screen.queued.set(event.entries)
+        break
+      case "queue_flushed":
+        this.screen.composer.restore(event.inputs)
+        break
       case "text_delta":
         scrollback.appendStream("text", event.text)
         break

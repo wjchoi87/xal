@@ -4,21 +4,19 @@ import type { Screen } from "../screen"
 
 export class InputQueue {
   private ready = false
-  private pending: UserInput | undefined
+  private pending: UserInput[] = []
 
   constructor(private readonly send: (input: UserInput) => boolean) {}
 
   submit(input: UserInput): boolean {
     if (this.ready) return this.send(input)
-    this.pending = input
+    this.pending.push(input)
     return true
   }
 
   release(): void {
     this.ready = true
-    if (this.pending === undefined) return
-    this.send(this.pending)
-    this.pending = undefined
+    for (const input of this.pending.splice(0)) this.send(input)
   }
 }
 

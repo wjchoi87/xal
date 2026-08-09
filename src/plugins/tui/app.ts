@@ -48,7 +48,7 @@ export async function startTui(events: EventService, options: UiOptions = {}): P
     submit: (submission) => input.submit(submission),
     approve: (scope, pattern) => session.approve(scope, pattern),
     deny: () => session.deny(),
-    cancel: () => session.interrupt(),
+    cancel: () => session.interrupt("promote"),
   })
   renderer.root.add(screen.view)
 

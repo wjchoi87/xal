@@ -11,6 +11,7 @@ import { Composer } from "./components/composer"
 import { LiveTools } from "./components/live-tools"
 import { Picker } from "./components/picker"
 import { PermissionPopover, type PermissionPopoverActions } from "./components/permission-popover"
+import { QueuedInputs } from "./components/queued-inputs"
 import { SecretInput } from "./components/secret-input"
 import { StatusBar, STATUS_ROWS } from "./components/status-bar"
 import { column } from "./lib/renderables"
@@ -26,6 +27,7 @@ export class Screen {
   readonly view: BoxRenderable
   readonly scrollback: Scrollback
   readonly live: LiveTools
+  readonly queued: QueuedInputs
   readonly permission: PermissionPopover
   readonly secret: SecretInput
   readonly picker: Picker
@@ -45,6 +47,7 @@ export class Screen {
     this.scrollback = new Scrollback(renderer, startRow, (rows) => this.reclaim(rows))
     this.view = column(renderer, { width: "100%", height: "100%", justifyContent: "flex-end" })
     this.live = new LiveTools(renderer, () => this.syncFooter())
+    this.queued = new QueuedInputs(renderer, () => this.syncFooter())
     this.permission = new PermissionPopover(renderer, actions)
     this.secret = new SecretInput(renderer, () => this.syncFooter())
     this.picker = new Picker(renderer, () => this.syncFooter())
@@ -77,6 +80,7 @@ export class Screen {
     this.statusBar = new StatusBar(renderer, session.currentModel, session.currentThinking, session.currentMode)
 
     this.view.add(this.live.view)
+    this.view.add(this.queued.view)
     this.view.add(this.permission.view)
     this.view.add(this.secret.view)
     this.view.add(this.picker.view)
@@ -145,7 +149,8 @@ export class Screen {
       : this.secret.visible
         ? this.secret.height
         : this.picker.height
-    this.renderer.footerHeight = this.live.height + (overlaid ? overlayRows : editing) + STATUS_ROWS
+    this.renderer.footerHeight =
+      this.live.height + this.queued.height + (overlaid ? overlayRows : editing) + STATUS_ROWS
   }
 
   private reclaim(rows: number): void {
@@ -155,7 +160,7 @@ export class Screen {
   }
 
   private closedFooterRows(): number {
-    return this.live.height + this.composer.rows + STATUS_ROWS
+    return this.live.height + this.queued.height + this.composer.rows + STATUS_ROWS
   }
 
   private spaceBelowFooter(): number {

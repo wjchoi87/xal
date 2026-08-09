@@ -141,6 +141,23 @@ export class Composer {
     return true
   }
 
+  restore(inputs: UserInput[]): void {
+    if (inputs.length === 0) return
+    const hadDraft = this.input.plainText.length > 0
+    this.input.gotoBufferHome()
+    inputs.forEach((input, index) => {
+      if (index > 0) this.input.insertText("\n")
+      if (input.text) this.input.insertText(input.text)
+      input.images.forEach((image, imageIndex) => {
+        if (input.text || imageIndex > 0) this.input.insertText(" ")
+        this.attachImage(image)
+      })
+    })
+    if (hadDraft) this.input.insertText("\n")
+    this.input.gotoBufferEnd()
+    this.reflow()
+  }
+
   newLine(): void {
     this.input.newLine()
   }
@@ -151,31 +168,31 @@ export class Composer {
     try {
       const clipboard = process.platform === "linux" ? await linuxClipboardImage() : Bun.Image.fromClipboard()
       if (!clipboard) return false
-      const image = {
-        mediaType: "image/png",
-        data: await clipboard.png().toBase64(),
-      } satisfies ImageInput
-      const images = this.input.extmarks
-        .getAllForTypeId(this.pastedImageType)
-        .flatMap((mark) => (isPastedImage(mark.data) ? [mark.data.number] : []))
-      const number = Math.max(0, ...images) + 1
-      const text = `[Image #${number}]`
-      this.input.insertText(text)
-      const end = this.input.cursorOffset
-      this.input.extmarks.create({
-        start: end - text.length,
-        end,
-        virtual: true,
-        styleId: this.imageStyleId,
-        typeId: this.pastedImageType,
-        data: { kind: "pasted-image", number, image } satisfies PastedImage,
-      })
+      this.attachImage({ mediaType: "image/png", data: await clipboard.png().toBase64() })
       return true
     } catch {
       return false
     } finally {
       this.readingImage = false
     }
+  }
+
+  private attachImage(image: ImageInput): void {
+    const numbers = this.input.extmarks
+      .getAllForTypeId(this.pastedImageType)
+      .flatMap((mark) => (isPastedImage(mark.data) ? [mark.data.number] : []))
+    const number = Math.max(0, ...numbers) + 1
+    const text = `[Image #${number}]`
+    this.input.insertText(text)
+    const end = this.input.cursorOffset
+    this.input.extmarks.create({
+      start: end - text.length,
+      end,
+      virtual: true,
+      styleId: this.imageStyleId,
+      typeId: this.pastedImageType,
+      data: { kind: "pasted-image", number, image } satisfies PastedImage,
+    })
   }
 
   reflow(): void {

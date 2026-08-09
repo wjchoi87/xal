@@ -67,6 +67,8 @@ function lastState(loaded: LoadedSession): {
       case "session_started":
       case "state_changed":
       case "user_message":
+      case "queue_changed":
+      case "queue_flushed":
       case "text_delta":
       case "reasoning_summary_delta":
       case "reasoning_delta":
@@ -75,6 +77,7 @@ function lastState(loaded: LoadedSession): {
       case "retry_scheduled":
       case "approval_requested":
       case "tool_started":
+      case "tool_updated":
       case "tool_finished":
       case "compacted":
       case "turn_ended":

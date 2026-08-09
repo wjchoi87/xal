@@ -24,7 +24,7 @@ import {
   tailBudget,
 } from "./compaction"
 import type { CompactionTrigger } from "./compaction"
-import type { AgentEvent, AgentState, DenialCause } from "./events"
+import type { AgentEvent, AgentState, DenialCause, QueuedEntry } from "./events"
 import { activeHistory, type HistoryItem } from "./history"
 import { composeSystemPrompt } from "./prompt"
 
@@ -114,6 +114,9 @@ export class AgentSession {
   private streaming: { kind: StreamKind; text: string } | undefined
   private abortController: AbortController | undefined
   private pendingApproval: ((result: ApprovalResult) => void) | undefined
+  private queued: UserInput[] = []
+  private turnActive = false
+  private promoteOnAbort = false
 
   constructor(deps: AgentSessionDeps) {
     this.provider = deps.provider
@@ -252,28 +255,71 @@ export class AgentSession {
   }
 
   send(input: UserInput): boolean {
-    if (this.state !== "idle") return false
     if (input.images.length > 0 && !this.provider.capabilities.imageInput) {
       this.emit({ type: "error", message: `${this.provider.name} does not support image input` })
       return false
     }
-    this.pushItem({ type: "user_message", ...input })
-    this.emit({ type: "user_message", text: input.text, imageCount: input.images.length, sentAt: Date.now() })
+    if (this.turnActive) {
+      this.queued.push(input)
+      this.emit({ type: "queue_changed", entries: this.queueEntries() })
+      return true
+    }
+    if (this.state !== "idle") return false
+    this.startTurn([input])
+    return true
+  }
+
+  private startTurn(inputs: UserInput[]): void {
+    for (const input of inputs) {
+      this.pushItem({ type: "user_message", ...input })
+      this.emit({ type: "user_message", text: input.text, imageCount: input.images.length, sentAt: Date.now() })
+    }
     const controller = new AbortController()
     const provider = this.provider
     const model = this.model
     const thinking = this.thinking
     this.abortController = controller
+    this.turnActive = true
+    this.promoteOnAbort = false
     this.setState("streaming")
+    let errored = false
     void this.runTurn(controller.signal, provider, model, thinking)
       .catch((error) => {
+        errored = true
         this.emit({ type: "error", message: describeError(error) })
       })
       .finally(() => {
+        this.turnActive = false
         this.abortController = undefined
         this.setState("idle")
+        if (!errored && controller.signal.aborted && this.promoteOnAbort && this.queued.length > 0) {
+          const promoted = this.queued.splice(0)
+          this.emit({ type: "queue_changed", entries: [] })
+          this.startTurn(promoted)
+          return
+        }
+        this.flushQueue()
       })
-    return true
+  }
+
+  private queueEntries(): QueuedEntry[] {
+    return this.queued.map((input) => ({ text: input.text, imageCount: input.images.length }))
+  }
+
+  private drainQueue(): void {
+    if (this.queued.length === 0) return
+    for (const input of this.queued.splice(0)) {
+      this.pushItem({ type: "user_message", ...input })
+      this.emit({ type: "user_message", text: input.text, imageCount: input.images.length, sentAt: Date.now() })
+    }
+    this.emit({ type: "queue_changed", entries: [] })
+  }
+
+  private flushQueue(): void {
+    if (this.queued.length === 0) return
+    const inputs = this.queued.splice(0)
+    this.emit({ type: "queue_changed", entries: [] })
+    this.emit({ type: "queue_flushed", inputs })
   }
 
   async compact(instructions?: string): Promise<CompactionOutcome> {
@@ -308,7 +354,8 @@ export class AgentSession {
     this.resolveApproval({ decision: "deny", cause, message })
   }
 
-  interrupt(): void {
+  interrupt(queued: "promote" | "flush" = "flush"): void {
+    this.promoteOnAbort = queued === "promote"
     this.abortController?.abort()
     this.resolveApproval({ decision: "deny", cause: "user" })
   }
@@ -437,6 +484,7 @@ export class AgentSession {
         this.emit({ type: "turn_interrupted" })
         return
       }
+      this.drainQueue()
 
       this.setState("streaming")
       const items = await this.streamRound(signal, provider, model, thinking, usage)
@@ -447,6 +495,7 @@ export class AgentSession {
 
       const toolCalls = items.filter((item): item is ToolCallItem => item.type === "tool_call")
       if (toolCalls.length === 0) {
+        if (this.queued.length > 0) continue
         this.emit({ type: "turn_ended", usage: usage.turn, context: usage.context })
         return
       }

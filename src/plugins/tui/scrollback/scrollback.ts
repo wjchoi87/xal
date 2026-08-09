@@ -33,8 +33,9 @@ export class Scrollback {
 
   append(block: Block): void {
     this.endStream()
+    const previous = this.blocks[this.blocks.length - 1]
     this.blocks.push(block)
-    this.emit(block)
+    this.emit(block, previous)
   }
 
   appendStream(kind: StreamKind, delta: string): void {
@@ -78,9 +79,11 @@ export class Scrollback {
     }
     this.renderer.resetSplitFooterForReplay({ clearSavedLines: true })
     this.reset()
+    let previous: Block | undefined
     for (const block of this.blocks) {
       if (block === streaming?.block) continue
-      this.emit(block)
+      this.emit(block, previous)
+      previous = block
     }
     if (!streaming) return
     this.stream = this.openStream(streaming.block)
@@ -132,10 +135,10 @@ export class Scrollback {
     stream.committed = target
   }
 
-  private emit(block: Block): void {
+  private emit(block: Block, previous: Block | undefined): void {
     const surface = this.renderer.createScrollbackSurface()
     try {
-      surface.root.add(renderBlock(surface.renderContext, block, this.expanded))
+      surface.root.add(renderBlock(surface.renderContext, block, this.expanded, previous))
       surface.render()
       this.onCommit(surface.height)
       surface.commitRows(0, surface.height)

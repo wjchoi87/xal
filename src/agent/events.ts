@@ -1,9 +1,14 @@
 import type { PermissionMode } from "../permissions/types"
-import type { ThinkingEffort, Usage } from "../providers/types"
+import type { ThinkingEffort, Usage, UserInput } from "../providers/types"
 
 export type AgentState = "idle" | "streaming" | "awaiting_approval" | "running_tool" | "compacting"
 
 export type DenialCause = "user" | "policy" | "plan"
+
+export interface QueuedEntry {
+  text: string
+  imageCount: number
+}
 
 export type AgentEvent =
   | {
@@ -19,6 +24,8 @@ export type AgentEvent =
   | { type: "model_changed"; provider: string; model: string }
   | { type: "thinking_changed"; thinking?: ThinkingEffort }
   | { type: "user_message"; text: string; imageCount: number; sentAt: number }
+  | { type: "queue_changed"; entries: QueuedEntry[] }
+  | { type: "queue_flushed"; inputs: UserInput[] }
   | { type: "text_delta"; text: string }
   | { type: "reasoning_summary_delta"; text: string }
   | { type: "reasoning_delta"; text: string }
