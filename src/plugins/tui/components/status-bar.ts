@@ -161,6 +161,9 @@ export class StatusBar {
     if (this.state === "awaiting_approval") {
       return new StyledText([paint(COLORS.warning, "!"), muted(" Approval needed · choose above")])
     }
+    if (this.state === "awaiting_input") {
+      return new StyledText([paint(COLORS.agent, "?"), muted(" Input needed · answer above")])
+    }
     if (this.state !== "idle") {
       const hint = this.view.width > WIDE ? " · Esc interrupt" : ""
       const activity = this.state === "compacting" ? "Compacting context" : "Working"

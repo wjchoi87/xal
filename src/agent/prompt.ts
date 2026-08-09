@@ -1,11 +1,11 @@
 import type { PermissionMode } from "../permissions/types"
-import type { Tool } from "../tools/types"
+import type { RegisteredTool } from "../tools/types"
 
 export interface PromptContext {
   appName: string
   platform: string
   cwd: string
-  tools: Tool[]
+  tools: RegisteredTool[]
   mode: PermissionMode
 }
 

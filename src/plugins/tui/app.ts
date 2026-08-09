@@ -40,7 +40,10 @@ function applyKeyboardProtocol(renderer: CliRenderer, capabilities: TerminalCapa
 
 export async function startTui(events: EventService, options: UiOptions = {}): Promise<void> {
   const root = await findProjectRoot(process.cwd())
-  const [{ session, model }, history] = await Promise.all([createSession({ persist: true }), MessageHistory.load(root)])
+  const [{ session, model }, history] = await Promise.all([
+    createSession({ persist: true, interactive: true }),
+    MessageHistory.load(root),
+  ])
 
   const startRow = await cursorRow()
   const { promise: destroyed, resolve: finishDestroy } = Promise.withResolvers<void>()
@@ -74,6 +77,12 @@ export async function startTui(events: EventService, options: UiOptions = {}): P
     approve: (scope, pattern) => session.approve(scope, pattern),
     deny: () => session.deny(),
     cancel: () => session.interrupt("promote"),
+    answer: (requestId, answers) => {
+      session.answerElicitation(requestId, answers)
+    },
+    reject: (requestId) => {
+      session.rejectElicitation(requestId)
+    },
   })
   renderer.root.add(screen.view)
 

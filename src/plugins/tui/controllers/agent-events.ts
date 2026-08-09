@@ -31,6 +31,7 @@ export class AgentEventController {
         statusBar.setState(event.state)
         if (event.state !== "idle") break
         this.screen.dismissApproval()
+        this.screen.dismissElicitation()
         scrollback.endStream()
         live.clear()
         break
@@ -82,6 +83,14 @@ export class AgentEventController {
         live.request(event.callId, event.tool, event.title, event.readOnly)
         this.screen.requestApproval(event.suggestion)
         break
+      case "elicitation_requested":
+        live.pause(event.callId)
+        this.screen.requestElicitation(event.requestId, event.questions)
+        break
+      case "elicitation_resolved":
+        this.screen.dismissElicitation()
+        live.resume(event.callId)
+        break
       case "tool_started":
         this.screen.dismissApproval()
         scrollback.endStream()
@@ -92,6 +101,7 @@ export class AgentEventController {
         break
       case "tool_finished":
         this.screen.dismissApproval()
+        this.screen.dismissElicitation()
         scrollback.append({
           kind: "tool",
           tool: event.tool,

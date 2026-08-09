@@ -6,9 +6,11 @@ import { describeError } from "../../lib/error"
 import { compactPath } from "../../lib/path"
 import type { PermissionMode } from "../../permissions/types"
 import type { ThinkingEffort, UserInput } from "../../providers/types"
+import type { ElicitationQuestion } from "../../tools/types"
 import { BackgroundTasks } from "./components/background-tasks"
 import { CommandPalette, PALETTE_CHROME_ROWS } from "./components/command-palette"
 import { Composer } from "./components/composer"
+import { ElicitationPopover, type ElicitationPopoverActions } from "./components/elicitation-popover"
 import { LiveTools } from "./components/live-tools"
 import { Picker } from "./components/picker"
 import { PermissionPopover, type PermissionPopoverActions } from "./components/permission-popover"
@@ -19,7 +21,7 @@ import { column } from "./lib/renderables"
 import type { MessageHistory } from "./message-history"
 import { Scrollback } from "./scrollback/scrollback"
 
-export interface ScreenActions extends PermissionPopoverActions {
+export interface ScreenActions extends PermissionPopoverActions, ElicitationPopoverActions {
   submit(input: UserInput): boolean
 }
 
@@ -31,6 +33,7 @@ export class Screen {
   readonly live: LiveTools
   readonly queued: QueuedInputs
   readonly permission: PermissionPopover
+  readonly elicitation: ElicitationPopover
   readonly secret: SecretInput
   readonly picker: Picker
   readonly palette: CommandPalette
@@ -53,6 +56,7 @@ export class Screen {
     this.live = new LiveTools(renderer, () => this.syncFooter())
     this.queued = new QueuedInputs(renderer, () => this.syncFooter())
     this.permission = new PermissionPopover(renderer, actions)
+    this.elicitation = new ElicitationPopover(renderer, actions, () => this.syncFooter())
     this.secret = new SecretInput(renderer, () => this.syncFooter())
     this.picker = new Picker(renderer, () => this.syncFooter())
     this.palette = new CommandPalette(
@@ -94,6 +98,7 @@ export class Screen {
     this.view.add(this.live.view)
     this.view.add(this.queued.view)
     this.view.add(this.permission.view)
+    this.view.add(this.elicitation.view)
     this.view.add(this.secret.view)
     this.view.add(this.picker.view)
     this.view.add(this.composer.view)
@@ -104,7 +109,7 @@ export class Screen {
   }
 
   get overlayVisible(): boolean {
-    return this.permission.visible || this.secret.visible || this.picker.visible
+    return this.permission.visible || this.elicitation.visible || this.secret.visible || this.picker.visible
   }
 
   requestApproval(suggestion: string | undefined): void {
@@ -115,6 +120,17 @@ export class Screen {
 
   dismissApproval(): void {
     this.permission.hide()
+    this.syncFooter()
+  }
+
+  requestElicitation(requestId: string, questions: ElicitationQuestion[]): void {
+    this.picker.hide()
+    this.elicitation.show(requestId, questions)
+    this.syncFooter()
+  }
+
+  dismissElicitation(): void {
+    this.elicitation.hide()
     this.syncFooter()
   }
 
@@ -147,8 +163,10 @@ export class Screen {
       if (overlaid) {
         this.tasks.blur()
         this.composer.blur()
+        this.elicitation.focus()
         this.picker.focus()
       } else {
+        this.elicitation.blur()
         this.picker.blur()
         this.composer.focus()
       }
@@ -160,9 +178,11 @@ export class Screen {
     const editing = this.composer.rows + Math.max(paletteRows, this.reserved)
     const overlayRows = this.permission.visible
       ? this.permission.height
-      : this.secret.visible
-        ? this.secret.height
-        : this.picker.height
+      : this.elicitation.visible
+        ? this.elicitation.height
+        : this.secret.visible
+          ? this.secret.height
+          : this.picker.height
     this.renderer.footerHeight =
       this.live.height + this.queued.height + (overlaid ? overlayRows : editing) + STATUS_ROWS + this.tasks.height
   }

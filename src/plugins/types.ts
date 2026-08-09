@@ -3,7 +3,7 @@ import type { Cli } from "../cli/types"
 import type { EventService } from "../events"
 import type { PermissionRules, PolicyRule } from "../permissions/types"
 import type { Provider } from "../providers/types"
-import type { Tool } from "../tools/types"
+import type { RegisteredTool } from "../tools/types"
 import type { ToolRenderer } from "../ui/extension"
 import type { Ui } from "../ui/registry"
 
@@ -16,7 +16,7 @@ export interface Plugin {
 export interface PluginContext {
   config: Record<string, unknown>
   events: EventService
-  registerTool(tool: Tool): void
+  registerTool(tool: RegisteredTool): void
   registerProvider(provider: Provider): void
   registerCli(cli: Cli, parent?: string): void
   registerPrompt(section: PromptSection): void

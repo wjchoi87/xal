@@ -16,6 +16,7 @@ export interface SessionOptions {
   provider?: string
   model?: string
   persist?: boolean
+  interactive?: boolean
 }
 
 function resolveProvider(id?: string): Provider {
@@ -35,7 +36,13 @@ export async function createSession(options: SessionOptions = {}): Promise<Sessi
   const model = options.model ?? settings().model ?? (await provider.defaultModel())
   const thinking = await resolveThinking(provider, model)
   return {
-    session: new AgentSession({ provider, model, thinking, persist: options.persist }),
+    session: new AgentSession({
+      provider,
+      model,
+      thinking,
+      persist: options.persist,
+      interactive: options.interactive,
+    }),
     model,
   }
 }
@@ -76,6 +83,8 @@ function lastState(loaded: LoadedSession): {
       case "reasoning_summary":
       case "retry_scheduled":
       case "approval_requested":
+      case "elicitation_requested":
+      case "elicitation_resolved":
       case "tool_started":
       case "tool_updated":
       case "tool_finished":

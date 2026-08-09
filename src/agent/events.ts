@@ -1,7 +1,8 @@
 import type { PermissionMode } from "../permissions/types"
 import type { ThinkingEffort, Usage, UserInput } from "../providers/types"
+import type { ElicitationQuestion } from "../tools/types"
 
-export type AgentState = "idle" | "streaming" | "awaiting_approval" | "running_tool" | "compacting"
+export type AgentState = "idle" | "streaming" | "awaiting_approval" | "awaiting_input" | "running_tool" | "compacting"
 
 export type DenialCause = "user" | "policy" | "plan"
 
@@ -33,6 +34,8 @@ export type AgentEvent =
   | { type: "reasoning_summary"; text: string }
   | { type: "retry_scheduled"; attempt: number; maxAttempts: number; delayMs: number; message: string }
   | { type: "approval_requested"; callId: string; tool: string; title: string; readOnly: boolean; suggestion?: string }
+  | { type: "elicitation_requested"; requestId: string; callId: string; questions: ElicitationQuestion[] }
+  | { type: "elicitation_resolved"; callId: string }
   | { type: "tool_started"; callId: string; tool: string; title: string; readOnly: boolean }
   | { type: "tool_updated"; callId: string; text: string }
   | {

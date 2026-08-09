@@ -70,6 +70,11 @@ export function bindKeys(renderer: CliRenderer, deps: KeymapDeps): void {
       screen.syncFooter()
       return
     }
+    if (screen.elicitation.handleKey(key.name)) {
+      key.preventDefault()
+      screen.syncFooter()
+      return
+    }
     if (screen.secret.handleKey(key)) {
       key.preventDefault()
       screen.syncFooter()

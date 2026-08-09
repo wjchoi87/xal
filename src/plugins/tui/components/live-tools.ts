@@ -17,6 +17,8 @@ interface LiveRow {
   previewLabels: TextRenderable[]
   tail: string
   createdAt: number
+  pausedAt: number | undefined
+  pausedMs: number
   phase: LivePhase
 }
 
@@ -45,9 +47,34 @@ export class LiveTools {
 
   start(callId: string, tool: string, title: string, readOnly: boolean): void {
     const existing = this.rows.get(callId)
-    if (existing) existing.phase = "running"
-    else this.add(callId, tool, title, readOnly, "running")
-    this.spinner.start(() => this.render())
+    if (!existing) {
+      this.add(callId, tool, title, readOnly, "running")
+      return
+    }
+    existing.createdAt = Date.now()
+    existing.pausedAt = undefined
+    existing.pausedMs = 0
+    existing.phase = "running"
+    this.syncSpinner()
+    this.render()
+  }
+
+  pause(callId: string): void {
+    const entry = this.rows.get(callId)
+    if (!entry || entry.phase !== "running") return
+    entry.pausedAt = Date.now()
+    entry.phase = "waiting"
+    this.syncSpinner()
+    this.render()
+  }
+
+  resume(callId: string): void {
+    const entry = this.rows.get(callId)
+    if (!entry || entry.phase !== "waiting" || entry.pausedAt === undefined) return
+    entry.pausedMs += Date.now() - entry.pausedAt
+    entry.pausedAt = undefined
+    entry.phase = "running"
+    this.syncSpinner()
     this.render()
   }
 
@@ -79,12 +106,13 @@ export class LiveTools {
   finish(callId: string): string | undefined {
     const existing = this.rows.get(callId)
     if (!existing) return undefined
+    const elapsed = existing.phase === "requested" ? undefined : formatDuration(this.elapsed(existing))
     this.rows.delete(callId)
     this.view.remove(existing.view)
     existing.view.destroyRecursively()
-    if (this.rows.size === 0) this.spinner.stop()
+    this.syncSpinner()
     this.sync()
-    return formatDuration(Date.now() - existing.createdAt)
+    return elapsed
   }
 
   clear(): void {
@@ -109,9 +137,32 @@ export class LiveTools {
     const preview = column(this.ctx, { paddingLeft: 2 })
     view.add(preview)
     this.view.add(view)
-    this.rows.set(callId, { view, status, preview, previewLabels: [], tail: "", createdAt: Date.now(), phase })
+    this.rows.set(callId, {
+      view,
+      status,
+      preview,
+      previewLabels: [],
+      tail: "",
+      createdAt: Date.now(),
+      pausedAt: undefined,
+      pausedMs: 0,
+      phase,
+    })
     this.sync()
+    this.syncSpinner()
     this.render()
+  }
+
+  private elapsed(entry: LiveRow): number {
+    return (entry.pausedAt ?? Date.now()) - entry.createdAt - entry.pausedMs
+  }
+
+  private syncSpinner(): void {
+    if ([...this.rows.values()].some((entry) => entry.phase === "running")) {
+      this.spinner.start(() => this.render())
+      return
+    }
+    this.spinner.stop()
   }
 
   private sync(): void {
@@ -121,7 +172,7 @@ export class LiveTools {
 
   private render(): void {
     for (const entry of this.rows.values()) {
-      entry.status.content = liveStatus(entry.phase, formatDuration(Date.now() - entry.createdAt), this.spinner.glyph)
+      entry.status.content = liveStatus(entry.phase, formatDuration(this.elapsed(entry)), this.spinner.glyph)
     }
   }
 }

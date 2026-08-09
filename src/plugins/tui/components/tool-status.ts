@@ -4,7 +4,7 @@ import { COLORS } from "../theme/colors"
 import { muted, paint } from "../theme/styles"
 
 export type ToolOutcome = "success" | "failure" | "denied"
-export type LivePhase = "requested" | "running"
+export type LivePhase = "requested" | "running" | "waiting"
 
 export function commandLabel(tool: string, title: string): string {
   const task = firstLine(title)
@@ -27,5 +27,6 @@ export function settledStatus(
 
 export function liveStatus(phase: LivePhase, elapsed: string, glyph: string): StyledText {
   if (phase === "requested") return new StyledText([paint(COLORS.warning, "needs approval")])
+  if (phase === "waiting") return new StyledText([paint(COLORS.agent, "?"), muted(" waiting for input")])
   return new StyledText([paint(COLORS.agent, glyph), muted(` ${elapsed}`)])
 }

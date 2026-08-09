@@ -16,6 +16,8 @@ import { SessionRecorder } from "../sessions/recorder"
 import type { LoadedSession, SessionMeta } from "../sessions/types"
 import { getTool, listTools } from "../tools/registry"
 import { boundToolOutput, TOOL_FAILED_PREFIX, TOOL_OUTPUT_UNSAVED_PREFIX, toolOutputDirectory } from "../tools/output"
+import { isInteractiveTool, MAX_ELICITATION_ANSWER_LENGTH } from "../tools/types"
+import type { ElicitationAnswer, ElicitationRequest, ElicitationResult, RegisteredTool } from "../tools/types"
 import {
   COMPACTION_TRIGGER_RATIO,
   estimateHistoryTokens,
@@ -34,6 +36,7 @@ export interface AgentSessionDeps {
   model: string
   thinking?: ThinkingEffort
   persist?: boolean
+  interactive?: boolean
 }
 
 export interface ResumeTarget {
@@ -58,6 +61,13 @@ interface ApprovalResult {
   pattern?: string
   cause?: DenialCause
   message?: string
+}
+
+interface PendingElicitation {
+  requestId: string
+  callId: string
+  request: ElicitationRequest
+  resolve(result: ElicitationResult): void
 }
 
 interface StreamRound {
@@ -106,6 +116,7 @@ export class AgentSession {
   private compactionFailures = 0
   private readonly listeners = new Set<(event: AgentEvent) => void>()
   private readonly recorder: SessionRecorder | undefined
+  private readonly interactive: boolean
   private outputDirectory: string
   private provider: Provider
   private model: string
@@ -115,6 +126,7 @@ export class AgentSession {
   private streaming: { kind: StreamKind; text: string } | undefined
   private abortController: AbortController | undefined
   private pendingApproval: ((result: ApprovalResult) => void) | undefined
+  private pendingElicitation: PendingElicitation | undefined
   private queued: UserInput[] = []
   private turnActive = false
   private promoteOnAbort = false
@@ -123,6 +135,7 @@ export class AgentSession {
     this.provider = deps.provider
     this.model = deps.model
     this.thinking = deps.thinking
+    this.interactive = deps.interactive ?? false
     this.outputDirectory = toolOutputDirectory(projectSessionsDir(process.cwd()), this.sessionId)
     if (deps.persist) {
       this.recorder = new SessionRecorder((message) => this.emit({ type: "error", message }))
@@ -356,10 +369,35 @@ export class AgentSession {
     this.resolveApproval({ decision: "deny", cause, message })
   }
 
+  answerElicitation(requestId: string, answers: ElicitationAnswer[]): boolean {
+    const pending = this.pendingElicitation
+    if (!pending || pending.requestId !== requestId) return false
+
+    const byQuestion = new Map(answers.map((answer) => [answer.questionId, answer.value.trim()]))
+    if (byQuestion.size !== answers.length || byQuestion.size !== pending.request.questions.length) return false
+    if ([...byQuestion.values()].some((value) => !value || value.length > MAX_ELICITATION_ANSWER_LENGTH)) return false
+
+    const normalized = pending.request.questions.flatMap((question): ElicitationAnswer[] => {
+      const value = byQuestion.get(question.id)
+      return value === undefined ? [] : [{ questionId: question.id, value }]
+    })
+    if (normalized.length !== pending.request.questions.length) return false
+
+    this.resolveElicitation({ status: "answered", answers: normalized })
+    return true
+  }
+
+  rejectElicitation(requestId: string): boolean {
+    if (this.pendingElicitation?.requestId !== requestId) return false
+    this.resolveElicitation({ status: "rejected" })
+    return true
+  }
+
   interrupt(queued: "promote" | "flush" = "flush"): void {
     this.promoteOnAbort = queued === "promote"
     this.abortController?.abort()
     this.resolveApproval({ decision: "deny", cause: "user" })
+    this.resolveElicitation({ status: "rejected" })
   }
 
   private resolveApproval(result: ApprovalResult): void {
@@ -372,6 +410,47 @@ export class AgentSession {
       })
     }
     resolve(result)
+  }
+
+  private resolveElicitation(result: ElicitationResult): void {
+    const pending = this.pendingElicitation
+    if (!pending) return
+    this.pendingElicitation = undefined
+    this.emit({ type: "elicitation_resolved", callId: pending.callId })
+    pending.resolve(result)
+  }
+
+  private async requestInput(
+    callId: string,
+    request: ElicitationRequest,
+    signal: AbortSignal,
+  ): Promise<ElicitationResult> {
+    if (!this.interactive) throw new Error("user input is unavailable without an interactive client")
+    if (this.pendingElicitation) throw new Error("another user input request is already pending")
+    if (signal.aborted) return { status: "rejected" }
+
+    const requestId = crypto.randomUUID()
+    const result = await new Promise<ElicitationResult>((resolve) => {
+      this.pendingElicitation = { requestId, callId, request, resolve }
+      this.setState("awaiting_input")
+      this.emit({ type: "elicitation_requested", requestId, callId, questions: request.questions })
+    })
+    if (!signal.aborted) this.setState("running_tool")
+    return result
+  }
+
+  private availableTools(): RegisteredTool[] {
+    return listTools().filter((tool) => this.canUseTool(tool))
+  }
+
+  private availableTool(name: string): RegisteredTool | undefined {
+    const tool = getTool(name)
+    if (!tool || !this.canUseTool(tool)) return undefined
+    return tool
+  }
+
+  private canUseTool(tool: RegisteredTool): boolean {
+    return this.interactive || !isInteractiveTool(tool)
   }
 
   private emit(event: AgentEvent): void {
@@ -587,6 +666,7 @@ export class AgentSession {
     round: StreamRound,
     usage: TurnUsage,
   ): Promise<void> {
+    const tools = this.availableTools()
     const outputLoops = {
       assistant: new OutputLoopDetector(),
       reasoning: new OutputLoopDetector(),
@@ -614,11 +694,11 @@ export class AgentSession {
         appName: appInfo.name,
         platform: `${process.platform} ${release()}`,
         cwd: process.cwd(),
-        tools: listTools(),
+        tools,
         mode: this.mode,
       }),
       input: prepareConversation(activeHistory(this.items), { provider: provider.id, model }),
-      tools: listTools().map(({ name, description, parameters }) => ({ name, description, parameters })),
+      tools: tools.map(({ name, description, parameters }) => ({ name, description, parameters })),
       sessionId: this.id,
       signal,
     })) {
@@ -675,7 +755,7 @@ export class AgentSession {
   }
 
   private finishSkippedToolCall(call: ToolCallItem, output: string): void {
-    const tool = getTool(call.name)
+    const tool = this.availableTool(call.name)
     const title = tool?.title(call.args) ?? JSON.stringify(call.args)
     const readOnly = tool?.readOnly?.(call.args) ?? false
     this.finishToolCall(call, title, readOnly, output)
@@ -688,7 +768,7 @@ export class AgentSession {
       return output
     }
 
-    const tool = getTool(call.name)
+    const tool = this.availableTool(call.name)
     const title = tool?.title(call.args) ?? JSON.stringify(call.args)
     if (!tool) {
       const message = `Unknown tool: ${call.name}`
@@ -736,9 +816,14 @@ export class AgentSession {
     this.emit({ type: "tool_started", callId: call.callId, tool: call.name, title, readOnly })
     let output: string
     try {
-      output = (
-        await tool.execute(call.args, signal, (text) => this.emit({ type: "tool_updated", callId: call.callId, text }))
-      ).output
+      const result = isInteractiveTool(tool)
+        ? await tool.execute(call.args, {
+            requestInput: (request) => this.requestInput(call.callId, request, signal),
+          })
+        : await tool.execute(call.args, signal, (text) =>
+            this.emit({ type: "tool_updated", callId: call.callId, text }),
+          )
+      output = result.output
     } catch (error) {
       output = `${TOOL_FAILED_PREFIX}${describeError(error)}`
       return this.finishToolCall(call, title, readOnly, output)

@@ -1,15 +1,15 @@
-import type { Tool } from "./types"
+import type { RegisteredTool } from "./types"
 
-const tools = new Map<string, Tool>()
+const tools = new Map<string, RegisteredTool>()
 
-export function registerTool(tool: Tool): void {
+export function registerTool(tool: RegisteredTool): void {
   tools.set(tool.name, tool)
 }
 
-export function getTool(name: string): Tool | undefined {
+export function getTool(name: string): RegisteredTool | undefined {
   return tools.get(name)
 }
 
-export function listTools(): Tool[] {
+export function listTools(): RegisteredTool[] {
   return [...tools.values()]
 }
