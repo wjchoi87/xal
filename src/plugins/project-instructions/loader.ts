@@ -1,6 +1,7 @@
-import { readFile, stat } from "node:fs/promises"
+import { readFile } from "node:fs/promises"
 import { dirname, join, relative, resolve } from "node:path"
-import { asString, isRecord } from "../../lib/json"
+import { isMissingPathError } from "../../lib/error"
+import { findProjectRoot } from "../../project/root"
 
 const encoder = new TextEncoder()
 const decoder = new TextDecoder()
@@ -17,37 +18,12 @@ export interface ProjectInstructions {
   skipped: string[]
 }
 
-function errorCode(error: unknown): string | undefined {
-  if (!isRecord(error)) return undefined
-  return asString(error.code)
-}
-
-async function pathExists(path: string): Promise<boolean> {
-  try {
-    await stat(path)
-    return true
-  } catch (error) {
-    if (errorCode(error) === "ENOENT" || errorCode(error) === "ENOTDIR") return false
-    throw error
-  }
-}
-
 async function readOptional(path: string): Promise<string | undefined> {
   try {
     return await readFile(path, "utf8")
   } catch (error) {
-    if (errorCode(error) === "ENOENT" || errorCode(error) === "ENOTDIR") return undefined
+    if (isMissingPathError(error)) return undefined
     throw error
-  }
-}
-
-async function findProjectRoot(cwd: string): Promise<string> {
-  let directory = cwd
-  while (true) {
-    if (await pathExists(join(directory, ".git"))) return directory
-    const parent = dirname(directory)
-    if (parent === directory) return cwd
-    directory = parent
   }
 }
 

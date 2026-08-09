@@ -1,6 +1,7 @@
-import { mkdir } from "node:fs/promises"
 import { join } from "node:path"
+import { readJsonFile, writeSecureJson } from "../lib/fs"
 import { asString, asStringArray, isRecord } from "../lib/json"
+import { findProjectRoot } from "../project/root"
 import { isThinkingEffort, type ThinkingEffort } from "../providers/types"
 import { agentHome } from "./paths"
 
@@ -15,8 +16,12 @@ export interface Settings {
 
 let current: Settings = { plugins: [], pluginConfig: {}, thinking: {} }
 
-function settingsPath(): string {
+function userSettingsPath(): string {
   return join(agentHome(), "config.json")
+}
+
+async function projectSettingsPath(): Promise<string> {
+  return join(await findProjectRoot(process.cwd()), ".tack", "config.json")
 }
 
 export function settings(): Settings {
@@ -29,29 +34,42 @@ export async function loadSettings(): Promise<Settings> {
 }
 
 export async function saveSettings(patch: Partial<Settings>): Promise<void> {
-  let raw: Record<string, unknown> = {}
-  const file = Bun.file(settingsPath())
-  if (await file.exists()) {
-    const parsed: unknown = await file.json().catch(() => undefined)
-    if (!isRecord(parsed)) {
-      throw new Error(`${settingsPath()} is malformed — fix or delete it before changing settings`)
-    }
-    raw = parsed
-  }
-  await mkdir(agentHome(), { recursive: true })
-  await Bun.write(settingsPath(), JSON.stringify({ ...raw, ...patch }, null, 2) + "\n")
-  current = { ...current, ...patch }
+  const path = userSettingsPath()
+  const [user, project] = await Promise.all([readSettingsFile(path), readProjectSettings()])
+  const nextUser = { ...user, ...patch }
+  const next = parseSettings(mergeSettings(nextUser, project))
+  await writeSecureJson(path, nextUser)
+  current = next
 }
 
 async function readSettings(): Promise<Settings> {
-  const file = Bun.file(settingsPath())
-  if (!(await file.exists())) return { plugins: [], pluginConfig: {}, thinking: {} }
+  const [user, project] = await Promise.all([readSettingsFile(userSettingsPath()), readProjectSettings()])
+  return parseSettings(mergeSettings(user, project))
+}
 
-  const raw: unknown = await file.json().catch(() => undefined)
+async function readProjectSettings(): Promise<Record<string, unknown>> {
+  return readSettingsFile(await projectSettingsPath())
+}
+
+async function readSettingsFile(path: string): Promise<Record<string, unknown>> {
+  const raw = await readJsonFile(path)
+  if (raw === undefined) return {}
   if (!isRecord(raw)) {
-    throw new Error(`${settingsPath()} is malformed — fix or delete it`)
+    throw new Error(`${path} is malformed — fix or delete it`)
   }
+  return raw
+}
 
+function mergeSettings(lower: Record<string, unknown>, higher: Record<string, unknown>): Record<string, unknown> {
+  const merged = { ...lower }
+  for (const [key, value] of Object.entries(higher)) {
+    const previous = merged[key]
+    merged[key] = isRecord(previous) && isRecord(value) ? mergeSettings(previous, value) : value
+  }
+  return merged
+}
+
+function parseSettings(raw: Record<string, unknown>): Settings {
   const plugins = asStringArray(raw.plugins)
   const pluginConfig: Record<string, Record<string, unknown>> = {}
   if (isRecord(raw.pluginConfig)) {
