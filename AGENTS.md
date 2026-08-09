@@ -43,16 +43,6 @@ sequenceDiagram
     Core->>Memory: Turn committed (persistable later)
 ```
 
-### CLI and commands
-
-`src/cli` and `src/commands` are registries and dispatch, nothing else: `runCli(args, ctx)` resolves an argv root, `runCommand(line, ctx)` resolves a `/slash` line, and neither module owns a single concrete command. Every command is contributed by the module whose behaviour it exposes — `src/providers` registers the `connect` and `models` roots plus `/connect`, `/model` and `/thinking`; `src/sessions` registers the `resume` root plus `/clear` and `/resume`; `src/agent` registers `/compact`; the TUI registers `/quit` while it is running. `index.ts` runs those core registrations before `registerPlugins`, so the built-ins always exist first and a plugin can replace a keyed name or hang a subcommand off a built-in root.
-
-A CLI root without a `run` is a namespace that only prints its subcommands; plugins contribute through `ctx.registerCli(cli, parent)`, and registering under a parent that does not exist fails the plugin, not the process. `CliContext` carries the terminal the run answers to — `print`, `ask`, `askSecret` — so a CLI never reaches for stdin itself. Providers are not wired as CLIs: `connect` and `models` resolve a named provider through `providers/registry` and enumerate the choices through `providers/catalog`, so `tack connect chatgpt` and `tack models chatgpt` work because the ChatGPT plugin calls `ctx.registerProvider` — never `ctx.registerCli`.
-
-### Plugins
-
-A plugin is a folder with a `plugin.ts` default-exporting the contract in `src/plugins/types.ts`; its `register(ctx)` introduces contributions through the per-module registries and must stay synchronous — asynchronous work belongs in the optional `bootstrap(ctx)`, which runs as a second phase after every plugin has registered. Built-ins (`src/plugins/builtins.ts`) register first, then external plugins from `~/.tack/config.json` in order; later plugins can extend or replace any keyed contribution, while permission and policy rules only accumulate. A failing plugin is skipped and reported, never fatal.
-
 ```mermaid
 sequenceDiagram
     actor User
@@ -62,13 +52,13 @@ sequenceDiagram
     participant Reg as per-module registries
 
     User->>Entry: tack [command]
-    Entry->>Entry: loadSettings()
+    Entry->>Entry: loadSettings(--setting overrides)
     Entry->>Reg: core registrations (providers, agent, sessions)
     Entry->>Discover: registerPlugins(settings)
     loop builtinPlugins, then settings.plugins
         Discover->>P: import <root>/plugin.ts, validate contract
         Discover->>P: plugin.register(ctx)
-        P->>Reg: ctx.registerTool / registerProvider / registerCli / registerUi / ...
+        P->>Reg: ctx.registerTool / registerProvider / registerCli / registerSetting / registerUi / ...
     end
     alt args given
         Entry->>Reg: runCli(args, ctx) → resolveCli → cli.run(rest, ctx)
@@ -98,8 +88,8 @@ sequenceDiagram
 - Whatever you write, you must read back in the same shape.
 - Build on guarantees, not coincidences.
 - Everything must have a consumer today; delete what nothing uses.
-- Update docs in the same change that changes the behavior.
 - Leave every file you touch consistent with the rules and its neighbors.
+- Do not update AGENTS.md unless user specificly asks for.
 
 ## Linting & Formatting
 
