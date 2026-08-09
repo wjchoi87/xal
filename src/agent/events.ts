@@ -27,6 +27,7 @@ export type AgentEvent =
   | { type: "retry_scheduled"; attempt: number; maxAttempts: number; delayMs: number; message: string }
   | { type: "approval_requested"; callId: string; tool: string; title: string; readOnly: boolean; suggestion?: string }
   | { type: "tool_started"; callId: string; tool: string; title: string; readOnly: boolean }
+  | { type: "tool_updated"; callId: string; text: string }
   | {
       type: "tool_finished"
       callId: string

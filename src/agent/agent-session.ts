@@ -585,6 +585,7 @@ export class AgentSession {
     }
 
     const readOnly = tool.readOnly?.(call.args) ?? false
+    const sandboxed = tool.sandboxed?.(call.args) ?? false
     const permission = tool.permission?.(call.args)
     const decision = await evaluatePolicy({
       tool: call.name,
@@ -592,6 +593,7 @@ export class AgentSession {
       args: call.args,
       subject: permission?.subject,
       readOnly,
+      sandboxed,
       mode: this.mode,
     })
 
@@ -625,7 +627,9 @@ export class AgentSession {
     this.emit({ type: "tool_started", callId: call.callId, tool: call.name, title, readOnly })
     let output: string
     try {
-      output = (await tool.execute(call.args, signal)).output
+      output = (
+        await tool.execute(call.args, signal, (text) => this.emit({ type: "tool_updated", callId: call.callId, text }))
+      ).output
     } catch (error) {
       output = `${TOOL_FAILED_PREFIX}${describeError(error)}`
       this.addToolOutput(call, output)

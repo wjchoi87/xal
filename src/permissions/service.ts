@@ -31,7 +31,7 @@ export async function evaluatePolicy(request: PermissionRequest): Promise<Policy
   const matched = matchRules(request)
   if (matched) return underMode(matched, request.mode)
 
-  if (request.readOnly) return "allow"
+  if (request.readOnly || request.sandboxed) return "allow"
   if (request.mode === "build") return "ask"
   if (request.mode === "plan") return "deny"
   return "allow"

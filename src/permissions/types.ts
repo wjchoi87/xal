@@ -10,6 +10,7 @@ export interface PermissionRequest {
   args: Record<string, unknown>
   subject: string | undefined
   readOnly: boolean
+  sandboxed: boolean
   mode: PermissionMode
 }
 

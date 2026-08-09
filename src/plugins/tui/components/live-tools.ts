@@ -2,14 +2,20 @@ import type { BoxRenderable, RenderContext, TextRenderable } from "@opentui/core
 import { formatDuration } from "../lib/format"
 import { column, label, row } from "../lib/renderables"
 import { Spinner } from "../lib/spinner"
+import { sanitize } from "../lib/text"
 import { COLORS } from "../theme/colors"
 import { commandLabel, liveStatus, type LivePhase } from "./tool-status"
 
 const TICK_MS = 100
+const PREVIEW_LINES = 3
+const PREVIEW_KEPT_CHARS = 4_000
 
 interface LiveRow {
   view: BoxRenderable
   status: TextRenderable
+  preview: BoxRenderable
+  previewLabels: TextRenderable[]
+  tail: string
   createdAt: number
   phase: LivePhase
 }
@@ -27,7 +33,10 @@ export class LiveTools {
   }
 
   get height(): number {
-    return this.rows.size === 0 ? 0 : this.rows.size + 1
+    if (this.rows.size === 0) return 0
+    let height = 1
+    for (const entry of this.rows.values()) height += 1 + entry.previewLabels.length
+    return height
   }
 
   request(callId: string, tool: string, title: string, readOnly: boolean): void {
@@ -40,6 +49,31 @@ export class LiveTools {
     else this.add(callId, tool, title, readOnly, "running")
     this.spinner.start(() => this.render())
     this.render()
+  }
+
+  update(callId: string, text: string): void {
+    const entry = this.rows.get(callId)
+    if (!entry) return
+    entry.tail = (entry.tail + sanitize(text)).slice(-PREVIEW_KEPT_CHARS)
+    const lines = entry.tail
+      .split("\n")
+      .map((line) => line.trimEnd())
+      .filter((line) => line.length > 0)
+      .slice(-PREVIEW_LINES)
+    while (entry.previewLabels.length > lines.length) {
+      const removed = entry.previewLabels.pop()!
+      entry.preview.remove(removed)
+      removed.destroyRecursively()
+    }
+    while (entry.previewLabels.length < lines.length) {
+      const added = label(this.ctx, { content: "", color: COLORS.faint })
+      entry.preview.add(added)
+      entry.previewLabels.push(added)
+    }
+    lines.forEach((line, index) => {
+      entry.previewLabels[index]!.content = line
+    })
+    this.sync()
   }
 
   finish(callId: string): string | undefined {
@@ -65,13 +99,17 @@ export class LiveTools {
   }
 
   private add(callId: string, tool: string, title: string, readOnly: boolean, phase: LivePhase): void {
-    const view = row(this.ctx, { height: 1, alignItems: "center" })
-    view.add(label(this.ctx, { content: readOnly ? ">" : "*", width: 2, color: COLORS.faint }))
-    view.add(label(this.ctx, { content: commandLabel(tool, title), flexGrow: 1, flexShrink: 1, minWidth: 1 }))
+    const view = column(this.ctx, {})
+    const header = row(this.ctx, { height: 1, alignItems: "center" })
+    header.add(label(this.ctx, { content: readOnly ? ">" : "*", width: 2, color: COLORS.faint }))
+    header.add(label(this.ctx, { content: commandLabel(tool, title), flexGrow: 1, flexShrink: 1, minWidth: 1 }))
     const status = label(this.ctx, { content: "", flexShrink: 0, marginLeft: 1 })
-    view.add(status)
+    header.add(status)
+    view.add(header)
+    const preview = column(this.ctx, { paddingLeft: 2 })
+    view.add(preview)
     this.view.add(view)
-    this.rows.set(callId, { view, status, createdAt: Date.now(), phase })
+    this.rows.set(callId, { view, status, preview, previewLabels: [], tail: "", createdAt: Date.now(), phase })
     this.sync()
     this.render()
   }

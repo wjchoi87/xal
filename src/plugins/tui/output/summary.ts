@@ -20,7 +20,7 @@ export function summarizeToolOutput(output: string): string {
 
 export function toolOutputFailed(output: string): boolean {
   if (toolFailed(output)) return true
-  const exitCode = /\(exit code (\d+)\)(?:\n\nFull output saved to: .+)?\s*$/.exec(output)
+  const exitCode = /\(exit code (\d+)(?: · [^)]*)?\)(?:\n\nFull output saved to: .+)?\s*$/.exec(output)
   if (exitCode && exitCode[1] !== "0") return true
-  return /\(timed out after |\(interrupted by user\)/.test(output)
+  return /\(timed out after |\(interrupted by user\)|\(terminated by signal\)/.test(output)
 }

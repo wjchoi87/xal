@@ -1,5 +1,5 @@
 import type { Plugin } from "../types"
-import { bashTool, commandOf, COMPOUND_COMMAND } from "./tool"
+import { bashTool, commandOf, COMPOUND_COMMAND, sandboxRequested } from "./tool"
 
 const DANGEROUS = [
   "bash(rm *)",
@@ -34,7 +34,9 @@ const plugin: Plugin = {
     ctx.registerPermissionRules({ ask: DANGEROUS })
     ctx.registerPolicyRule({
       evaluate: (request) =>
-        request.tool === "bash" && COMPOUND_COMMAND.test(commandOf(request.args)) ? "ask" : undefined,
+        request.tool === "bash" && !sandboxRequested(request.args) && COMPOUND_COMMAND.test(commandOf(request.args))
+          ? "ask"
+          : undefined,
     })
   },
 }

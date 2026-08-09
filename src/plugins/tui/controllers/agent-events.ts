@@ -81,6 +81,9 @@ export class AgentEventController {
         scrollback.endStream()
         live.start(event.callId, event.tool, event.title, event.readOnly)
         break
+      case "tool_updated":
+        live.update(event.callId, event.text)
+        break
       case "tool_finished":
         this.screen.dismissApproval()
         scrollback.append({
