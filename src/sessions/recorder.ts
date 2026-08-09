@@ -1,9 +1,9 @@
 import { appendFile, mkdir } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import type { AgentEvent } from "../agent/events"
+import type { HistoryItem } from "../agent/history"
 import { projectSessionsDir } from "../config/paths"
 import { describeError } from "../lib/error"
-import type { ConversationItem } from "../providers/types"
 import { isPersistable } from "./records"
 import type { SessionMeta, SessionRecord } from "./types"
 
@@ -31,7 +31,7 @@ export class SessionRecorder {
     this.failed = false
   }
 
-  item(item: ConversationItem): void {
+  item(item: HistoryItem): void {
     this.append({ type: "item", item })
   }
 

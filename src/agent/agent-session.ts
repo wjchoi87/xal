@@ -7,22 +7,25 @@ import { describeError } from "../lib/error"
 import { rememberRule } from "../permissions/rules"
 import { evaluatePolicy } from "../permissions/service"
 import type { PermissionMode, PermissionScope } from "../permissions/types"
+import { contextWindow } from "../providers/catalog"
 import { prepareConversation } from "../providers/conversation"
 import { ProviderError } from "../providers/errors"
-import type {
-  ConversationItem,
-  ProviderOutputItem,
-  Provider,
-  ThinkingEffort,
-  ToolCallItem,
-  UserInput,
-  Usage,
-} from "../providers/types"
+import { occupiedContext } from "../providers/types"
+import type { ProviderOutputItem, Provider, ThinkingEffort, ToolCallItem, UserInput, Usage } from "../providers/types"
 import { SessionRecorder } from "../sessions/recorder"
 import type { LoadedSession, SessionMeta } from "../sessions/types"
 import { getTool, listTools } from "../tools/registry"
 import { boundToolOutput, TOOL_FAILED_PREFIX, TOOL_OUTPUT_UNSAVED_PREFIX, toolOutputDirectory } from "../tools/output"
+import {
+  COMPACTION_TRIGGER_RATIO,
+  estimateHistoryTokens,
+  splitForCompaction,
+  summarizeHistory,
+  tailBudget,
+} from "./compaction"
+import type { CompactionTrigger } from "./compaction"
 import type { AgentEvent, AgentState, DenialCause } from "./events"
+import { activeHistory, type HistoryItem } from "./history"
 import { composeSystemPrompt } from "./prompt"
 
 export interface AgentSessionDeps {
@@ -43,7 +46,10 @@ export interface ResumeTarget {
 
 type StreamKind = "assistant" | "reasoning"
 
+export type CompactionOutcome = "compacted" | "nothing" | "busy" | "interrupted"
+
 const MAX_PROVIDER_ATTEMPTS = 3
+const MAX_COMPACTION_FAILURES = 2
 
 interface ApprovalResult {
   decision: "allow" | "deny"
@@ -82,10 +88,21 @@ function addUsage(total: Usage | undefined, usage: Usage): Usage {
   }
 }
 
+function recordedContext(events: AgentEvent[]): number | undefined {
+  for (let index = events.length - 1; index >= 0; index--) {
+    const event = events[index]!
+    if (event.type === "compacted") return undefined
+    if (event.type === "turn_ended" && event.context) return occupiedContext(event.context)
+  }
+  return undefined
+}
+
 export class AgentSession {
   private sessionId: string = crypto.randomUUID()
   private startedAt = Date.now()
-  private items: ConversationItem[] = []
+  private items: HistoryItem[] = []
+  private contextTokens: number | undefined
+  private compactionFailures = 0
   private readonly listeners = new Set<(event: AgentEvent) => void>()
   private readonly recorder: SessionRecorder | undefined
   private outputDirectory: string
@@ -135,7 +152,11 @@ export class AgentSession {
 
   get hasModelOutput(): boolean {
     return this.items.some(
-      (item) => item.type === "assistant_message" || item.type === "reasoning" || item.type === "tool_call",
+      (item) =>
+        item.type === "assistant_message" ||
+        item.type === "reasoning" ||
+        item.type === "tool_call" ||
+        item.type === "compaction",
     )
   }
 
@@ -158,6 +179,8 @@ export class AgentSession {
     this.outputDirectory = toolOutputDirectory(projectSessionsDir(process.cwd()), this.sessionId)
     this.startedAt = Date.now()
     this.items = []
+    this.contextTokens = undefined
+    this.compactionFailures = 0
     this.streaming = undefined
     this.recorder?.start(this.meta())
     this.emit({
@@ -178,6 +201,8 @@ export class AgentSession {
     this.outputDirectory = toolOutputDirectory(dirname(target.path), this.sessionId)
     this.startedAt = meta.startedAt
     this.items = [...target.session.items]
+    this.contextTokens = recordedContext(target.session.events)
+    this.compactionFailures = 0
     this.streaming = undefined
     this.provider = target.provider
     this.model = target.model
@@ -239,6 +264,7 @@ export class AgentSession {
     const model = this.model
     const thinking = this.thinking
     this.abortController = controller
+    this.setState("streaming")
     void this.runTurn(controller.signal, provider, model, thinking)
       .catch((error) => {
         this.emit({ type: "error", message: describeError(error) })
@@ -248,6 +274,30 @@ export class AgentSession {
         this.setState("idle")
       })
     return true
+  }
+
+  async compact(instructions?: string): Promise<CompactionOutcome> {
+    if (this.state !== "idle") return "busy"
+    const controller = new AbortController()
+    this.abortController = controller
+    this.setState("compacting")
+    try {
+      const compacted = await this.runCompaction(
+        controller.signal,
+        this.provider,
+        this.model,
+        this.thinking,
+        "manual",
+        instructions,
+      )
+      return compacted ? "compacted" : "nothing"
+    } catch (error) {
+      if (!isAbortError(error) && !controller.signal.aborted) throw error
+      return "interrupted"
+    } finally {
+      this.abortController = undefined
+      this.setState("idle")
+    }
   }
 
   approve(scope: PermissionScope = "once", pattern?: string): void {
@@ -284,7 +334,7 @@ export class AgentSession {
     for (const listener of this.listeners) listener(event)
   }
 
-  private pushItem(item: ConversationItem): void {
+  private pushItem(item: HistoryItem): void {
     this.items.push(item)
     this.recorder?.item(item)
   }
@@ -318,6 +368,61 @@ export class AgentSession {
     this.pushItem({ type: "tool_result", callId: call.callId, output })
   }
 
+  private async runCompaction(
+    signal: AbortSignal,
+    provider: Provider,
+    model: string,
+    thinking: ThinkingEffort | undefined,
+    trigger: CompactionTrigger,
+    instructions?: string,
+  ): Promise<boolean> {
+    const budget = tailBudget(await contextWindow(provider, model), trigger)
+    const { head, tail, replaced } = splitForCompaction(this.items, budget)
+    if (head.length === 0) return false
+
+    this.setState("compacting")
+    const summary = await summarizeHistory({
+      provider,
+      model,
+      thinking,
+      sessionId: this.sessionId,
+      history: head,
+      instructions,
+      signal,
+    })
+
+    const tokensBefore = this.contextTokens
+    this.items = []
+    this.pushItem({ type: "compaction", summary, replaced, tokensBefore, retained: tail })
+    this.contextTokens = undefined
+    this.compactionFailures = 0
+    this.emit({ type: "compacted", summary, replaced, tokensBefore })
+    return true
+  }
+
+  private async autoCompact(
+    signal: AbortSignal,
+    provider: Provider,
+    model: string,
+    thinking: ThinkingEffort | undefined,
+  ): Promise<void> {
+    if (this.compactionFailures >= MAX_COMPACTION_FAILURES) return
+    const tokens = this.contextTokens ?? estimateHistoryTokens(activeHistory(this.items))
+    const window = await contextWindow(provider, model)
+    if (window === undefined || tokens < window * COMPACTION_TRIGGER_RATIO) return
+
+    try {
+      await this.runCompaction(signal, provider, model, thinking, "auto")
+    } catch (error) {
+      if (isAbortError(error) || signal.aborted) return
+      this.compactionFailures += 1
+      this.emit({
+        type: "error",
+        message: `context compaction failed: ${describeError(error)} — run /compact to retry`,
+      })
+    }
+  }
+
   private async runTurn(
     signal: AbortSignal,
     provider: Provider,
@@ -327,6 +432,12 @@ export class AgentSession {
     const usage: TurnUsage = {}
 
     while (true) {
+      await this.autoCompact(signal, provider, model, thinking)
+      if (signal.aborted) {
+        this.emit({ type: "turn_interrupted" })
+        return
+      }
+
       this.setState("streaming")
       const items = await this.streamRound(signal, provider, model, thinking, usage)
       if (!items) return
@@ -420,7 +531,7 @@ export class AgentSession {
         tools: listTools(),
         mode: this.mode,
       }),
-      input: prepareConversation(this.items, { provider: provider.id, model }),
+      input: prepareConversation(activeHistory(this.items), { provider: provider.id, model }),
       tools: listTools().map(({ name, description, parameters }) => ({ name, description, parameters })),
       sessionId: this.id,
       signal,
@@ -443,6 +554,7 @@ export class AgentSession {
           if (!event.usage) break
           usage.context = event.usage
           usage.turn = addUsage(usage.turn, event.usage)
+          this.contextTokens = occupiedContext(event.usage)
           break
         }
       }

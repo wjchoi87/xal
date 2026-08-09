@@ -76,6 +76,7 @@ function lastState(loaded: LoadedSession): {
       case "approval_requested":
       case "tool_started":
       case "tool_finished":
+      case "compacted":
       case "turn_ended":
       case "turn_interrupted":
       case "error":

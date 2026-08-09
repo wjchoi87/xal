@@ -12,14 +12,14 @@ import { appInfo } from "../../../app-info"
 import { parseBoundedToolOutput } from "../../../tools/output"
 import { getToolRenderer } from "../../../ui/extension"
 import { commandLabel, settledStatus, type ToolOutcome } from "../components/tool-status"
-import { formatTimestamp } from "../lib/format"
+import { formatTimestamp, formatTokens } from "../lib/format"
 import { renderInlineMarkdown } from "../lib/markdown"
 import { column, detailPanel, label, paragraph, row } from "../lib/renderables"
 import { MAX_OUTPUT_ROWS, renderToolOutput } from "../output/render"
 import { summarizeToolOutput, toolOutputFailed } from "../output/summary"
 import { COLORS } from "../theme/colors"
 import { background, muted, paint } from "../theme/styles"
-import type { BannerBlock, Block, NoticeBlock, StreamBlock, ToolBlock, UserBlock } from "./blocks"
+import type { BannerBlock, Block, CompactionBlock, NoticeBlock, StreamBlock, ToolBlock, UserBlock } from "./blocks"
 
 const GUTTER = 2
 
@@ -53,6 +53,8 @@ export function renderBlock(ctx: RenderContext, block: Block, expanded: boolean)
       return frame(ctx, paragraph(ctx, { content: `x ${block.text}`, color: COLORS.error }))
     case "notice":
       return frame(ctx, notice(ctx, block, expanded))
+    case "compaction":
+      return frame(ctx, compaction(ctx, block, expanded))
     case "text":
     case "reasoning":
       return streamView(ctx, block).view
@@ -103,6 +105,23 @@ function notice(ctx: RenderContext, block: NoticeBlock, expanded: boolean): Rend
   if (!expanded) return box
   const body = detailPanel(ctx)
   for (const detail of block.details) body.add(paragraph(ctx, { content: detail, color: COLORS.error }))
+  box.add(body)
+  return box
+}
+
+function compaction(ctx: RenderContext, block: CompactionBlock, expanded: boolean): Renderable {
+  const box = column(ctx)
+  const before = block.tokensBefore === undefined ? "" : ` · was ${formatTokens(block.tokensBefore)} tokens`
+  const hint = expanded ? "" : " · ctrl+o to read it"
+  box.add(
+    paragraph(ctx, {
+      content: `context compacted · ${block.replaced} items summarized${before}${hint}`,
+      color: COLORS.warning,
+    }),
+  )
+  if (!expanded) return box
+  const body = detailPanel(ctx)
+  body.add(paragraph(ctx, { content: block.summary, color: COLORS.faint }))
   box.add(body)
   return box
 }

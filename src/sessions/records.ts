@@ -1,4 +1,5 @@
 import type { AgentEvent, DenialCause } from "../agent/events"
+import type { CompactionItem, HistoryItem } from "../agent/history"
 import { asBoolean, asNumber, asString, isJsonObject, isRecord } from "../lib/json"
 import { isPermissionMode } from "../permissions/types"
 import {
@@ -74,6 +75,12 @@ function parseEvent(raw: unknown): AgentEvent | undefined {
         output,
         denial: parseDenial(raw.denial),
       }
+    }
+    case "compacted": {
+      const summary = asString(raw.summary)
+      const replaced = asNumber(raw.replaced)
+      if (!summary || replaced === undefined) return undefined
+      return { type: "compacted", summary, replaced, tokensBefore: asNumber(raw.tokensBefore) }
     }
     case "turn_ended":
       return { type: "turn_ended", usage: parseUsage(raw.usage), context: parseUsage(raw.context) }
@@ -157,7 +164,7 @@ function parseImages(raw: unknown): ImageInput[] | undefined {
   return images.length === raw.length ? images : undefined
 }
 
-function parseItem(raw: unknown): ConversationItem | undefined {
+function parseConversationItem(raw: unknown): ConversationItem | undefined {
   if (!isRecord(raw)) return undefined
 
   switch (asString(raw.type)) {
@@ -194,6 +201,22 @@ function parseItem(raw: unknown): ConversationItem | undefined {
     default:
       return undefined
   }
+}
+
+function parseCompaction(raw: Record<string, unknown>): CompactionItem | undefined {
+  const summary = asString(raw.summary)
+  const replaced = asNumber(raw.replaced)
+  if (!summary || replaced === undefined || !Array.isArray(raw.retained)) return undefined
+  const retained = raw.retained.flatMap((entry) => {
+    const item = parseConversationItem(entry)
+    return item ? [item] : []
+  })
+  return { type: "compaction", summary, replaced, tokensBefore: asNumber(raw.tokensBefore), retained }
+}
+
+function parseItem(raw: unknown): HistoryItem | undefined {
+  if (isRecord(raw) && asString(raw.type) === "compaction") return parseCompaction(raw)
+  return parseConversationItem(raw)
 }
 
 export function parseRecord(line: string): SessionRecord | undefined {

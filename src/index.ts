@@ -1,13 +1,31 @@
+import { registerAgentCommands } from "./agent/commands"
 import { runCli } from "./cli/run"
+import { askSecret } from "./cli/secret"
 import type { CliContext } from "./cli/types"
 import { loadSettings } from "./config/settings"
 import { bootstrapPlugins, registerPlugins } from "./plugins/discover"
+import { registerProviderClis } from "./providers/cli"
+import { registerProviderCommands } from "./providers/commands"
+import { registerSessionClis } from "./sessions/cli"
+import { registerSessionCommands } from "./sessions/commands"
 import { getUi } from "./ui/registry"
 
 const ctx: CliContext = {
   print(line) {
     console.log(line)
   },
+  ask(question) {
+    return Promise.resolve(prompt(question) ?? "")
+  },
+  askSecret,
+}
+
+function registerCore(): void {
+  registerProviderCommands()
+  registerProviderClis()
+  registerAgentCommands()
+  registerSessionCommands()
+  registerSessionClis()
 }
 
 function normalize(args: string[]): string[] {
@@ -19,6 +37,7 @@ function normalize(args: string[]): string[] {
 async function main(input: string[]): Promise<void> {
   const args = normalize(input)
   const settings = await loadSettings()
+  registerCore()
   const plugins = await registerPlugins(settings)
 
   if (args.length === 0) {

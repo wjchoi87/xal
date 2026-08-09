@@ -1,7 +1,7 @@
-import { createSession } from "../agent/compose"
-import { appInfo } from "../app-info"
-import { isPermissionMode, permissionModes, type PermissionMode } from "../permissions/types"
-import type { Cli } from "./types"
+import { createSession } from "../../agent/compose"
+import { appInfo } from "../../app-info"
+import type { Cli } from "../../cli/types"
+import { isPermissionMode, permissionModes, type PermissionMode } from "../../permissions/types"
 
 interface Parsed {
   text: string
@@ -62,6 +62,9 @@ export const askCli: Cli = {
             break
           case "tool_finished":
             ctx.print(event.denial ? `[${event.denial}] ${event.output}` : event.output)
+            break
+          case "compacted":
+            ctx.print(`\n[context compacted · ${event.replaced} items summarized]`)
             break
           case "retry_scheduled":
             ctx.print(

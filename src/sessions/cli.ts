@@ -1,9 +1,10 @@
+import { registerCli } from "../cli/registry"
+import type { Cli } from "../cli/types"
 import { settings } from "../config/settings"
-import { findSession, latestSession } from "../sessions/store"
 import { getUi } from "../ui/registry"
-import type { Cli } from "./types"
+import { findSession, latestSession } from "./store"
 
-export const resumeCli: Cli = {
+const resumeCli: Cli = {
   name: "resume",
   describe: "reopen a saved session",
   usage: "resume [session-id]",
@@ -17,4 +18,8 @@ export const resumeCli: Cli = {
     if (!ui) throw new Error(`unknown ui: ${uiId}`)
     await ui.start({ resume: summary })
   },
+}
+
+export function registerSessionClis(): void {
+  registerCli(resumeCli)
 }

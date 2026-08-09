@@ -1,7 +1,6 @@
-import { builtinClis } from "./builtins"
 import type { Cli, ResolvedCli } from "./types"
 
-const clis = new Map<string, Cli>(builtinClis.map((cli) => [cli.name, cli]))
+const clis = new Map<string, Cli>()
 const children = new Map<string, Map<string, Cli>>()
 
 export function registerCli(cli: Cli, parent?: string): void {

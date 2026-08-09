@@ -1,4 +1,5 @@
 import type { Plugin } from "./types"
+import ask from "./ask/plugin"
 import bash from "./bash/plugin"
 import deepseek from "./deepseek/plugin"
 import files from "./files/plugin"
@@ -18,5 +19,6 @@ export const builtinPlugins: Plugin[] = [
   search,
   deepseek,
   openaiChatgpt,
+  ask,
   tui,
 ]

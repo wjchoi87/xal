@@ -1,7 +1,7 @@
 import type { PermissionMode } from "../permissions/types"
 import type { ThinkingEffort, Usage } from "../providers/types"
 
-export type AgentState = "idle" | "streaming" | "awaiting_approval" | "running_tool"
+export type AgentState = "idle" | "streaming" | "awaiting_approval" | "running_tool" | "compacting"
 
 export type DenialCause = "user" | "policy" | "plan"
 
@@ -36,6 +36,7 @@ export type AgentEvent =
       output: string
       denial?: DenialCause
     }
+  | { type: "compacted"; summary: string; replaced: number; tokensBefore?: number }
   | { type: "turn_ended"; usage?: Usage; context?: Usage }
   | { type: "turn_interrupted" }
   | { type: "error"; message: string }

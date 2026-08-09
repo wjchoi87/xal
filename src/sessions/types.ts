@@ -1,6 +1,7 @@
 import type { AgentEvent } from "../agent/events"
+import type { HistoryItem } from "../agent/history"
 import type { PermissionMode } from "../permissions/types"
-import type { ConversationItem, ThinkingEffort } from "../providers/types"
+import type { ThinkingEffort } from "../providers/types"
 
 export interface SessionMeta {
   version: 1
@@ -14,7 +15,7 @@ export interface SessionMeta {
 }
 
 export type SessionRecord =
-  { type: "meta"; meta: SessionMeta } | { type: "item"; item: ConversationItem } | { type: "event"; event: AgentEvent }
+  { type: "meta"; meta: SessionMeta } | { type: "item"; item: HistoryItem } | { type: "event"; event: AgentEvent }
 
 export interface SessionSummary {
   id: string
@@ -27,6 +28,6 @@ export interface SessionSummary {
 
 export interface LoadedSession {
   meta: SessionMeta
-  items: ConversationItem[]
+  items: HistoryItem[]
   events: AgentEvent[]
 }

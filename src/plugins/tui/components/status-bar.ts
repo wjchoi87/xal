@@ -8,7 +8,7 @@ import {
 } from "@opentui/core"
 import type { AgentState } from "../../../agent/events"
 import type { PermissionMode } from "../../../permissions/types"
-import type { ThinkingEffort, Usage } from "../../../providers/types"
+import { occupiedContext, type ThinkingEffort, type Usage } from "../../../providers/types"
 import { formatTokens } from "../lib/format"
 import { label, row } from "../lib/renderables"
 import { Spinner } from "../lib/spinner"
@@ -37,8 +37,8 @@ export class StatusBar {
   private state: AgentState = "idle"
   private loading: string | undefined
   private notice: string | undefined
-  private contextInputTokens: number | undefined
-  private contextCacheReadInputTokens: number | undefined
+  private contextTokens: number | undefined
+  private contextWindow: number | undefined
 
   constructor(
     ctx: RenderContext,
@@ -114,35 +114,34 @@ export class StatusBar {
   }
 
   private get busy(): boolean {
-    return this.state === "streaming" || this.state === "running_tool"
+    return this.state === "streaming" || this.state === "running_tool" || this.state === "compacting"
   }
 
   resetUsage(): void {
-    this.contextInputTokens = undefined
-    this.contextCacheReadInputTokens = undefined
+    this.contextTokens = undefined
     this.renderMeta()
   }
 
   setUsage(context: Usage | undefined): void {
-    if (context) {
-      this.contextInputTokens = context.totalInputTokens
-      this.contextCacheReadInputTokens = context.cacheReadInputTokens
-    }
+    if (context) this.contextTokens = occupiedContext(context)
+    this.renderMeta()
+  }
+
+  setContextWindow(window: number | undefined): void {
+    this.contextWindow = window
     this.renderMeta()
   }
 
   private renderMeta(): void {
-    const thinking = this.thinking ? ` · think ${this.thinking === "none" ? "off" : this.thinking}` : ""
-    if (this.contextInputTokens === undefined) {
+    const thinking = this.thinking ? ` · ${this.thinking === "none" ? "thinking off" : this.thinking}` : ""
+    const tokens = this.contextTokens
+    if (tokens === undefined) {
       this.meta.content = `${this.model}${thinking}`
       return
     }
 
-    const cache = this.contextCacheReadInputTokens
-    const hitRate =
-      cache === undefined || this.contextInputTokens === 0 ? undefined : (cache / this.contextInputTokens) * 100
-    const cached = hitRate === undefined ? "" : ` · ${hitRate.toFixed(0)}% cached`
-    this.meta.content = `${this.model}${thinking} · ctx ${formatTokens(this.contextInputTokens)}${cached}`
+    const share = this.contextWindow ? ` (${Math.round((tokens / this.contextWindow) * 100)}%)` : ""
+    this.meta.content = `${this.model}${thinking} · ${formatTokens(tokens)}${share}`
   }
 
   private toggleSpinner(active: boolean): void {
@@ -164,7 +163,8 @@ export class StatusBar {
     }
     if (this.state !== "idle") {
       const hint = this.view.width > WIDE ? " · Esc interrupt" : ""
-      return new StyledText([paint(COLORS.agent, this.spinner.glyph), muted(` Working${hint}`)])
+      const activity = this.state === "compacting" ? "Compacting context" : "Working"
+      return new StyledText([paint(COLORS.agent, this.spinner.glyph), muted(` ${activity}${hint}`)])
     }
     return new StyledText([muted(this.view.width > WIDE ? WIDE_SHORTCUTS : NARROW_SHORTCUTS)])
   }

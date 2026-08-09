@@ -52,8 +52,9 @@ export async function startTui(events: EventService, options: UiOptions = {}): P
   })
   renderer.root.add(screen.view)
 
-  const agentEvents = new AgentEventController(screen)
+  const agentEvents = new AgentEventController(screen, session)
   session.subscribe((event) => agentEvents.handle(event))
+  agentEvents.trackContextWindow()
 
   if (options.resume) {
     try {

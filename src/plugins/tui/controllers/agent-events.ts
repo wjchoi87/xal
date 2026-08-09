@@ -1,8 +1,23 @@
+import type { AgentSession } from "../../../agent/agent-session"
 import type { AgentEvent } from "../../../agent/events"
+import { contextWindow } from "../../../providers/catalog"
 import type { Screen } from "../screen"
 
 export class AgentEventController {
-  constructor(private readonly screen: Screen) {}
+  constructor(
+    private readonly screen: Screen,
+    private readonly session: AgentSession,
+  ) {}
+
+  trackContextWindow(): void {
+    const provider = this.session.currentProvider
+    const model = this.session.currentModel
+    this.screen.statusBar.setContextWindow(undefined)
+    void contextWindow(provider, model).then((window) => {
+      if (this.session.currentProvider !== provider || this.session.currentModel !== model) return
+      this.screen.statusBar.setContextWindow(window)
+    })
+  }
 
   handle(event: AgentEvent): void {
     const { scrollback, live, statusBar } = this.screen
@@ -10,6 +25,7 @@ export class AgentEventController {
     switch (event.type) {
       case "session_started":
         this.screen.startSession(event.model, event.thinking, event.mode)
+        this.trackContextWindow()
         break
       case "state_changed":
         statusBar.setState(event.state)
@@ -46,6 +62,7 @@ export class AgentEventController {
         break
       case "model_changed":
         statusBar.setModel(event.model)
+        this.trackContextWindow()
         scrollback.append({ kind: "info", text: `model: ${event.model} · ${event.provider}` })
         break
       case "thinking_changed":
@@ -75,6 +92,15 @@ export class AgentEventController {
           output: event.output,
           elapsed: live.finish(event.callId),
         })
+        break
+      case "compacted":
+        scrollback.append({
+          kind: "compaction",
+          summary: event.summary,
+          replaced: event.replaced,
+          tokensBefore: event.tokensBefore,
+        })
+        statusBar.resetUsage()
         break
       case "turn_interrupted":
         scrollback.append({ kind: "info", text: "Interrupted" })

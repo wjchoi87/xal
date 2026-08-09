@@ -3,8 +3,8 @@ import { readdir } from "node:fs/promises"
 import { join } from "node:path"
 import { createInterface } from "node:readline"
 import type { AgentEvent } from "../agent/events"
+import type { HistoryItem } from "../agent/history"
 import { projectSessionsDir, sessionsDir } from "../config/paths"
-import type { ConversationItem } from "../providers/types"
 import { parseRecord } from "./records"
 import type { LoadedSession, SessionMeta, SessionSummary } from "./types"
 
@@ -77,7 +77,7 @@ export async function loadSession(path: string): Promise<LoadedSession | undefin
   }
 
   let meta: SessionMeta | undefined
-  const items: ConversationItem[] = []
+  const items: HistoryItem[] = []
   const events: AgentEvent[] = []
 
   for (const line of text.split("\n")) {

@@ -43,9 +43,11 @@ sequenceDiagram
     Core->>Memory: Turn committed (persistable later)
 ```
 
-### CLI
+### CLI and commands
 
-`src/cli` owns the entry-point surface: `runCli(args, ctx)` dispatches, and the registry is seeded with the built-in roots so they exist the moment the module is imported — no bootstrap step, no ordering rule against plugin registration. A root without a `run` is a namespace that only prints its subcommands; plugins fill it in through `ctx.registerCli(cli, parent)`, and registering under a parent that does not exist fails the plugin, not the process. Providers are not wired this way: `connect` and `models` resolve a named provider through `providers/registry` and enumerate the choices through `providers/catalog`, so `tack connect chatgpt` and `tack models chatgpt` work because the ChatGPT plugin calls `ctx.registerProvider` — never `ctx.registerCli`.
+`src/cli` and `src/commands` are registries and dispatch, nothing else: `runCli(args, ctx)` resolves an argv root, `runCommand(line, ctx)` resolves a `/slash` line, and neither module owns a single concrete command. Every command is contributed by the module whose behaviour it exposes — `src/providers` registers the `connect` and `models` roots plus `/connect`, `/model` and `/thinking`; `src/sessions` registers the `resume` root plus `/clear` and `/resume`; `src/agent` registers `/compact`; the TUI registers `/quit` while it is running. `index.ts` runs those core registrations before `registerPlugins`, so the built-ins always exist first and a plugin can replace a keyed name or hang a subcommand off a built-in root.
+
+A CLI root without a `run` is a namespace that only prints its subcommands; plugins contribute through `ctx.registerCli(cli, parent)`, and registering under a parent that does not exist fails the plugin, not the process. `CliContext` carries the terminal the run answers to — `print`, `ask`, `askSecret` — so a CLI never reaches for stdin itself. Providers are not wired as CLIs: `connect` and `models` resolve a named provider through `providers/registry` and enumerate the choices through `providers/catalog`, so `tack connect chatgpt` and `tack models chatgpt` work because the ChatGPT plugin calls `ctx.registerProvider` — never `ctx.registerCli`.
 
 ### Plugins
 
@@ -61,6 +63,7 @@ sequenceDiagram
 
     User->>Entry: tack [command]
     Entry->>Entry: loadSettings()
+    Entry->>Reg: core registrations (providers, agent, sessions)
     Entry->>Discover: registerPlugins(settings)
     loop builtinPlugins, then settings.plugins
         Discover->>P: import <root>/plugin.ts, validate contract

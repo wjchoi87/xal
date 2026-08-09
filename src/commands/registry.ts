@@ -1,7 +1,6 @@
-import { builtinCommands } from "./builtins"
 import type { Command } from "./types"
 
-const commands = new Map<string, Command>(builtinCommands.map((command) => [command.name, command]))
+const commands = new Map<string, Command>()
 
 export function registerCommand(command: Command): void {
   commands.set(command.name, command)

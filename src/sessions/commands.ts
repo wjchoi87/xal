@@ -1,10 +1,19 @@
 import { resumeSession } from "../agent/compose"
+import { registerCommand } from "../commands/registry"
+import type { Command } from "../commands/types"
 import { compactPath } from "../lib/path"
 import { formatRelative } from "../lib/time"
-import { listSessions } from "../sessions/store"
-import type { Command } from "./types"
+import { listSessions } from "./store"
 
-export const resumeCommand: Command = {
+const clearCommand: Command = {
+  name: "clear",
+  describe: "start a new session",
+  async run(_args, ctx) {
+    if (!ctx.session.reset()) ctx.print("cannot start a new session while a turn is running")
+  },
+}
+
+const resumeCommand: Command = {
   name: "resume",
   describe: "reopen a saved session · /resume all searches every project",
   async run(args, ctx) {
@@ -30,4 +39,9 @@ export const resumeCommand: Command = {
 
     for (const notice of await resumeSession(ctx.session, summary)) ctx.print(notice)
   },
+}
+
+export function registerSessionCommands(): void {
+  registerCommand(clearCommand)
+  registerCommand(resumeCommand)
 }

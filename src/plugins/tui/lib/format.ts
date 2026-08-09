@@ -19,6 +19,6 @@ export function formatTimestamp(timestamp: number): string {
 
 export function formatTokens(tokens: number): string {
   if (tokens < 1000) return String(tokens)
-  if (tokens < 10_000) return `${(tokens / 1000).toFixed(1)}k`
-  return `${Math.round(tokens / 1000)}k`
+  const thousands = tokens / 1000
+  return thousands < 99.95 ? `${thousands.toFixed(1)}K` : `${Math.round(thousands)}K`
 }

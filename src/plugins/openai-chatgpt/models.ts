@@ -7,6 +7,7 @@ import { isThinkingEffort, type ModelInfo, type ThinkingEffort, type ThinkingOpt
 
 const MODELS_URL = "https://models.dev/api.json"
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000
+const DEFAULT_CONTEXT_WINDOW = 260_000
 
 const BACKEND_MODEL_IDS = [
   "gpt-5.6-luna",
@@ -27,6 +28,15 @@ interface ModelMetadata {
 type MetadataMap = Record<string, ModelMetadata>
 
 let memo: MetadataMap | undefined
+let contextWindowCap = DEFAULT_CONTEXT_WINDOW
+
+export function setContextWindowCap(cap: number | undefined): void {
+  contextWindowCap = cap ?? DEFAULT_CONTEXT_WINDOW
+}
+
+function effectiveContextWindow(reported: number | undefined): number {
+  return reported === undefined ? contextWindowCap : Math.min(reported, contextWindowCap)
+}
 
 function parseThinking(raw: unknown): ThinkingEffort[] | undefined {
   if (!Array.isArray(raw)) return undefined
@@ -123,7 +133,7 @@ export async function listModels(): Promise<ModelInfo[]> {
   return BACKEND_MODEL_IDS.map((id) => ({
     id,
     name: metadata[id]?.name ?? id,
-    contextWindow: metadata[id]?.contextWindow,
+    contextWindow: effectiveContextWindow(metadata[id]?.contextWindow),
   }))
 }
 
