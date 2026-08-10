@@ -166,7 +166,8 @@ export class LiveTools {
   }
 
   private sync(): void {
-    this.view.marginTop = this.rows.size === 0 ? 0 : 1
+    this.view.visible = this.rows.size > 0
+    this.view.marginTop = this.rows.size > 0 ? 1 : 0
     this.onChange()
   }
 

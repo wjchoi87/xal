@@ -1,0 +1,79 @@
+import type { JsonObject } from "../lib/json"
+import type { UserInput, Usage } from "../providers/types"
+import type { AgentEvent } from "./events"
+import type { AgentSession } from "./agent-session"
+
+export type AgentRunOutcome =
+  | { status: "completed"; response: string | JsonObject; usage?: Usage; context?: Usage }
+  | { status: "failed"; response: string | JsonObject; error: string }
+  | { status: "interrupted"; response: string | JsonObject }
+
+type AgentRunTerminal =
+  | { status: "completed"; usage?: Usage; context?: Usage }
+  | { status: "failed"; error: string }
+  | { status: "interrupted" }
+
+export function runAgentTurn(
+  session: AgentSession,
+  input: UserInput,
+  handle?: (event: AgentEvent) => void,
+): Promise<AgentRunOutcome> {
+  let response: string | JsonObject = ""
+  let settled = false
+  let unsubscribe = (): void => {}
+
+  return new Promise((resolve) => {
+    const finish = (outcome: AgentRunTerminal): void => {
+      if (settled) return
+      settled = true
+      unsubscribe()
+      resolve({ ...outcome, response })
+    }
+
+    unsubscribe = session.subscribe((event) => {
+      handle?.(event)
+      switch (event.type) {
+        case "assistant_message":
+          response = event.text
+          break
+        case "turn_ended":
+          if (event.output !== undefined) response = event.output
+          finish({ status: "completed", usage: event.usage, context: event.context })
+          break
+        case "turn_failed":
+          finish({ status: "failed", error: event.message })
+          break
+        case "turn_interrupted":
+          finish({ status: "interrupted" })
+          break
+        case "plan_updated":
+        case "task_list_updated":
+        case "session_started":
+        case "session_title_changed":
+        case "state_changed":
+        case "mode_changed":
+        case "model_changed":
+        case "thinking_changed":
+        case "user_message":
+        case "queue_changed":
+        case "queue_flushed":
+        case "text_delta":
+        case "reasoning_summary_delta":
+        case "reasoning_delta":
+        case "reasoning_summary":
+        case "retry_scheduled":
+        case "approval_requested":
+        case "elicitation_requested":
+        case "elicitation_resolved":
+        case "tool_started":
+        case "tool_updated":
+        case "tool_finished":
+        case "compacted":
+        case "error":
+          break
+      }
+    })
+
+    if (!session.send(input)) finish({ status: "failed", error: "session did not accept the prompt" })
+  })
+}

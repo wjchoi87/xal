@@ -4,6 +4,7 @@ import { nextPermissionMode } from "../../../permissions/types"
 import type { Screen } from "../screen"
 
 const QUIT_WINDOW_MS = 2000
+const STOP_AGENTS_WINDOW_MS = 2000
 
 export interface KeymapDeps {
   session: AgentSession
@@ -14,6 +15,7 @@ export interface KeymapDeps {
 export function bindKeys(renderer: CliRenderer, deps: KeymapDeps): void {
   const { session, screen, quit } = deps
   let lastInterrupt = 0
+  let stopAgentsChord = 0
 
   function handleInterrupt(): void {
     if (session.currentState !== "idle") {
@@ -34,6 +36,24 @@ export function bindKeys(renderer: CliRenderer, deps: KeymapDeps): void {
   }
 
   renderer.keyInput.on("keypress", (key) => {
+    if (key.ctrl && key.name === "x" && screen.tasks.hasRunningAgents) {
+      key.preventDefault()
+      stopAgentsChord = Date.now()
+      screen.statusBar.setNotice("Ctrl+K to stop all agents")
+      const timer = setTimeout(() => {
+        if (Date.now() - stopAgentsChord >= STOP_AGENTS_WINDOW_MS) screen.statusBar.clearNotice()
+      }, STOP_AGENTS_WINDOW_MS)
+      timer.unref()
+      return
+    }
+    if (key.ctrl && key.name === "k" && Date.now() - stopAgentsChord < STOP_AGENTS_WINDOW_MS) {
+      key.preventDefault()
+      stopAgentsChord = 0
+      screen.statusBar.setNotice(screen.tasks.stopAllAgents() ? "Stopping all agents…" : "No agents are running")
+      const timer = setTimeout(() => screen.statusBar.clearNotice(), STOP_AGENTS_WINDOW_MS)
+      timer.unref()
+      return
+    }
     if (key.ctrl && key.name === "c") {
       key.preventDefault()
       if (screen.secret.visible) {
@@ -135,6 +155,11 @@ export function bindKeys(renderer: CliRenderer, deps: KeymapDeps): void {
       screen.composer.navigateHistory(key.name === "up" ? "older" : "newer")
     ) {
       key.preventDefault()
+      return
+    }
+    if (key.name === "escape" && !screen.overlayVisible && screen.tasks.closeViewer()) {
+      key.preventDefault()
+      screen.syncFooter()
       return
     }
     if (key.name === "escape" && session.currentState !== "idle") session.interrupt("promote")

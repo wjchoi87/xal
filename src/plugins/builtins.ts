@@ -11,8 +11,10 @@ import plan from "./plan/plugin"
 import prompt from "./prompt/plugin"
 import promptCommands from "./prompt-commands/plugin"
 import projectInstructions from "./project-instructions/plugin"
+import jobs from "./jobs/plugin"
 import search from "./search/plugin"
 import skills from "./skills/plugin"
+import subAgents from "./sub-agents/plugin"
 import tasks from "./tasks/plugin"
 import tui from "./tui/plugin"
 
@@ -25,8 +27,10 @@ export const builtinPlugins: Plugin[] = [
   projectInstructions,
   bash,
   files,
+  jobs,
   search,
   skills,
+  subAgents,
   tasks,
   deepseek,
   openaiChatgpt,

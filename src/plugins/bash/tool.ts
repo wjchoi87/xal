@@ -4,13 +4,12 @@ import { expandSnapshotAliases, snapshotEnvironment, snapshotLaunch } from "./en
 import { startJob } from "./jobs"
 import { killTree, spawnCommand } from "./process"
 import { sandboxAvailable, sandboxLaunch } from "./sandbox"
+import { splitCommand } from "./split"
 
 const DEFAULT_TIMEOUT_S = 120
 const MAX_TIMEOUT_S = 600
 const READ_ONLY_COMMAND =
-  /^(?:cat|find|grep|head|ls|pwd|rg|tail|wc)(?:\s|$)|^(?:git\s+(?:diff|log|show|status))(?:\s|$)|^(?:bun|cargo|npm|pnpm|yarn)\s+(?:run\s+)?test(?:\s|$)|^sed\s+(?!.*(?:\s-i|--in-place))|^git\s+branch\s+--show-current(?:\s|$)/
-
-export const COMPOUND_COMMAND = /[;|&\n`<>(){}]/
+  /^(?:cat|find|grep|head|ls|pwd|rg|sleep|tail|wc)(?:\s|$)|^(?:git\s+(?:diff|log|show|status))(?:\s|$)|^(?:bun|cargo|npm|pnpm|yarn)\s+(?:run\s+)?test(?:\s|$)|^sed\s+(?!.*(?:\s-i|--in-place))|^git\s+branch\s+--show-current(?:\s|$)/
 
 export function commandOf(args: Record<string, unknown>): string {
   return asString(args.command)?.trim() ?? ""
@@ -46,7 +45,7 @@ function parameters(): Record<string, unknown> {
     background: {
       type: "boolean",
       description:
-        "Run the command as a background job and return its job id immediately instead of waiting. The timeout does not apply. Read new output with bash_output and stop the job with bash_kill.",
+        "Run the command as a background job and return its job id immediately instead of waiting. The timeout does not apply. Read new output with job_output and stop the job with job_kill.",
     },
   }
   if (sandboxAvailable()) {
@@ -73,7 +72,7 @@ function description(): string {
 
 function guidance(): string {
   const base =
-    "Use bash for shell work: builds, tests, git. Use the grep and glob tools to search instead of rg, find, or ls, and read, write, and edit for file contents instead of cat, sed, or heredocs. Prefer non-interactive commands; anything needing a TTY will hang. Start long-lived processes like dev servers and watchers with background:true, follow them with bash_output (pass wait to block until new output or exit instead of sleeping between polls), and stop them with bash_kill; never background quick commands."
+    "Use bash for shell work: builds, tests, git. Use the grep and glob tools to search instead of rg, find, or ls, and read, write, and edit for file contents instead of cat, sed, or heredocs. Prefer non-interactive commands; anything needing a TTY will hang. Start long-lived processes like dev servers and watchers with background:true, follow them with job_output (pass wait to block until new output or exit instead of sleeping between polls), and stop them with job_kill; never background quick commands."
   if (!sandboxAvailable()) return base
   return `${base} Prefer sandbox:true — it runs without approval but blocks network access and writes outside the workspace and temp directories. Use sandbox:false when a command needs network or writes elsewhere, and if a sandboxed command fails because of those limits, retry it with sandbox:false.`
 }
@@ -88,17 +87,18 @@ export const bashTool: Tool = {
   },
   readOnly(args) {
     if (backgroundRequested(args)) return false
-    const command = policyCommandOf(args)
-    if (COMPOUND_COMMAND.test(command)) return false
-    return READ_ONLY_COMMAND.test(command)
+    const split = splitCommand(policyCommandOf(args))
+    if (!split || split.redirected) return false
+    return split.segments.every((segment) => READ_ONLY_COMMAND.test(segment))
   },
   sandboxed(args) {
     return sandboxRequested(args)
   },
   permission(args) {
     const command = policyCommandOf(args)
-    if (COMPOUND_COMMAND.test(command)) return { subject: command }
-    const words = command.split(/\s+/)
+    const split = splitCommand(command)
+    if (!split || split.segments.length > 1) return { subject: command }
+    const words = split.segments[0]!.split(/\s+/)
     if (words.length < 2) return { subject: command, suggestion: `bash(${command})` }
     return { subject: command, suggestion: `bash(${words[0]} ${words[1]}*)` }
   },
@@ -114,7 +114,7 @@ export const bashTool: Tool = {
     if (backgroundRequested(args)) {
       const job = startJob(command, spawnCommand(launch, environment))
       return {
-        output: `Started background job ${job.id}${sandboxed ? " (sandboxed)" : ""}. Read its output with bash_output and stop it with bash_kill.`,
+        output: `Started background job ${job.id}${sandboxed ? " (sandboxed)" : ""}. Read its output with job_output and stop it with job_kill.`,
       }
     }
 

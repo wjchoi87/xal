@@ -1,35 +1,35 @@
+import { getJob, jobStatus, readJobOutput, stopJob, waitForJob, type BackgroundJob } from "../../background/jobs"
 import { asNumber, asString } from "../../lib/json"
 import type { Tool } from "../../tools/types"
-import { getJob, jobStatus, killJob, readJobOutput, waitForJob, type BashJob } from "./jobs"
 
 const MAX_WAIT_S = 600
 
-function jobOf(args: Record<string, unknown>): BashJob {
+function jobOf(args: Record<string, unknown>): BackgroundJob {
   const id = asString(args.id)?.trim() ?? ""
   const job = getJob(id)
   if (!job) throw new Error(`no background job with id "${id}"`)
   return job
 }
 
-const idProperty = { type: "string", description: "Background job id returned by bash" }
+const idProperty = { type: "string", description: "Job id returned by bash background:true or sub_agent" }
 
-function unreadOutput(job: BashJob): string {
+function unreadOutput(job: BackgroundJob): string {
   const { text, dropped } = readJobOutput(job)
   if (!text) return ""
   return `${dropped ? "... older output dropped ...\n" : ""}${text.trimEnd()}`
 }
 
-export const bashOutputTool: Tool = {
-  name: "bash_output",
+export const jobOutputTool: Tool = {
+  name: "job_output",
   description:
-    "Read the output a background bash job has produced since the last read. Returns the new output followed by the job status. Pass wait to block until the job produces output or exits instead of sleeping and polling.",
+    "Read the output a background job (background bash command or sub-agent) has produced since the last read. Returns the new output followed by the job status. Pass wait to block until the job produces output or finishes instead of sleeping and polling.",
   parameters: {
     type: "object",
     properties: {
       id: idProperty,
       wait: {
         type: "number",
-        description: `Maximum seconds to block until the job produces new output or exits (default 0 returns immediately, max ${MAX_WAIT_S})`,
+        description: `Maximum seconds to block until the job produces new output or finishes (default 0 returns immediately, max ${MAX_WAIT_S})`,
       },
     },
     required: ["id"],
@@ -50,9 +50,9 @@ export const bashOutputTool: Tool = {
   },
 }
 
-export const bashKillTool: Tool = {
-  name: "bash_kill",
-  description: "Kill a running background bash job and return any unread output.",
+export const jobKillTool: Tool = {
+  name: "job_kill",
+  description: "Stop a running background job (background bash command or sub-agent) and return any unread output.",
   parameters: {
     type: "object",
     properties: { id: idProperty },
@@ -62,15 +62,18 @@ export const bashKillTool: Tool = {
   title(args) {
     return `kill ${asString(args.id) ?? ""}`
   },
+  readOnly() {
+    return true
+  },
   async execute(args) {
     const job = jobOf(args)
-    const alreadyExited = job.status === "exited"
-    if (!alreadyExited) await killJob(job)
-    const headline = alreadyExited
-      ? `Job ${job.id} had already exited (${jobStatus(job)}).`
-      : job.status === "exited"
-        ? `Killed job ${job.id}.`
-        : `Sent SIGKILL to job ${job.id}, but it has not exited yet — check it with bash_output.`
+    const alreadyDone = job.done
+    if (!alreadyDone) await stopJob(job)
+    const headline = alreadyDone
+      ? `Job ${job.id} had already finished (${jobStatus(job)}).`
+      : job.done
+        ? `Stopped job ${job.id}.`
+        : `Requested stop for job ${job.id}, but it has not finished yet — check it with job_output.`
     const unread = unreadOutput(job)
     return { output: unread ? `${headline}\nUnread output:\n${unread}` : headline }
   },

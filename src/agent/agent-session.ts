@@ -28,7 +28,7 @@ import type { LoadedSession, SessionMeta } from "../sessions/types"
 import { expandSkillInvocation } from "../skills/invoke"
 import { getTool, listTools } from "../tools/registry"
 import { boundToolOutput, TOOL_FAILED_PREFIX, TOOL_OUTPUT_UNSAVED_PREFIX, toolOutputDirectory } from "../tools/output"
-import { isInteractiveTool, MAX_ELICITATION_ANSWER_LENGTH } from "../tools/types"
+import { isInteractiveTool, isSessionTool, MAX_ELICITATION_ANSWER_LENGTH } from "../tools/types"
 import type {
   ElicitationAnswer,
   ElicitationRequest,
@@ -50,8 +50,10 @@ import { activeHistory, type HistoryItem } from "./history"
 import { OutputLoopDetector, ToolLoopDetector, type OutputLoop, type ToolLoopAction } from "./loop-detection"
 import { OutputContract, type OutputSchema } from "./output-contract"
 import { composeSystemPrompt } from "./prompt"
+import type { SessionKind } from "./types"
 
 export interface AgentSessionDeps {
+  kind?: SessionKind
   provider: Provider
   model: string
   modelInputModalities?: ModelInputModality[]
@@ -132,6 +134,9 @@ const denialMessages: Record<DenialCause, string> = {
   plan: "Plan mode is active, so this action was not run. Finish investigating and present a plan instead of retrying.",
 }
 
+const subagentPlanDenial =
+  "This delegation is read-only, so this action was not run. Continue with read-only tools and report your findings."
+
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError"
 }
@@ -164,6 +169,7 @@ export class AgentSession {
   private readonly listeners = new Set<(event: AgentEvent) => void>()
   private readonly recorder: SessionRecorder | undefined
   private readonly interactive: boolean
+  private readonly kind: SessionKind
   private readonly outputContract: OutputContract | undefined
   private outputDirectory: string
   private provider: Provider
@@ -183,6 +189,7 @@ export class AgentSession {
   private promoteOnAbort = false
 
   constructor(deps: AgentSessionDeps) {
+    this.kind = deps.kind ?? "primary"
     this.provider = deps.provider
     this.model = deps.model
     this.modelInputModalities = deps.modelInputModalities
@@ -564,7 +571,7 @@ export class AgentSession {
 
   private canUseTool(tool: RegisteredTool): boolean {
     if (!this.interactive && isInteractiveTool(tool)) return false
-    return tool.available?.({ interactive: this.interactive, mode: this.mode }) ?? true
+    return tool.available?.({ interactive: this.interactive, kind: this.kind, mode: this.mode }) ?? true
   }
 
   private emit(event: AgentEvent): void {
@@ -827,6 +834,7 @@ export class AgentSession {
         appName: appInfo.name,
         platform: `${process.platform} ${release()}`,
         cwd: process.cwd(),
+        kind: this.kind,
         tools,
         mode: this.mode,
         plan: this.mode === "plan" || this.planHandoffActive ? this.plan : undefined,
@@ -1015,9 +1023,10 @@ export class AgentSession {
 
     if (decision === "deny") {
       const cause = this.mode === "plan" && !readOnly ? "plan" : "policy"
+      const message = cause === "plan" && this.kind === "subagent" ? subagentPlanDenial : denialMessages[cause]
       return {
         type: "outcome",
-        outcome: this.toolCallOutcome(call, title, readOnly, denialMessages[cause], cause),
+        outcome: this.toolCallOutcome(call, title, readOnly, message, cause),
       }
     }
 
@@ -1058,15 +1067,28 @@ export class AgentSession {
     let output: string
     let events: ToolEvent[]
     try {
+      const update = (text: string): void => this.emit({ type: "tool_updated", callId: call.callId, text })
       const result = isInteractiveTool(tool)
         ? await tool.execute(call.args, {
             session: { directory: this.outputDirectory, mode: this.mode },
             publish: (event) => this.publishToolEvent(event),
             requestInput: (request) => this.requestInput(call.callId, request, signal),
           })
-        : await tool.execute(call.args, signal, (text) =>
-            this.emit({ type: "tool_updated", callId: call.callId, text }),
-          )
+        : isSessionTool(tool)
+          ? await tool.execute(call.args, {
+              session: {
+                kind: this.kind,
+                cwd: process.cwd(),
+                provider: this.provider,
+                model: this.model,
+                modelInputModalities: this.modelInputModalities,
+                thinking: this.thinking,
+                mode: this.mode,
+              },
+              signal,
+              update,
+            })
+          : await tool.execute(call.args, signal, update)
       output = result.output
       events = result.events ?? []
     } catch (error) {

@@ -36,6 +36,7 @@ export class QueuedInputs {
     this.rows = shown.map((entry, index) => this.entryRow(entry, index === 0))
     if (entries.length > shown.length) this.rows.push(this.overflowRow(entries.length - shown.length))
     for (const line of this.rows) this.view.add(line)
+    this.view.visible = this.rows.length > 0
     this.view.marginTop = this.rows.length === 0 ? 0 : 1
     this.onChange()
   }

@@ -2,17 +2,14 @@ import { createSession } from "../../agent/compose"
 import type { AgentSession } from "../../agent/agent-session"
 import type { AgentEvent } from "../../agent/events"
 import { parseOutputSchema, type OutputSchema } from "../../agent/output-contract"
+import { runAgentTurn, type AgentRunOutcome } from "../../agent/run"
 import { appInfo } from "../../app-info"
 import type { Cli } from "../../cli/types"
 import { describeError } from "../../lib/error"
 import { readJsonFile } from "../../lib/fs"
-import type { JsonObject } from "../../lib/json"
 import { isPermissionMode, permissionModes, type PermissionMode } from "../../permissions/types"
-import type { Usage } from "../../providers/types"
 
 type OutputFormat = "text" | "json" | "jsonl"
-type RunStatus = "completed" | "failed" | "interrupted"
-
 interface RunOptions {
   format: OutputFormat
   mode: PermissionMode
@@ -23,15 +20,7 @@ interface RunOptions {
   help: boolean
 }
 
-interface RunOutcome {
-  status: RunStatus
-  response: string | JsonObject
-  usage?: Usage
-  context?: Usage
-  error?: string
-}
-
-interface RunResult extends RunOutcome {
+type RunResult = AgentRunOutcome & {
   sessionId: string
   provider: string
   model: string
@@ -167,73 +156,37 @@ function runSession(
   format: OutputFormat,
   print: (line: string) => void,
   error: (line: string) => void,
-): Promise<RunOutcome> {
-  let response: string | JsonObject = ""
-  let settled = false
-  let unsubscribe = (): void => {}
+): Promise<AgentRunOutcome> {
+  return runAgentTurn(session, { text: prompt, images: [] }, (event) => {
+    if (format === "jsonl") printJson(print, event)
 
-  return new Promise((resolve) => {
-    const finish = (outcome: Omit<RunOutcome, "response">): void => {
-      if (settled) return
-      settled = true
-      unsubscribe()
-      resolve({ ...outcome, response })
+    if (event.type === "approval_requested") {
+      const message = "This action needed approval but the session is headless, so it was not run."
+      if (format !== "jsonl") error(`${message} Rerun with --mode auto to allow it.`)
+      session.deny("policy", message)
     }
-
-    unsubscribe = session.subscribe((event) => {
-      if (format === "jsonl") printJson(print, event)
-
-      switch (event.type) {
-        case "assistant_message":
-          response = event.text
-          break
-        case "approval_requested": {
-          const message = "This action needed approval but the session is headless, so it was not run."
-          if (format !== "jsonl") error(`${message} Rerun with --mode auto to allow it.`)
-          session.deny("policy", message)
-          break
-        }
-        case "retry_scheduled":
-          if (format !== "jsonl") {
-            error(
-              `[retrying in ${Math.ceil(event.delayMs / 1_000)}s · attempt ${event.attempt}/${event.maxAttempts}] ${event.message}`,
-            )
-          }
-          break
-        case "turn_ended":
-          if (event.output !== undefined) response = event.output
-          finish({ status: "completed", usage: event.usage, context: event.context })
-          break
-        case "turn_failed":
-          finish({ status: "failed", error: event.message })
-          break
-        case "turn_interrupted":
-          finish({ status: "interrupted" })
-          break
-        case "error":
-          if (format !== "jsonl") error(event.message)
-          break
-        default:
-          break
-      }
-    })
-
-    if (!session.send({ text: prompt, images: [] })) {
-      finish({ status: "failed", error: "session did not accept the prompt" })
+    if (event.type === "retry_scheduled" && format !== "jsonl") {
+      error(
+        `[retrying in ${Math.ceil(event.delayMs / 1_000)}s · attempt ${event.attempt}/${event.maxAttempts}] ${event.message}`,
+      )
     }
+    if (event.type === "error" && format !== "jsonl") error(event.message)
   })
 }
 
-function result(outcome: RunOutcome, session: AgentSession): RunResult {
-  return {
-    status: outcome.status,
+function result(outcome: AgentRunOutcome, session: AgentSession): RunResult {
+  const sessionResult = {
     sessionId: session.id,
     provider: session.currentProvider.id,
     model: session.currentModel,
-    response: outcome.response,
-    ...(outcome.usage ? { usage: outcome.usage } : {}),
-    ...(outcome.context ? { context: outcome.context } : {}),
-    ...(outcome.error ? { error: outcome.error } : {}),
+  }
+  switch (outcome.status) {
+    case "completed":
+      return { ...outcome, ...sessionResult }
+    case "failed":
+      return { ...outcome, ...sessionResult }
+    case "interrupted":
+      return { ...outcome, ...sessionResult }
   }
 }
 
@@ -279,7 +232,7 @@ export const runCli: Cli = {
 
     const interrupt = (): void => session.interrupt()
     process.once("SIGINT", interrupt)
-    let outcome: RunOutcome
+    let outcome: AgentRunOutcome
     try {
       outcome = await runSession(session, prompt, options.format, ctx.print, ctx.error)
     } finally {

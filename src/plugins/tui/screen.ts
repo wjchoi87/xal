@@ -1,5 +1,6 @@
 import type { BoxRenderable, CliRenderer } from "@opentui/core"
 import type { AgentSession } from "../../agent/agent-session"
+import type { BackgroundAgentTask } from "../../background/registry"
 import { runCommand } from "../../commands/run"
 import type { CommandContext, SelectRequest } from "../../commands/types"
 import { describeError } from "../../lib/error"
@@ -7,6 +8,8 @@ import { compactPath } from "../../lib/path"
 import type { PermissionMode } from "../../permissions/types"
 import type { ThinkingEffort, UserInput } from "../../providers/types"
 import type { ElicitationQuestion } from "../../tools/types"
+import { AgentSummary } from "./components/agent-summary"
+import { AgentViewer } from "./components/agent-viewer"
 import { BackgroundTasks } from "./components/background-tasks"
 import { Composer } from "./components/composer"
 import { CompletionPalette, PALETTE_CHROME_ROWS } from "./components/completion-palette"
@@ -31,7 +34,10 @@ const SCROLLBACK_GAP_ROWS = 1
 
 export class Screen {
   readonly view: BoxRenderable
+  private readonly mainPanel: BoxRenderable
   readonly scrollback: Scrollback
+  readonly agentSummary: AgentSummary
+  readonly agentViewer: AgentViewer
   readonly live: LiveTools
   readonly queued: QueuedInputs
   readonly permission: PermissionPopover
@@ -46,6 +52,8 @@ export class Screen {
   private overlaid = false
   private paletteBelow = true
   private reserved = 0
+  private agentActivityDirty = false
+  private agentReplayPending = false
 
   constructor(
     private readonly renderer: CliRenderer,
@@ -56,6 +64,11 @@ export class Screen {
   ) {
     this.scrollback = new Scrollback(renderer, startRow, (rows) => this.reclaim(rows))
     this.view = column(renderer, { width: "100%", height: "100%", justifyContent: "flex-end" })
+    this.agentSummary = new AgentSummary(renderer, () => {
+      if (this.agentSummary.height > 0) this.agentActivityDirty = true
+      this.syncFooter()
+    })
+    this.agentViewer = new AgentViewer(renderer)
     this.live = new LiveTools(renderer, () => this.syncFooter())
     this.queued = new QueuedInputs(renderer, () => this.syncFooter())
     this.taskList = new TaskList(renderer, () => this.syncFooter())
@@ -93,20 +106,28 @@ export class Screen {
     })
     this.statusBar = new StatusBar(renderer, session.currentModel, session.currentThinking, session.currentMode)
     this.tasks = new BackgroundTasks(renderer, {
-      changed: () => this.syncFooter(),
+      changed: () => {
+        this.agentViewer.refresh()
+        this.syncFooter()
+      },
       released: () => {
         if (!this.overlayVisible) this.composer.focus()
       },
+      viewAgent: (task) => this.viewAgent(task),
       error: (message) => this.scrollback.append({ kind: "error", text: message }),
     })
 
-    this.view.add(this.live.view)
-    this.view.add(this.queued.view)
-    this.view.add(this.taskList.view)
+    this.mainPanel = column(renderer, {})
+    this.mainPanel.add(this.agentSummary.view)
+    this.mainPanel.add(this.live.view)
+    this.mainPanel.add(this.queued.view)
+    this.mainPanel.add(this.taskList.view)
+    this.view.add(this.mainPanel)
     this.view.add(this.permission.view)
     this.view.add(this.elicitation.view)
     this.view.add(this.secret.view)
     this.view.add(this.picker.view)
+    this.view.add(this.agentViewer.view)
     this.view.add(this.composer.view)
     this.view.add(this.palette.view)
     this.view.add(this.statusBar.view)
@@ -152,6 +173,9 @@ export class Screen {
     this.statusBar.setMode(mode)
     this.statusBar.resetUsage()
     this.taskList.set([])
+    this.agentActivityDirty = false
+    this.agentReplayPending = false
+    this.viewAgent(undefined)
     this.scrollback.clear()
     this.scrollback.append({ kind: "banner", model, cwd: compactPath(process.cwd()) })
   }
@@ -185,6 +209,27 @@ export class Screen {
     })
   }
 
+  settleAgentActivity(): void {
+    if (!this.agentActivityDirty || !this.tasks.hasAgents) return
+    this.agentActivityDirty = false
+    if (this.agentViewer.visible) {
+      this.agentReplayPending = true
+      return
+    }
+    this.replayAgentActivity()
+  }
+
+  private replayAgentActivity(): void {
+    queueMicrotask(() => {
+      if (this.agentViewer.visible) {
+        this.agentReplayPending = true
+        return
+      }
+      this.syncFooter()
+      this.scrollback.replay()
+    })
+  }
+
   syncFooter(): void {
     const overlaid = this.overlayVisible
     if (overlaid !== this.overlaid) {
@@ -202,10 +247,6 @@ export class Screen {
       }
     }
     if (overlaid) this.palette.hide()
-    const paletteRows = this.palette.visible ? this.palette.height : 0
-    if (this.paletteBelow || overlaid) this.reserved = 0
-    else this.reserved = Math.max(this.reserved, paletteRows)
-    const editing = this.composer.rows + Math.max(paletteRows, this.reserved)
     const overlayRows = this.permission.visible
       ? this.permission.height
       : this.elicitation.visible
@@ -213,7 +254,20 @@ export class Screen {
         : this.secret.visible
           ? this.secret.height
           : this.picker.height
+    if (this.agentViewer.visible) {
+      this.palette.hide()
+      this.reserved = 0
+      const chrome = (overlaid ? overlayRows : this.composer.rows) + STATUS_ROWS + this.tasks.height
+      this.agentViewer.resize(this.renderer.terminalHeight - chrome)
+      this.renderer.footerHeight = this.agentViewer.height + chrome
+      return
+    }
+    const paletteRows = this.palette.visible ? this.palette.height : 0
+    if (this.paletteBelow || overlaid) this.reserved = 0
+    else this.reserved = Math.max(this.reserved, paletteRows)
+    const editing = this.composer.rows + Math.max(paletteRows, this.reserved)
     this.renderer.footerHeight =
+      this.agentSummary.height +
       this.live.height +
       this.queued.height +
       this.taskList.height +
@@ -229,7 +283,11 @@ export class Screen {
   }
 
   private closedFooterRows(): number {
+    if (this.agentViewer.visible) {
+      return this.agentViewer.height + this.composer.rows + STATUS_ROWS + this.tasks.height
+    }
     return (
+      this.agentSummary.height +
       this.live.height +
       this.queued.height +
       this.taskList.height +
@@ -255,6 +313,7 @@ export class Screen {
   }
 
   private placePalette(): void {
+    if (this.agentViewer.visible) return
     const below = this.spaceBelowFooter() > PALETTE_CHROME_ROWS
     if (below === this.paletteBelow) return
     this.paletteBelow = below
@@ -281,5 +340,19 @@ export class Screen {
       this.scrollback.append({ kind: "error", text: describeError(error) })
     })
     this.syncFooter()
+  }
+
+  private viewAgent(task: BackgroundAgentTask | undefined): void {
+    const wasVisible = this.agentViewer.visible
+    if (task) this.agentViewer.show(task)
+    else this.agentViewer.hide()
+    const mainVisible = task === undefined
+    this.mainPanel.visible = mainVisible
+    if (!mainVisible) this.palette.hide()
+    this.syncFooter()
+    if (mainVisible && wasVisible) {
+      this.agentReplayPending = false
+      this.replayAgentActivity()
+    }
   }
 }

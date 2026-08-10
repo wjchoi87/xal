@@ -64,6 +64,7 @@ const plugin: Plugin = {
     ctx.registerPrompt({
       id: "plan-workflow",
       text(prompt) {
+        if (prompt.kind === "subagent") return ""
         if (prompt.mode === "plan") {
           const canSubmit = prompt.tools.some((tool) => tool.name === submitPlanTool.name)
           return [

@@ -56,6 +56,7 @@ export class AgentEventController {
         this.screen.dismissElicitation()
         scrollback.endStream()
         live.clear()
+        this.screen.settleAgentActivity()
         break
       case "user_message":
         scrollback.append({ kind: "user", text: event.text, imageCount: event.imageCount, sentAt: event.sentAt })

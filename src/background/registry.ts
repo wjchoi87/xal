@@ -1,6 +1,8 @@
+import type { Usage } from "../providers/types"
+
 export type BackgroundTaskState = { running: true } | { running: false; ok: boolean; detail: string }
 
-export interface BackgroundTask {
+interface BackgroundTaskBase {
   id: string
   title: string
   startedAt: number
@@ -8,6 +10,26 @@ export interface BackgroundTask {
   output(): string
   stop(): Promise<void>
 }
+
+export interface BackgroundProcessTask extends BackgroundTaskBase {
+  kind: "process"
+}
+
+export interface BackgroundAgentSnapshot {
+  activity: string
+  elapsedMs: number
+  toolCount: number
+  usage?: Usage
+}
+
+export interface BackgroundAgentTask extends BackgroundTaskBase {
+  kind: "agent"
+  role: string
+  model: string
+  snapshot(): BackgroundAgentSnapshot
+}
+
+export type BackgroundTask = BackgroundProcessTask | BackgroundAgentTask
 
 const tasks = new Map<string, BackgroundTask>()
 const listeners = new Set<() => void>()

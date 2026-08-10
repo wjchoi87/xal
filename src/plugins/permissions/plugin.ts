@@ -10,6 +10,13 @@ const modeGuidance: Record<PermissionMode, string> = {
   yolo: "Every action is pre-approved and runs without confirmation. Be correspondingly careful: prefer the narrowest command that does the job, and never run destructive operations the user did not ask for.",
 }
 
+const subagentModeGuidance: Record<PermissionMode, string> = {
+  build: "",
+  plan: "This is a read-only delegation. Use only read-only tools, make no workspace changes, and return your findings to the primary agent.",
+  auto: "This delegation may modify the workspace. Routine actions run automatically, but any action that still requires separate approval will be denied.",
+  yolo: "This delegation inherits the parent's pre-approved mode. Be correspondingly careful: prefer the narrowest action that completes the assigned task.",
+}
+
 const plugin: Plugin = {
   name: "permissions",
   register(ctx) {
@@ -20,7 +27,7 @@ const plugin: Plugin = {
     })
     ctx.registerPrompt({
       id: "permissions",
-      text: (prompt) => modeGuidance[prompt.mode],
+      text: (prompt) => (prompt.kind === "subagent" ? subagentModeGuidance[prompt.mode] : modeGuidance[prompt.mode]),
     })
   },
   async bootstrap() {

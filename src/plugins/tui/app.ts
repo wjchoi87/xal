@@ -128,6 +128,7 @@ export async function startTui(events: EventService, options: UiOptions = {}): P
     clearTimeout(replayTimer)
     replayTimer = setTimeout(() => {
       screen.composer.reflow()
+      screen.syncFooter()
       screen.scrollback.replay()
     }, RESIZE_DEBOUNCE_MS)
   })

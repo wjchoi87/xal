@@ -1,6 +1,7 @@
+import type { SessionKind } from "../agent/types"
 import type { PermissionMode } from "../permissions/types"
 import type { PlanUpdatedEvent } from "../plans/types"
-import type { ToolDefinition } from "../providers/types"
+import type { ModelInputModality, Provider, ThinkingEffort, ToolDefinition } from "../providers/types"
 import type { TaskListUpdatedEvent } from "../tasks/types"
 
 export const MAX_ELICITATION_ANSWER_LENGTH = 500
@@ -44,6 +45,7 @@ export type ToolConcurrency = "shared" | "exclusive"
 
 export interface ToolAvailabilityContext {
   interactive: boolean
+  kind: SessionKind
   mode: PermissionMode
 }
 
@@ -61,6 +63,25 @@ export interface Tool extends ToolContract {
   execute(args: Record<string, unknown>, signal?: AbortSignal, update?: (text: string) => void): Promise<ToolResult>
 }
 
+export interface SessionToolContext {
+  session: {
+    kind: SessionKind
+    cwd: string
+    provider: Provider
+    model: string
+    modelInputModalities?: ModelInputModality[]
+    thinking?: ThinkingEffort
+    mode: PermissionMode
+  }
+  signal: AbortSignal
+  update(text: string): void
+}
+
+export interface SessionTool extends ToolContract {
+  sessionAware: true
+  execute(args: Record<string, unknown>, ctx: SessionToolContext): Promise<ToolResult>
+}
+
 export interface InteractiveToolContext {
   session: {
     directory: string
@@ -75,8 +96,12 @@ export interface InteractiveTool extends ToolContract {
   execute(args: Record<string, unknown>, ctx: InteractiveToolContext): Promise<ToolResult>
 }
 
-export type RegisteredTool = Tool | InteractiveTool
+export type RegisteredTool = Tool | SessionTool | InteractiveTool
 
 export function isInteractiveTool(tool: RegisteredTool): tool is InteractiveTool {
   return "interactive" in tool && tool.interactive === true
+}
+
+export function isSessionTool(tool: RegisteredTool): tool is SessionTool {
+  return "sessionAware" in tool && tool.sessionAware === true
 }

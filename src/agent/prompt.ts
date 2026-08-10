@@ -1,3 +1,4 @@
+import type { SessionKind } from "./types"
 import type { PermissionMode } from "../permissions/types"
 import type { SessionPlan } from "../plans/types"
 import type { RegisteredTool } from "../tools/types"
@@ -6,6 +7,7 @@ export interface PromptContext {
   appName: string
   platform: string
   cwd: string
+  kind: SessionKind
   tools: RegisteredTool[]
   mode: PermissionMode
   plan?: SessionPlan
