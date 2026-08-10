@@ -38,6 +38,9 @@ export const readTool: Tool = {
   readOnly() {
     return true
   },
+  concurrency() {
+    return "shared"
+  },
   permission(args) {
     return pathPermission("read", args)
   },

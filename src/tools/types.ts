@@ -38,11 +38,14 @@ export interface ToolPermission {
   suggestion?: string
 }
 
+export type ToolConcurrency = "shared" | "exclusive"
+
 interface ToolContract extends ToolDefinition {
   prompt?: string
   title(args: Record<string, unknown>): string
   readOnly?(args: Record<string, unknown>): boolean
   sandboxed?(args: Record<string, unknown>): boolean
+  concurrency?(args: Record<string, unknown>): ToolConcurrency
   permission?(args: Record<string, unknown>): ToolPermission
 }
 

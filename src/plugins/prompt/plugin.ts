@@ -25,6 +25,7 @@ const plugin: Plugin = {
       text: () =>
         [
           "Tool calls may require the user's approval before they run. If the user denies an action, respect the denial and adjust your approach instead of retrying the same action.",
+          "Issue independent tool calls together when that saves time. Keep calls sequential when one depends on another's result or side effect.",
           "Ground your statements in what you actually observed from tool output. Keep responses concise.",
         ].join("\n"),
     })

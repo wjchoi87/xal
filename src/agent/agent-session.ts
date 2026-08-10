@@ -23,6 +23,7 @@ import type {
   ElicitationRequest,
   ElicitationResult,
   RegisteredTool,
+  ToolConcurrency,
   ToolEvent,
 } from "../tools/types"
 import {
@@ -86,6 +87,29 @@ interface TurnUsage {
   turn?: Usage
   context?: Usage
 }
+
+interface ToolCallBatch {
+  concurrency: ToolConcurrency
+  calls: ToolCallItem[]
+}
+
+interface PreparedToolCall {
+  call: ToolCallItem
+  tool: RegisteredTool
+  title: string
+  readOnly: boolean
+}
+
+interface ToolCallOutcome {
+  call: ToolCallItem
+  title: string
+  readOnly: boolean
+  output: string
+  events: ToolEvent[]
+  denial?: DenialCause
+}
+
+type ToolCallPreparation = { type: "ready"; prepared: PreparedToolCall } | { type: "outcome"; outcome: ToolCallOutcome }
 
 const denialMessages: Record<DenialCause, string> = {
   user: "User denied permission to run this action.",
@@ -609,20 +633,14 @@ export class AgentSession {
       }
 
       let loopError: Error | undefined
-      for (const call of toolCalls) {
+      for (const batch of this.toolCallBatches(toolCalls)) {
         if (loopError) {
-          this.finishSkippedToolCall(call, "Not run because a repeated tool loop stopped the turn.")
-          continue
-        }
-        const loop = signal.aborted ? "allow" : toolLoops.inspect(call)
-        if (loop !== "allow") {
-          this.handleToolLoop(call, loop)
-          if (loop === "stop") {
-            loopError = new Error(`turn stopped after repeated ${call.name} tool calls`)
+          for (const call of batch.calls) {
+            this.finishSkippedToolCall(call, "Not run because a repeated tool loop stopped the turn.")
           }
           continue
         }
-        toolLoops.record(call, await this.handleToolCall(call, signal))
+        loopError = await this.runToolCallBatch(batch, signal, toolLoops)
       }
       if (loopError) throw loopError
 
@@ -778,36 +796,121 @@ export class AgentSession {
     }
   }
 
-  private handleToolLoop(call: ToolCallItem, action: Exclude<ToolLoopAction, "allow">): void {
+  private toolCallBatches(calls: ToolCallItem[]): ToolCallBatch[] {
+    const batches: ToolCallBatch[] = []
+    for (const call of calls) {
+      const tool = this.availableTool(call.name)
+      const concurrency = tool?.concurrency?.(call.args) ?? "exclusive"
+      const previous = batches.at(-1)
+      if (concurrency === "shared" && previous?.concurrency === "shared") {
+        previous.calls.push(call)
+        continue
+      }
+      batches.push({ concurrency, calls: [call] })
+    }
+    return batches
+  }
+
+  private toolCallOutcome(
+    call: ToolCallItem,
+    title: string,
+    readOnly: boolean,
+    output: string,
+    denial?: DenialCause,
+    events: ToolEvent[] = [],
+  ): ToolCallOutcome {
+    return { call, title, readOnly, output, events, ...(denial ? { denial } : {}) }
+  }
+
+  private toolLoopOutcome(call: ToolCallItem, action: Exclude<ToolLoopAction, "allow">): ToolCallOutcome {
     const output =
       action === "steer"
         ? `Repeated tool call blocked: ${call.name} returned the same result twice for identical arguments. Use the existing result or change the approach.`
         : `Repeated tool call blocked again: ${call.name} was requested with the same arguments after the loop warning.`
-    this.finishSkippedToolCall(call, output)
+    return this.skippedToolCallOutcome(call, output)
   }
 
-  private finishSkippedToolCall(call: ToolCallItem, output: string): void {
+  private skippedToolCallOutcome(call: ToolCallItem, output: string): ToolCallOutcome {
     const tool = this.availableTool(call.name)
     const title = tool?.title(call.args) ?? JSON.stringify(call.args)
     const readOnly = tool?.readOnly?.(call.args) ?? false
-    this.finishToolCall(call, title, readOnly, output)
+    return this.toolCallOutcome(call, title, readOnly, output)
   }
 
-  private async handleToolCall(call: ToolCallItem, signal: AbortSignal): Promise<string> {
-    if (signal.aborted) {
-      const output = "Interrupted by user before execution."
-      this.addToolOutput(call, output)
-      return output
+  private finishSkippedToolCall(call: ToolCallItem, output: string): void {
+    this.commitToolCall(this.skippedToolCallOutcome(call, output))
+  }
+
+  private async runToolCallBatch(
+    batch: ToolCallBatch,
+    signal: AbortSignal,
+    toolLoops: ToolLoopDetector,
+  ): Promise<Error | undefined> {
+    const outcomes: Array<ToolCallOutcome | undefined> = batch.calls.map(() => undefined)
+    const ready: Array<{ index: number; prepared: PreparedToolCall }> = []
+    const recorded = batch.calls.map(() => false)
+    let loopError: Error | undefined
+
+    for (const [index, call] of batch.calls.entries()) {
+      if (loopError) {
+        outcomes[index] = this.skippedToolCallOutcome(call, "Not run because a repeated tool loop stopped the turn.")
+        continue
+      }
+
+      const loop = signal.aborted ? "allow" : toolLoops.inspect(call)
+      if (loop !== "allow") {
+        outcomes[index] = this.toolLoopOutcome(call, loop)
+        if (loop === "stop") loopError = new Error(`turn stopped after repeated ${call.name} tool calls`)
+        continue
+      }
+
+      recorded[index] = true
+      const preparation = await this.prepareToolCall(call, signal)
+      if (preparation.type === "outcome") {
+        outcomes[index] = preparation.outcome
+        continue
+      }
+      ready.push({ index, prepared: preparation.prepared })
     }
 
+    if (batch.concurrency === "shared") {
+      const completed = await Promise.all(ready.map(({ prepared }) => this.executeToolCall(prepared, signal)))
+      completed.forEach((outcome, index) => {
+        const entry = ready[index]
+        if (!entry) throw new Error("tool scheduler lost a shared call")
+        outcomes[entry.index] = outcome
+      })
+    } else {
+      for (const entry of ready) outcomes[entry.index] = await this.executeToolCall(entry.prepared, signal)
+    }
+
+    for (const [index, outcome] of outcomes.entries()) {
+      if (!outcome) throw new Error("tool scheduler did not produce a result")
+      this.commitToolCall(outcome)
+      if (recorded[index]) toolLoops.record(outcome.call, outcome.output)
+    }
+    return loopError
+  }
+
+  private async prepareToolCall(call: ToolCallItem, signal: AbortSignal): Promise<ToolCallPreparation> {
     const tool = this.availableTool(call.name)
     const title = tool?.title(call.args) ?? JSON.stringify(call.args)
-    if (!tool) {
-      const message = `Unknown tool: ${call.name}`
-      return this.finishToolCall(call, title, false, message, "policy")
+    const readOnly = tool?.readOnly?.(call.args) ?? false
+
+    if (signal.aborted) {
+      return {
+        type: "outcome",
+        outcome: this.toolCallOutcome(call, title, readOnly, "Interrupted by user before execution."),
+      }
     }
 
-    const readOnly = tool.readOnly?.(call.args) ?? false
+    if (!tool) {
+      return {
+        type: "outcome",
+        outcome: this.toolCallOutcome(call, title, false, `Unknown tool: ${call.name}`, "policy"),
+      }
+    }
+
     const sandboxed = tool.sandboxed?.(call.args) ?? false
     const permission = tool.permission?.(call.args)
     const decision = await evaluatePolicy({
@@ -822,7 +925,10 @@ export class AgentSession {
 
     if (decision === "deny") {
       const cause = this.mode === "plan" && !readOnly ? "plan" : "policy"
-      return this.denyToolCall(call, title, readOnly, cause)
+      return {
+        type: "outcome",
+        outcome: this.toolCallOutcome(call, title, readOnly, denialMessages[cause], cause),
+      }
     }
 
     if (decision === "ask") {
@@ -840,8 +946,21 @@ export class AgentSession {
       })
       const result = await asked
       if (result.decision === "deny") {
-        return this.denyToolCall(call, title, readOnly, result.cause ?? "user", result.message)
+        const denial = result.cause ?? "user"
+        return {
+          type: "outcome",
+          outcome: this.toolCallOutcome(call, title, readOnly, result.message ?? denialMessages[denial], denial),
+        }
       }
+    }
+
+    return { type: "ready", prepared: { call, tool, title, readOnly } }
+  }
+
+  private async executeToolCall(prepared: PreparedToolCall, signal: AbortSignal): Promise<ToolCallOutcome> {
+    const { call, tool, title, readOnly } = prepared
+    if (signal.aborted) {
+      return this.toolCallOutcome(call, title, readOnly, "Interrupted by user before execution.")
     }
 
     this.setState("running_tool")
@@ -860,46 +979,27 @@ export class AgentSession {
       events = result.events ?? []
     } catch (error) {
       output = `${TOOL_FAILED_PREFIX}${describeError(error)}`
-      return this.finishToolCall(call, title, readOnly, output)
+      return this.toolCallOutcome(call, title, readOnly, output)
     }
     try {
       output = await boundToolOutput(this.outputDirectory, output)
     } catch (error) {
       output = `${TOOL_OUTPUT_UNSAVED_PREFIX}${describeError(error)}. The operation may have changed state; inspect it before retrying.`
     }
-    const finished = this.finishToolCall(call, title, readOnly, output)
-    for (const event of events) this.emit(event)
-    return finished
+    return this.toolCallOutcome(call, title, readOnly, output, undefined, events)
   }
 
-  private finishToolCall(
-    call: ToolCallItem,
-    title: string,
-    readOnly: boolean,
-    output: string,
-    denial?: DenialCause,
-  ): string {
-    this.addToolOutput(call, output)
+  private commitToolCall(outcome: ToolCallOutcome): void {
+    this.addToolOutput(outcome.call, outcome.output)
     this.emit({
       type: "tool_finished",
-      callId: call.callId,
-      tool: call.name,
-      title,
-      readOnly,
-      output,
-      ...(denial ? { denial } : {}),
+      callId: outcome.call.callId,
+      tool: outcome.call.name,
+      title: outcome.title,
+      readOnly: outcome.readOnly,
+      output: outcome.output,
+      ...(outcome.denial ? { denial: outcome.denial } : {}),
     })
-    return output
-  }
-
-  private denyToolCall(
-    call: ToolCallItem,
-    title: string,
-    readOnly: boolean,
-    denial: DenialCause,
-    message?: string,
-  ): string {
-    const output = message ?? denialMessages[denial]
-    return this.finishToolCall(call, title, readOnly, output, denial)
+    for (const event of outcome.events) this.emit(event)
   }
 }

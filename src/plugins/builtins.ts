@@ -1,6 +1,7 @@
 import type { Plugin } from "./types"
 import ask from "./ask/plugin"
 import bash from "./bash/plugin"
+import codeReview from "./code-review/plugin"
 import deepseek from "./deepseek/plugin"
 import files from "./files/plugin"
 import headless from "./headless/plugin"
@@ -16,6 +17,7 @@ import tui from "./tui/plugin"
 export const builtinPlugins: Plugin[] = [
   permissions,
   prompt,
+  codeReview,
   promptCommands,
   projectInstructions,
   bash,

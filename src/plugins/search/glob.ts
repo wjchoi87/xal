@@ -33,6 +33,9 @@ export const globTool: Tool = {
   readOnly() {
     return true
   },
+  concurrency() {
+    return "shared"
+  },
   async execute(args, signal) {
     const pattern = asString(args.pattern)
     if (!pattern) throw new Error("pattern is required")
