@@ -18,8 +18,8 @@ import { muted, paint } from "../theme/styles"
 export const STATUS_ROWS = 1
 
 const WIDE = 64
-const WIDE_SHORTCUTS = "Shift+Tab mode · Ctrl+O tool output · Ctrl+C quit"
-const NARROW_SHORTCUTS = "Shift+Tab · Ctrl+O · Ctrl+C"
+const WIDE_SHORTCUTS = "Ctrl+R history · Shift+Tab mode · Ctrl+O tools · Ctrl+C quit"
+const NARROW_SHORTCUTS = "Ctrl+R · Shift+Tab · Ctrl+O · Ctrl+C"
 
 function modeColor(mode: PermissionMode): RGBA {
   if (mode === "plan") return COLORS.success

@@ -65,6 +65,11 @@ export function bindKeys(renderer: CliRenderer, deps: KeymapDeps): void {
       screen.composer.setValue("")
       return
     }
+    if (key.ctrl && key.name === "r" && !screen.overlayVisible) {
+      key.preventDefault()
+      screen.searchHistory()
+      return
+    }
     if (screen.permission.handleKey(key.name)) {
       key.preventDefault()
       screen.syncFooter()

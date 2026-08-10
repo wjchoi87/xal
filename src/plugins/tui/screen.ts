@@ -48,7 +48,7 @@ export class Screen {
     private readonly renderer: CliRenderer,
     private readonly session: AgentSession,
     startRow: number,
-    history: MessageHistory,
+    private readonly history: MessageHistory,
     actions: ScreenActions,
   ) {
     this.scrollback = new Scrollback(renderer, startRow, (rows) => this.reclaim(rows))
@@ -153,6 +153,19 @@ export class Screen {
   async askSecret(question: string): Promise<string | undefined> {
     this.picker.hide()
     return this.secret.show(question)
+  }
+
+  searchHistory(): void {
+    const options = this.history.newestFirst().map((text, index) => ({
+      label: text.replace(/\s+/g, " ").trim(),
+      detail: index === 0 ? "latest" : `${index} ${index === 1 ? "prompt" : "prompts"} ago`,
+      value: text,
+    }))
+    void this.select({ options, search: "search prompt history" }).then((text) => {
+      if (text === undefined) return
+      this.composer.setValue(text)
+      this.syncFooter()
+    })
   }
 
   syncFooter(): void {

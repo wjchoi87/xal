@@ -17,13 +17,23 @@ const PICKER_CHROME_ROWS = 3
 const MAX_ROWS = 8
 const MAX_LABEL_WIDTH = 44
 
+function fuzzyContains(haystack: string, needle: string): boolean {
+  let offset = 0
+  for (const character of needle) {
+    const index = haystack.indexOf(character, offset)
+    if (index === -1) return false
+    offset = index + 1
+  }
+  return true
+}
+
 function matches(option: SelectOption<unknown>, query: string): boolean {
   const haystack = `${option.label} ${option.detail} ${option.note ?? ""}`.toLowerCase()
   return query
     .toLowerCase()
     .split(/\s+/)
     .filter(Boolean)
-    .every((term) => haystack.includes(term))
+    .every((term) => fuzzyContains(haystack, term))
 }
 
 export class Picker {
