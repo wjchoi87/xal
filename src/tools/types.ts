@@ -1,10 +1,14 @@
 import type { ToolDefinition } from "../providers/types"
+import type { TaskListUpdatedEvent } from "../tasks/types"
 
 export const MAX_ELICITATION_ANSWER_LENGTH = 500
 
 export interface ToolResult {
   output: string
+  events?: ToolEvent[]
 }
+
+export type ToolEvent = TaskListUpdatedEvent
 
 export interface ElicitationOption {
   label: string

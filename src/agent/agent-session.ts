@@ -17,7 +17,13 @@ import type { LoadedSession, SessionMeta } from "../sessions/types"
 import { getTool, listTools } from "../tools/registry"
 import { boundToolOutput, TOOL_FAILED_PREFIX, TOOL_OUTPUT_UNSAVED_PREFIX, toolOutputDirectory } from "../tools/output"
 import { isInteractiveTool, MAX_ELICITATION_ANSWER_LENGTH } from "../tools/types"
-import type { ElicitationAnswer, ElicitationRequest, ElicitationResult, RegisteredTool } from "../tools/types"
+import type {
+  ElicitationAnswer,
+  ElicitationRequest,
+  ElicitationResult,
+  RegisteredTool,
+  ToolEvent,
+} from "../tools/types"
 import {
   COMPACTION_TRIGGER_RATIO,
   estimateHistoryTokens,
@@ -819,6 +825,7 @@ export class AgentSession {
     this.setState("running_tool")
     this.emit({ type: "tool_started", callId: call.callId, tool: call.name, title, readOnly })
     let output: string
+    let events: ToolEvent[]
     try {
       const result = isInteractiveTool(tool)
         ? await tool.execute(call.args, {
@@ -828,6 +835,7 @@ export class AgentSession {
             this.emit({ type: "tool_updated", callId: call.callId, text }),
           )
       output = result.output
+      events = result.events ?? []
     } catch (error) {
       output = `${TOOL_FAILED_PREFIX}${describeError(error)}`
       return this.finishToolCall(call, title, readOnly, output)
@@ -837,7 +845,9 @@ export class AgentSession {
     } catch (error) {
       output = `${TOOL_OUTPUT_UNSAVED_PREFIX}${describeError(error)}. The operation may have changed state; inspect it before retrying.`
     }
-    return this.finishToolCall(call, title, readOnly, output)
+    const finished = this.finishToolCall(call, title, readOnly, output)
+    for (const event of events) this.emit(event)
+    return finished
   }
 
   private finishToolCall(

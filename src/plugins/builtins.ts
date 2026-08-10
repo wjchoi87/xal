@@ -9,6 +9,7 @@ import permissions from "./permissions/plugin"
 import prompt from "./prompt/plugin"
 import projectInstructions from "./project-instructions/plugin"
 import search from "./search/plugin"
+import tasks from "./tasks/plugin"
 import tui from "./tui/plugin"
 
 export const builtinPlugins: Plugin[] = [
@@ -18,6 +19,7 @@ export const builtinPlugins: Plugin[] = [
   bash,
   files,
   search,
+  tasks,
   deepseek,
   openaiChatgpt,
   headless,

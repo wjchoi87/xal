@@ -10,6 +10,7 @@ import {
   type ThinkingEffort,
   type Usage,
 } from "../providers/types"
+import { parseTaskList } from "../tasks/types"
 import type { SessionMeta, SessionRecord } from "./types"
 
 export function isPersistable(event: AgentEvent): boolean {
@@ -40,6 +41,11 @@ function parseEvent(raw: unknown): AgentEvent | undefined {
   if (!isRecord(raw)) return undefined
 
   switch (asString(raw.type)) {
+    case "task_list_updated": {
+      const tasks = parseTaskList(raw.tasks)
+      if (!tasks) return undefined
+      return { type: "task_list_updated", tasks }
+    }
     case "user_message": {
       const text = asString(raw.text)
       if (text === undefined) return undefined

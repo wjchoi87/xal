@@ -17,6 +17,7 @@ import { PermissionPopover, type PermissionPopoverActions } from "./components/p
 import { QueuedInputs } from "./components/queued-inputs"
 import { SecretInput } from "./components/secret-input"
 import { StatusBar, STATUS_ROWS } from "./components/status-bar"
+import { TaskList } from "./components/task-list"
 import { column } from "./lib/renderables"
 import type { MessageHistory } from "./message-history"
 import { Scrollback } from "./scrollback/scrollback"
@@ -40,6 +41,7 @@ export class Screen {
   readonly composer: Composer
   readonly statusBar: StatusBar
   readonly tasks: BackgroundTasks
+  readonly taskList: TaskList
   private overlaid = false
   private paletteBelow = true
   private reserved = 0
@@ -55,6 +57,7 @@ export class Screen {
     this.view = column(renderer, { width: "100%", height: "100%", justifyContent: "flex-end" })
     this.live = new LiveTools(renderer, () => this.syncFooter())
     this.queued = new QueuedInputs(renderer, () => this.syncFooter())
+    this.taskList = new TaskList(renderer, () => this.syncFooter())
     this.permission = new PermissionPopover(renderer, actions)
     this.elicitation = new ElicitationPopover(renderer, actions, () => this.syncFooter())
     this.secret = new SecretInput(renderer, () => this.syncFooter())
@@ -97,6 +100,7 @@ export class Screen {
 
     this.view.add(this.live.view)
     this.view.add(this.queued.view)
+    this.view.add(this.taskList.view)
     this.view.add(this.permission.view)
     this.view.add(this.elicitation.view)
     this.view.add(this.secret.view)
@@ -139,6 +143,7 @@ export class Screen {
     this.statusBar.setThinking(thinking)
     this.statusBar.setMode(mode)
     this.statusBar.resetUsage()
+    this.taskList.set([])
     this.scrollback.clear()
     this.scrollback.append({ kind: "banner", model, cwd: compactPath(process.cwd()) })
   }
@@ -197,7 +202,12 @@ export class Screen {
           ? this.secret.height
           : this.picker.height
     this.renderer.footerHeight =
-      this.live.height + this.queued.height + (overlaid ? overlayRows : editing) + STATUS_ROWS + this.tasks.height
+      this.live.height +
+      this.queued.height +
+      this.taskList.height +
+      (overlaid ? overlayRows : editing) +
+      STATUS_ROWS +
+      this.tasks.height
   }
 
   private reclaim(rows: number): void {
@@ -207,7 +217,14 @@ export class Screen {
   }
 
   private closedFooterRows(): number {
-    return this.live.height + this.queued.height + this.composer.rows + STATUS_ROWS + this.tasks.height
+    return (
+      this.live.height +
+      this.queued.height +
+      this.taskList.height +
+      this.composer.rows +
+      STATUS_ROWS +
+      this.tasks.height
+    )
   }
 
   private spaceBelowFooter(): number {

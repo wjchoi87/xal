@@ -23,6 +23,9 @@ export class AgentEventController {
     const { scrollback, live, statusBar } = this.screen
 
     switch (event.type) {
+      case "task_list_updated":
+        this.screen.taskList.set(event.tasks)
+        break
       case "session_started":
         this.screen.startSession(event.model, event.thinking, event.mode)
         this.trackContextWindow()

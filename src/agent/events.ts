@@ -1,6 +1,7 @@
 import type { PermissionMode } from "../permissions/types"
 import type { ThinkingEffort, Usage, UserInput } from "../providers/types"
 import type { ElicitationQuestion } from "../tools/types"
+import type { ToolEvent } from "../tools/types"
 
 export type AgentState = "idle" | "streaming" | "awaiting_approval" | "awaiting_input" | "running_tool" | "compacting"
 
@@ -22,6 +23,7 @@ export interface SessionStartedEvent {
 }
 
 export type AgentEvent =
+  | ToolEvent
   | SessionStartedEvent
   | { type: "state_changed"; state: AgentState }
   | { type: "mode_changed"; mode: PermissionMode }
