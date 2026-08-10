@@ -12,7 +12,16 @@ import { MAX_OUTPUT_ROWS, renderToolOutput } from "../output/render"
 import { summarizeToolOutput, toolOutputFailed } from "../output/summary"
 import { COLORS } from "../theme/colors"
 import { background, muted, paint } from "../theme/styles"
-import type { BannerBlock, Block, CompactionBlock, NoticeBlock, StreamBlock, ToolBlock, UserBlock } from "./blocks"
+import type {
+  BannerBlock,
+  Block,
+  CompactionBlock,
+  NoticeBlock,
+  PlanBlock,
+  StreamBlock,
+  ToolBlock,
+  UserBlock,
+} from "./blocks"
 
 const GUTTER = 2
 
@@ -50,12 +59,26 @@ export function renderBlock(ctx: RenderContext, block: Block, expanded: boolean,
       return frame(ctx, notice(ctx, block, expanded))
     case "compaction":
       return frame(ctx, compaction(ctx, block, expanded))
+    case "plan":
+      return frame(ctx, plan(ctx, block))
     case "text":
     case "reasoning":
       return streamView(ctx, block).view
     case "tool":
       return tool(ctx, block, expanded, previous?.kind === "tool")
   }
+}
+
+function plan(ctx: RenderContext, block: PlanBlock): Renderable {
+  const box = column(ctx)
+  box.add(label(ctx, { content: `Plan for approval · ${block.path}`, color: COLORS.success }))
+  const rendered = renderMarkdown(block.text, Math.max(1, contentWidth(ctx) - 4))
+  const body = detailPanel(ctx)
+  const content = paragraph(ctx, { content: rendered.content, height: rendered.rows, wrapMode: "none" })
+  content.truncate = false
+  body.add(content)
+  box.add(body)
+  return box
 }
 
 function frame(ctx: RenderContext, child: Renderable, marginTop = 1): Renderable {

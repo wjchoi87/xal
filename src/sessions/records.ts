@@ -2,6 +2,7 @@ import type { AgentEvent, DenialCause } from "../agent/events"
 import type { CompactionItem, HistoryItem } from "../agent/history"
 import { asBoolean, asNumber, asString, isJsonObject, isRecord } from "../lib/json"
 import { isPermissionMode } from "../permissions/types"
+import { parseSessionPlan } from "../plans/types"
 import {
   isThinkingEffort,
   type ConversationItem,
@@ -51,6 +52,10 @@ function parseEvent(raw: unknown): AgentEvent | undefined {
       const tasks = parseTaskList(raw.tasks)
       if (!tasks) return undefined
       return { type: "task_list_updated", tasks }
+    }
+    case "plan_updated": {
+      const plan = parseSessionPlan(raw.plan)
+      return plan ? { type: "plan_updated", plan } : undefined
     }
     case "user_message": {
       const text = asString(raw.text)

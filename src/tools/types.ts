@@ -1,3 +1,5 @@
+import type { PermissionMode } from "../permissions/types"
+import type { PlanUpdatedEvent } from "../plans/types"
 import type { ToolDefinition } from "../providers/types"
 import type { TaskListUpdatedEvent } from "../tasks/types"
 
@@ -8,7 +10,7 @@ export interface ToolResult {
   events?: ToolEvent[]
 }
 
-export type ToolEvent = TaskListUpdatedEvent
+export type ToolEvent = PlanUpdatedEvent | TaskListUpdatedEvent
 
 export interface ElicitationOption {
   label: string
@@ -40,8 +42,14 @@ export interface ToolPermission {
 
 export type ToolConcurrency = "shared" | "exclusive"
 
+export interface ToolAvailabilityContext {
+  interactive: boolean
+  mode: PermissionMode
+}
+
 interface ToolContract extends ToolDefinition {
   prompt?: string
+  available?(ctx: ToolAvailabilityContext): boolean
   title(args: Record<string, unknown>): string
   readOnly?(args: Record<string, unknown>): boolean
   sandboxed?(args: Record<string, unknown>): boolean
@@ -54,6 +62,11 @@ export interface Tool extends ToolContract {
 }
 
 export interface InteractiveToolContext {
+  session: {
+    directory: string
+    mode: PermissionMode
+  }
+  publish(event: ToolEvent): void
   requestInput(request: ElicitationRequest): Promise<ElicitationResult>
 }
 

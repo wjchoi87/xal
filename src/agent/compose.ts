@@ -78,6 +78,7 @@ function lastState(loaded: LoadedSession): {
       case "mode_changed":
         state.mode = event.mode
         break
+      case "plan_updated":
       case "session_started":
       case "session_title_changed":
       case "state_changed":

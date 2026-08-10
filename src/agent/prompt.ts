@@ -1,4 +1,5 @@
 import type { PermissionMode } from "../permissions/types"
+import type { SessionPlan } from "../plans/types"
 import type { RegisteredTool } from "../tools/types"
 
 export interface PromptContext {
@@ -7,6 +8,7 @@ export interface PromptContext {
   cwd: string
   tools: RegisteredTool[]
   mode: PermissionMode
+  plan?: SessionPlan
 }
 
 export interface PromptSection {

@@ -1,6 +1,7 @@
 import type { AgentSession } from "../../../agent/agent-session"
 import type { AgentEvent } from "../../../agent/events"
 import { describeError } from "../../../lib/error"
+import { compactPath } from "../../../lib/path"
 import { contextWindow } from "../../../providers/catalog"
 import type { Screen } from "../screen"
 
@@ -30,6 +31,16 @@ export class AgentEventController {
     switch (event.type) {
       case "task_list_updated":
         this.screen.taskList.set(event.tasks)
+        break
+      case "plan_updated":
+        if (event.plan.status === "draft" && !event.plan.feedback) {
+          scrollback.append({ kind: "plan", path: compactPath(event.plan.path), text: event.plan.markdown })
+          break
+        }
+        scrollback.append({
+          kind: "info",
+          text: `plan ${event.plan.status === "approved" ? "approved" : "saved for revision"} · ${compactPath(event.plan.path)}`,
+        })
         break
       case "session_started":
         this.screen.startSession(event.title, event.model, event.thinking, event.mode)

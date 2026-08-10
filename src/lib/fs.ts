@@ -28,11 +28,15 @@ export async function readJsonFile(path: string): Promise<unknown> {
   }
 }
 
-export async function writeSecureJson(path: string, value: unknown): Promise<void> {
+export async function writeSecureText(path: string, text: string): Promise<void> {
   const dir = dirname(path)
   await mkdir(dir, { recursive: true })
   const tmp = join(dir, `.${basename(path)}.${process.pid}.${Date.now()}.tmp`)
-  await writeFile(tmp, JSON.stringify(value, null, 2) + "\n", { mode: 0o600 })
+  await writeFile(tmp, text, { mode: 0o600 })
   await rename(tmp, path)
   await chmod(path, 0o600)
+}
+
+export function writeSecureJson(path: string, value: unknown): Promise<void> {
+  return writeSecureText(path, JSON.stringify(value, null, 2) + "\n")
 }

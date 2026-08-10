@@ -36,6 +36,12 @@ export interface CompactionBlock {
   tokensBefore: number | undefined
 }
 
+export interface PlanBlock {
+  kind: "plan"
+  path: string
+  text: string
+}
+
 export interface TextBlock {
   kind: "text"
   text: string
@@ -61,4 +67,4 @@ export type StreamBlock = TextBlock | ReasoningBlock
 export type StreamKind = StreamBlock["kind"]
 
 export type Block =
-  BannerBlock | UserBlock | InfoBlock | ErrorBlock | NoticeBlock | CompactionBlock | StreamBlock | ToolBlock
+  BannerBlock | UserBlock | InfoBlock | ErrorBlock | NoticeBlock | CompactionBlock | PlanBlock | StreamBlock | ToolBlock

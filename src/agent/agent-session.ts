@@ -7,6 +7,7 @@ import { describeError } from "../lib/error"
 import { rememberRule } from "../permissions/rules"
 import { evaluatePolicy } from "../permissions/service"
 import type { PermissionMode, PermissionScope } from "../permissions/types"
+import type { SessionPlan } from "../plans/types"
 import { contextWindow } from "../providers/catalog"
 import { prepareConversation } from "../providers/conversation"
 import { ProviderError } from "../providers/errors"
@@ -171,6 +172,8 @@ export class AgentSession {
   private thinking: ThinkingEffort | undefined
   private state: AgentState = "idle"
   private mode: PermissionMode = "build"
+  private plan: SessionPlan | undefined
+  private planHandoffActive = false
   private streaming: { kind: StreamKind; text: string } | undefined
   private abortController: AbortController | undefined
   private pendingApproval: ((result: ApprovalResult) => void) | undefined
@@ -203,6 +206,10 @@ export class AgentSession {
 
   get currentMode(): PermissionMode {
     return this.mode
+  }
+
+  get currentPlan(): SessionPlan | undefined {
+    return this.plan
   }
 
   get currentModel(): string {
@@ -267,6 +274,8 @@ export class AgentSession {
     this.items = []
     this.contextTokens = undefined
     this.compactionFailures = 0
+    this.plan = undefined
+    this.planHandoffActive = false
     this.streaming = undefined
     this.recorder?.start(this.meta())
     this.emit(this.startEvent())
@@ -283,6 +292,16 @@ export class AgentSession {
     this.items = [...target.session.items]
     this.contextTokens = recordedContext(target.session.events)
     this.compactionFailures = 0
+    this.plan = undefined
+    this.planHandoffActive = false
+    for (const event of target.session.events) {
+      if (event.type === "plan_updated") {
+        this.plan = event.plan
+        this.planHandoffActive = event.plan.status === "approved"
+      }
+      if (event.type === "mode_changed" && event.mode === "plan") this.planHandoffActive = false
+      if (event.type === "turn_ended") this.planHandoffActive = false
+    }
     this.streaming = undefined
     this.provider = target.provider
     this.model = target.model
@@ -326,6 +345,7 @@ export class AgentSession {
   setMode(mode: PermissionMode): void {
     if (this.mode === mode) return
     this.mode = mode
+    if (mode === "plan") this.planHandoffActive = false
     this.emit({ type: "mode_changed", mode })
   }
 
@@ -543,12 +563,14 @@ export class AgentSession {
   }
 
   private canUseTool(tool: RegisteredTool): boolean {
-    return this.interactive || !isInteractiveTool(tool)
+    if (!this.interactive && isInteractiveTool(tool)) return false
+    return tool.available?.({ interactive: this.interactive, mode: this.mode }) ?? true
   }
 
   private emit(event: AgentEvent): void {
     this.recorder?.event(event)
     this.notify(event)
+    if (event.type === "turn_ended") this.planHandoffActive = false
   }
 
   private notify(event: AgentEvent): void {
@@ -807,6 +829,7 @@ export class AgentSession {
         cwd: process.cwd(),
         tools,
         mode: this.mode,
+        plan: this.mode === "plan" || this.planHandoffActive ? this.plan : undefined,
       }),
       input: prepareConversation(activeHistory(this.items), { provider: provider.id, model }),
       tools: tools.map(({ name, description, parameters }) => ({ name, description, parameters })),
@@ -1037,6 +1060,8 @@ export class AgentSession {
     try {
       const result = isInteractiveTool(tool)
         ? await tool.execute(call.args, {
+            session: { directory: this.outputDirectory, mode: this.mode },
+            publish: (event) => this.publishToolEvent(event),
             requestInput: (request) => this.requestInput(call.callId, request, signal),
           })
         : await tool.execute(call.args, signal, (text) =>
@@ -1067,6 +1092,20 @@ export class AgentSession {
       output: outcome.output,
       ...(outcome.denial ? { denial: outcome.denial } : {}),
     })
-    for (const event of outcome.events) this.emit(event)
+    for (const event of outcome.events) this.publishToolEvent(event)
+  }
+
+  private publishToolEvent(event: ToolEvent): void {
+    switch (event.type) {
+      case "plan_updated":
+        this.plan = event.plan
+        this.planHandoffActive = event.plan.status === "approved"
+        this.emit(event)
+        if (event.plan.status === "approved") this.setMode("build")
+        break
+      case "task_list_updated":
+        this.emit(event)
+        break
+    }
   }
 }
