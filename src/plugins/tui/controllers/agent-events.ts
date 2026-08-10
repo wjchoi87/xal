@@ -43,11 +43,18 @@ export class AgentEventController {
         })
         break
       case "session_started":
-        this.screen.startSession(event.title, event.model, event.thinking, event.mode)
+        this.screen.startSession(event.title, event.cwd, event.model, event.thinking, event.mode)
         this.trackContextWindow()
         break
       case "session_title_changed":
         this.screen.setSessionTitle(event.title)
+        break
+      case "workspace_changed":
+        this.screen.setWorkingDirectory(event.cwd)
+        scrollback.append({
+          kind: "info",
+          text: `workspace: ${compactPath(event.previous)} → ${compactPath(event.cwd)}`,
+        })
         break
       case "state_changed":
         statusBar.setState(event.state)

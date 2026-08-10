@@ -48,6 +48,12 @@ function parseEvent(raw: unknown): AgentEvent | undefined {
       if (!title || normalizeSessionTitle(title) !== title) return undefined
       return { type: "session_title_changed", title }
     }
+    case "workspace_changed": {
+      const cwd = asString(raw.cwd)
+      const previous = asString(raw.previous)
+      if (!cwd || !previous) return undefined
+      return { type: "workspace_changed", cwd, previous }
+    }
     case "task_list_updated": {
       const tasks = parseTaskList(raw.tasks)
       if (!tasks) return undefined

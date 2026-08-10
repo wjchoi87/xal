@@ -54,6 +54,8 @@ export class Screen {
   private reserved = 0
   private agentActivityDirty = false
   private agentReplayPending = false
+  private sessionTitle: string | undefined
+  private cwd: string
 
   constructor(
     private readonly renderer: CliRenderer,
@@ -62,6 +64,7 @@ export class Screen {
     private readonly history: MessageHistory,
     actions: ScreenActions,
   ) {
+    this.cwd = session.currentWorkingDirectory
     this.scrollback = new Scrollback(renderer, startRow, (rows) => this.reclaim(rows))
     this.view = column(renderer, { width: "100%", height: "100%", justifyContent: "flex-end" })
     this.agentSummary = new AgentSummary(renderer, () => {
@@ -163,10 +166,12 @@ export class Screen {
 
   startSession(
     title: string | undefined,
+    cwd: string,
     model: string,
     thinking: ThinkingEffort | undefined,
     mode: PermissionMode,
   ): void {
+    this.cwd = cwd
     this.setSessionTitle(title)
     this.statusBar.setModel(model)
     this.statusBar.setThinking(thinking)
@@ -177,11 +182,17 @@ export class Screen {
     this.agentReplayPending = false
     this.viewAgent(undefined)
     this.scrollback.clear()
-    this.scrollback.append({ kind: "banner", model, cwd: compactPath(process.cwd()) })
+    this.scrollback.append({ kind: "banner", model, cwd: compactPath(cwd) })
   }
 
   setSessionTitle(title: string | undefined): void {
-    this.renderer.setTerminalTitle(sessionTerminalTitle(title))
+    this.sessionTitle = title
+    this.renderer.setTerminalTitle(sessionTerminalTitle(title, this.cwd))
+  }
+
+  setWorkingDirectory(cwd: string): void {
+    this.cwd = cwd
+    this.renderer.setTerminalTitle(sessionTerminalTitle(this.sessionTitle, cwd))
   }
 
   async select<T>(request: SelectRequest<T>): Promise<T | undefined> {

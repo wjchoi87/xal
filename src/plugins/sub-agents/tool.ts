@@ -3,14 +3,17 @@ import type { AgentEvent } from "../../agent/events"
 import { runAgentTurn } from "../../agent/run"
 import { appendJobOutput, createJob, finishJob, stopJob } from "../../background/jobs"
 import { backgroundTasksChanged, registerBackgroundTask, type BackgroundTaskState } from "../../background/registry"
+import { createManagedWorktree } from "../../git/worktrees"
 import { describeError } from "../../lib/error"
 import { asString } from "../../lib/json"
+import { compactPath } from "../../lib/path"
 import type { PermissionMode } from "../../permissions/types"
 import type { Usage } from "../../providers/types"
 import { toolFailed } from "../../tools/output"
 import type { SessionTool } from "../../tools/types"
 
 type SubAgentAccess = "read" | "write"
+type SubAgentIsolation = "shared" | "worktree"
 
 interface ActivityState {
   streamedText: boolean
@@ -34,6 +37,12 @@ function accessFrom(args: Record<string, unknown>): SubAgentAccess {
   const access = asString(args.access)
   if (access === "read" || access === "write") return access
   throw new Error('access must be "read" or "write"')
+}
+
+function isolationFrom(args: Record<string, unknown>): SubAgentIsolation {
+  const isolation = asString(args.isolation) ?? "shared"
+  if (isolation === "shared" || isolation === "worktree") return isolation
+  throw new Error('isolation must be "shared" or "worktree"')
 }
 
 function childMode(parent: PermissionMode, access: SubAgentAccess): PermissionMode {
@@ -111,6 +120,7 @@ function activity(event: AgentEvent, child: AgentSession, state: ActivityState, 
     case "task_list_updated":
     case "session_started":
     case "session_title_changed":
+    case "workspace_changed":
     case "mode_changed":
     case "model_changed":
     case "thinking_changed":
@@ -130,7 +140,7 @@ function activity(event: AgentEvent, child: AgentSession, state: ActivityState, 
 export const subAgentTool: SessionTool = {
   name: "sub_agent",
   description:
-    "Spawn a fresh one-shot agent for a self-contained task as a background job and return its job id immediately. Follow its progress and final report with job_output and stop it with job_kill. Read access is safe for parallel investigation. Write access may change the shared workspace, which you share with every write delegation.",
+    "Spawn a fresh one-shot agent for a self-contained task as a background job and return its job id immediately. Follow its progress and final report with job_output and stop it with job_kill. Write agents can use the shared workspace or a clean isolated Git worktree on their own branch.",
   parameters: {
     type: "object",
     properties: {
@@ -143,14 +153,20 @@ export const subAgentTool: SessionTool = {
       access: {
         type: "string",
         enum: ["read", "write"],
-        description: "Read-only investigation or permission to modify the shared workspace",
+        description: "Read-only investigation or permission to modify files",
+      },
+      isolation: {
+        type: "string",
+        enum: ["shared", "worktree"],
+        description:
+          "Shared uses the current workspace (default); worktree gives a write agent a clean checkout and branch",
       },
     },
     required: ["task", "access"],
     additionalProperties: false,
   },
   prompt:
-    "Use sub_agent to delegate bounded work that benefits from a fresh context; it returns a job id immediately and runs in the background while you continue. Make each task self-contained. Spawn independent delegations together, then collect each report with job_output (pass wait instead of polling) before you rely on or summarize its work. Write delegations share the workspace with you and each other, so give each one a disjoint scope and avoid editing the same files yourself while they run.",
+    "Use sub_agent to delegate bounded work that benefits from a fresh context; it returns a job id immediately and runs in the background while you continue. Make each task self-contained. Spawn independent delegations together, then collect each report with job_output (pass wait instead of polling) before you rely on or summarize its work. Use isolation:worktree for independent write tasks when the current Git workspace is clean; the result stays on a separate branch and checkout until integrated or removed with worktree_remove. Shared write delegations edit your current workspace, so give them disjoint scopes.",
   sessionAware: true,
   available(ctx) {
     return ctx.kind === "primary"
@@ -168,12 +184,20 @@ export const subAgentTool: SessionTool = {
     if (ctx.session.kind !== "primary") throw new Error("sub_agent is available only to primary sessions")
     const task = taskFrom(args)
     const access = accessFrom(args)
+    const isolation = isolationFrom(args)
     if (access === "write" && ctx.session.mode === "plan") {
       throw new Error("write delegation is unavailable in plan mode")
     }
+    if (isolation === "worktree" && access !== "write") {
+      throw new Error("worktree isolation is available only to write delegations")
+    }
+
+    const worktree =
+      isolation === "worktree" ? await createManagedWorktree(ctx.session.cwd, task, ctx.signal) : undefined
 
     const child = new AgentSession({
       kind: "subagent",
+      cwd: worktree?.cwd ?? ctx.session.cwd,
       provider: ctx.session.provider,
       model: ctx.session.model,
       modelInputModalities: ctx.session.modelInputModalities,
@@ -194,13 +218,17 @@ export const subAgentTool: SessionTool = {
       updatedCalls: new Set(),
     }
     const record = (text: string): void => appendJobOutput(job, text)
+    if (worktree) {
+      record(`Isolated worktree: ${compactPath(worktree.path)}\nBranch: ${worktree.branch}\n\n`)
+    }
     registerBackgroundTask({
       kind: "agent",
       id: job.id,
       title: task,
       startedAt,
-      role: "sub-agent",
+      role: worktree ? "sub-agent · worktree" : "sub-agent",
       model: ctx.session.model,
+      cwd: child.currentWorkingDirectory,
       state: () => state,
       output: () => job.history,
       snapshot: () => ({
@@ -238,7 +266,12 @@ export const subAgentTool: SessionTool = {
         }
         activityState.activity = "Report ready"
         state = { running: false, ok: true, detail: "reported" }
-        finishJob(job, "completed — the report is the streamed text above")
+        finishJob(
+          job,
+          worktree
+            ? `completed in ${worktree.branch} at ${compactPath(worktree.path)} — the report is above`
+            : "completed — the report is the streamed text above",
+        )
       })
       .catch((error: unknown) => {
         finishedAt = Date.now()
@@ -248,8 +281,11 @@ export const subAgentTool: SessionTool = {
         finishJob(job, `failed: ${describeError(error)}`)
       })
 
+    const workspace = worktree
+      ? ` in ${compactPath(worktree.path)} on branch ${worktree.branch}. The checkout remains after completion; integrate it or remove it with worktree_remove.`
+      : "."
     return {
-      output: `Started sub-agent ${job.id} (${access}) in the background. Read its progress and final report with job_output(${job.id}) — pass wait to block — and stop it with job_kill(${job.id}).`,
+      output: `Started sub-agent ${job.id} (${access}, ${isolation}) in the background${workspace} Read its progress and final report with job_output(${job.id}) — pass wait to block — and stop it with job_kill(${job.id}).`,
     }
   },
 }

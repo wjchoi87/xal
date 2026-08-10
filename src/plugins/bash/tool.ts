@@ -102,30 +102,30 @@ export const bashTool: Tool = {
     if (words.length < 2) return { subject: command, suggestion: `bash(${command})` }
     return { subject: command, suggestion: `bash(${words[0]} ${words[1]}*)` }
   },
-  async execute(args, signal, update) {
+  async execute(args, ctx) {
     const command = commandOf(args)
     if (!command) return { output: "(no command provided)" }
 
     const sandboxed = sandboxRequested(args)
-    const environment = snapshotEnvironment()
+    const environment = { ...snapshotEnvironment(), PWD: ctx.cwd }
     const shellLaunch = snapshotLaunch(command)
-    const launch = sandboxed ? sandboxLaunch(shellLaunch, process.cwd()) : shellLaunch
+    const launch = sandboxed ? sandboxLaunch(shellLaunch, ctx.cwd) : shellLaunch
 
     if (backgroundRequested(args)) {
-      const job = startJob(command, spawnCommand(launch, environment))
+      const job = startJob(command, spawnCommand(launch, environment, ctx.cwd), ctx.cwd)
       return {
         output: `Started background job ${job.id}${sandboxed ? " (sandboxed)" : ""}. Read its output with job_output and stop it with job_kill.`,
       }
     }
 
     const timeoutSeconds = timeoutSecondsOf(args)
-    const proc = spawnCommand(launch, environment)
+    const proc = spawnCommand(launch, environment, ctx.cwd)
 
     let output = ""
     const collect = (chunk: Buffer): void => {
       const text = chunk.toString()
       output += text
-      update?.(text)
+      ctx.update(text)
     }
     proc.stdout.on("data", collect)
     proc.stderr.on("data", collect)
@@ -136,7 +136,7 @@ export const bashTool: Tool = {
       killTree(proc)
     }, timeoutSeconds * 1000)
     const onAbort = (): void => killTree(proc)
-    signal?.addEventListener("abort", onAbort)
+    ctx.signal.addEventListener("abort", onAbort)
 
     try {
       const exitCode = await new Promise<number | null>((resolve, reject) => {
@@ -146,7 +146,7 @@ export const bashTool: Tool = {
       const trimmed = output.trimEnd()
       let footer: string
       if (timedOut) footer = `(timed out after ${timeoutSeconds}s and was killed)`
-      else if (signal?.aborted) footer = "(interrupted by user)"
+      else if (ctx.signal.aborted) footer = "(interrupted by user)"
       else if (exitCode === null) footer = "(terminated by signal)"
       else if (!sandboxed) footer = `(exit code ${exitCode})`
       else if (exitCode === 0) footer = "(exit code 0 · sandboxed)"
@@ -155,7 +155,7 @@ export const bashTool: Tool = {
       return { output: trimmed ? `${trimmed}\n${footer}` : footer }
     } finally {
       clearTimeout(timeout)
-      signal?.removeEventListener("abort", onAbort)
+      ctx.signal.removeEventListener("abort", onAbort)
     }
   },
 }

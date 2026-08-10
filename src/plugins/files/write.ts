@@ -26,32 +26,34 @@ export const writeTool: Tool = {
   },
   prompt:
     "Use write to create or replace files with complete content. Read a file before overwriting it. Content is raw file text; never include read's line-number prefixes. Prefer edit for modifying parts of an existing file.",
-  title(args) {
-    return displayPath(asString(args.file_path) ?? "")
+  title(args, ctx) {
+    return displayPath(asString(args.file_path) ?? "", ctx.cwd)
   },
-  permission(args) {
-    return pathPermission("write", args)
+  permission(args, ctx) {
+    return pathPermission("write", args, ctx.cwd)
   },
-  async execute(args) {
+  async execute(args, ctx) {
     const path = asString(args.file_path)
     if (!path) throw new Error("file_path is required")
     const content = asString(args.content)
     if (content === undefined) throw new Error("content is required")
 
-    const absolute = resolveFilePath(path)
+    const absolute = resolveFilePath(path, ctx.cwd)
     const stats = await stat(absolute).catch(() => undefined)
-    if (stats?.isDirectory()) throw new Error(`Path is a directory, not a file: ${displayPath(path)}`)
+    if (stats?.isDirectory()) throw new Error(`Path is a directory, not a file: ${displayPath(path, ctx.cwd)}`)
 
     const previous = stats ? await Bun.file(absolute).text() : undefined
-    if (previous === content) return { output: `Unchanged ${displayPath(path)}` }
+    if (previous === content) return { output: `Unchanged ${displayPath(path, ctx.cwd)}` }
 
     await Bun.write(absolute, content)
 
     if (previous === undefined) {
       const diff = unifiedDiff("", content)
-      return { output: withDiff(`Created ${displayPath(path)} (${diff.added} lines)`, diff.hunks) }
+      return { output: withDiff(`Created ${displayPath(path, ctx.cwd)} (${diff.added} lines)`, diff.hunks) }
     }
     const diff = unifiedDiff(previous, content)
-    return { output: withDiff(`Updated ${displayPath(path)} (+${diff.added} -${diff.removed})`, diff.hunks) }
+    return {
+      output: withDiff(`Updated ${displayPath(path, ctx.cwd)} (+${diff.added} -${diff.removed})`, diff.hunks),
+    }
   },
 }

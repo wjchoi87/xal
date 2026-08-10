@@ -9,8 +9,8 @@ export const terminalPresentation = {
   unicode: !dumb,
 }
 
-export function sessionTerminalTitle(title?: string): string {
-  return `${appInfo.name} — ${title ?? compactPath(process.cwd())}`
+export function sessionTerminalTitle(title?: string, cwd = process.cwd()): string {
+  return `${appInfo.name} — ${title ?? compactPath(cwd)}`
 }
 
 function terminalIdentity(capabilities: TerminalCapabilities): string {

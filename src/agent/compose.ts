@@ -1,5 +1,6 @@
 import { settings } from "../config/settings"
 import { resolveThinking } from "../config/thinking"
+import { pathExists } from "../lib/fs"
 import type { PermissionMode } from "../permissions/types"
 import { findModel } from "../providers/catalog"
 import { getProvider, listProviders } from "../providers/registry"
@@ -55,12 +56,14 @@ export async function createSession(options: SessionOptions = {}): Promise<Sessi
 }
 
 function lastState(loaded: LoadedSession): {
+  cwd: string
   provider: string
   model: string
   thinking?: ThinkingEffort
   mode: PermissionMode
 } {
   const state = {
+    cwd: loaded.meta.cwd,
     provider: loaded.meta.provider,
     model: loaded.meta.model,
     thinking: loaded.meta.thinking,
@@ -74,6 +77,9 @@ function lastState(loaded: LoadedSession): {
         break
       case "thinking_changed":
         state.thinking = event.thinking
+        break
+      case "workspace_changed":
+        state.cwd = event.cwd
         break
       case "mode_changed":
         state.mode = event.mode
@@ -120,17 +126,24 @@ export async function resumeSession(session: AgentSession, summary: SessionSumma
   const model = recorded ? last.model : session.currentModel
   const thinking = await resolveThinking(provider, model, last.thinking)
   const modelInfo = await findModel(provider, model)
+  let cwd = last.cwd
+  if (!(await pathExists(cwd))) {
+    const fallback = (await pathExists(loaded.meta.cwd)) ? loaded.meta.cwd : process.cwd()
+    notices.push(`recorded workspace ${cwd} is unavailable — continuing in ${fallback}`)
+    cwd = fallback
+  }
   if (!recorded) {
     notices.push(`provider ${last.provider} is not available — continuing with ${provider.id} · ${model}`)
   }
-  if (loaded.meta.cwd !== process.cwd()) {
-    notices.push(`this session was recorded in ${loaded.meta.cwd} — paths may not match ${process.cwd()}`)
+  if (cwd !== process.cwd()) {
+    notices.push(`this session was working in ${cwd} — paths may not match ${process.cwd()}`)
   }
 
   if (
     !session.resume({
       session: loaded,
       path: summary.path,
+      cwd,
       provider,
       model,
       modelInputModalities: modelInfo?.inputModalities,

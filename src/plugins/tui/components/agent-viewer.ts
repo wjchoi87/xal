@@ -1,5 +1,6 @@
 import { StyledText, TextAttributes, type BoxRenderable, type CliRenderer, type TextRenderable } from "@opentui/core"
 import type { BackgroundAgentTask } from "../../../background/registry"
+import { compactPath } from "../../../lib/path"
 import { occupiedContext } from "../../../providers/types"
 import { formatDuration, formatTokens } from "../lib/format"
 import { column, label, row } from "../lib/renderables"
@@ -127,7 +128,7 @@ export class AgentViewer {
     this.role.content = new StyledText([
       paint(task.state().running ? COLORS.agent : COLORS.foreground, task.state().running ? "● " : "○ "),
       paint(COLORS.foreground, task.role),
-      muted(` · ${task.model}`),
+      muted(` · ${task.model} · ${compactPath(task.cwd)}`),
     ])
     const tokens = snapshot.usage ? ` · ↓ ${formatTokens(occupiedContext(snapshot.usage))} tokens` : ""
     this.metrics.content = `${formatDuration(snapshot.elapsedMs)}${tokens}`

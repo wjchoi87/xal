@@ -50,6 +50,7 @@ export function runAgentTurn(
         case "task_list_updated":
         case "session_started":
         case "session_title_changed":
+        case "workspace_changed":
         case "state_changed":
         case "mode_changed":
         case "model_changed":

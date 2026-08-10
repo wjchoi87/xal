@@ -8,10 +8,10 @@ export interface RgOutcome {
   aborted: boolean
 }
 
-export function targetArgs(path: string | undefined): string[] {
+export function targetArgs(path: string | undefined, cwd: string): string[] {
   if (!path) return []
-  if (resolveFilePath(path) === process.cwd()) return []
-  return [displayPath(path)]
+  if (resolveFilePath(path, cwd) === cwd) return []
+  return [displayPath(path, cwd)]
 }
 
 function rgPath(): string {
@@ -22,9 +22,9 @@ function rgPath(): string {
   )
 }
 
-export async function runRg(argv: string[], signal?: AbortSignal): Promise<RgOutcome> {
+export async function runRg(argv: string[], cwd: string, signal?: AbortSignal): Promise<RgOutcome> {
   const proc = Bun.spawn([rgPath(), ...argv], {
-    cwd: process.cwd(),
+    cwd,
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",

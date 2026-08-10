@@ -30,7 +30,7 @@ function aliasCapture(shell: string): string {
 async function captureOutput(shell: string, marker: string): Promise<string> {
   const boundary = `command printf '\\0%s\\0' '${marker}'`
   const script = [boundary, "command env -0", boundary, aliasCapture(shell), boundary].join("; ")
-  const proc = spawnCommand([shell, "-ilc", script], process.env)
+  const proc = spawnCommand([shell, "-ilc", script], process.env, process.cwd())
   const stdout: Buffer[] = []
   const stderr: Buffer[] = []
   let bytes = 0

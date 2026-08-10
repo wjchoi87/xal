@@ -108,7 +108,7 @@ export async function startTui(events: EventService, options: UiOptions = {}): P
       screen.scrollback.append({ kind: "error", text: describeError(error) })
     }
   } else {
-    screen.scrollback.append({ kind: "banner", model, cwd: compactPath(process.cwd()) })
+    screen.scrollback.append({ kind: "banner", model, cwd: compactPath(session.currentWorkingDirectory) })
   }
   if (!(await session.currentProvider.isLoggedIn().catch(() => false))) {
     screen.scrollback.append({ kind: "info", text: "not connected — run /connect" })

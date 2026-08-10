@@ -25,10 +25,10 @@ export const globTool: Tool = {
   },
   prompt:
     "Use glob to find files by name pattern instead of find or ls in bash. Patterns are gitignore-style globs like src/**/*.ts; results are newest first.",
-  title(args) {
+  title(args, ctx) {
     const pattern = asString(args.pattern) ?? ""
     const path = asString(args.path)
-    return `${pattern}${path ? ` in ${displayPath(path)}` : ""}`
+    return `${pattern}${path ? ` in ${displayPath(path, ctx.cwd)}` : ""}`
   },
   readOnly() {
     return true
@@ -36,14 +36,14 @@ export const globTool: Tool = {
   concurrency() {
     return "shared"
   },
-  async execute(args, signal) {
+  async execute(args, ctx) {
     const pattern = asString(args.pattern)
     if (!pattern) throw new Error("pattern is required")
 
     const argv = ["--files", "--hidden", "--glob", "!**/.git/**", "--sortr", "modified", "--glob", pattern]
-    argv.push(...targetArgs(asString(args.path)))
+    argv.push(...targetArgs(asString(args.path), ctx.cwd))
 
-    const { lines, aborted } = await runRg(argv, signal)
+    const { lines, aborted } = await runRg(argv, ctx.cwd, ctx.signal)
     if (aborted) return { output: "(interrupted by user)" }
     if (lines.length === 0) return { output: "No files found" }
 

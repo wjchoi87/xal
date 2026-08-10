@@ -6,6 +6,7 @@ interface BackgroundTaskBase {
   id: string
   title: string
   startedAt: number
+  cwd: string
   state(): BackgroundTaskState
   output(): string
   stop(): Promise<void>

@@ -34,13 +34,13 @@ export const editTool: Tool = {
   },
   prompt:
     "Use edit for targeted changes to existing files; use write only for new files or full rewrites. Read the file first and copy old_string verbatim — exact match including whitespace, never read's line-number prefixes. Add surrounding lines to old_string to make it unique, or set replace_all to change every occurrence.",
-  title(args) {
-    return displayPath(asString(args.file_path) ?? "")
+  title(args, ctx) {
+    return displayPath(asString(args.file_path) ?? "", ctx.cwd)
   },
-  permission(args) {
-    return pathPermission("edit", args)
+  permission(args, ctx) {
+    return pathPermission("edit", args, ctx.cwd)
   },
-  async execute(args) {
+  async execute(args, ctx) {
     const path = asString(args.file_path)
     if (!path) throw new Error("file_path is required")
     const oldString = asString(args.old_string)
@@ -50,22 +50,22 @@ export const editTool: Tool = {
     if (oldString === newString) throw new Error("old_string and new_string are identical; nothing to change")
     const replaceAll = asBoolean(args.replace_all) ?? false
 
-    const absolute = resolveFilePath(path)
+    const absolute = resolveFilePath(path, ctx.cwd)
     const stats = await stat(absolute).catch(() => undefined)
-    if (!stats) throw new Error(`File not found: ${displayPath(path)}`)
-    if (stats.isDirectory()) throw new Error(`Path is a directory, not a file: ${displayPath(path)}`)
+    if (!stats) throw new Error(`File not found: ${displayPath(path, ctx.cwd)}`)
+    if (stats.isDirectory()) throw new Error(`Path is a directory, not a file: ${displayPath(path, ctx.cwd)}`)
 
     const previous = await Bun.file(absolute).text()
     const parts = previous.split(oldString)
     const matches = parts.length - 1
     if (matches === 0) {
       throw new Error(
-        `old_string not found in ${displayPath(path)}. It must match the file text exactly, including whitespace and indentation.`,
+        `old_string not found in ${displayPath(path, ctx.cwd)}. It must match the file text exactly, including whitespace and indentation.`,
       )
     }
     if (matches > 1 && !replaceAll) {
       throw new Error(
-        `old_string matches ${matches} locations in ${displayPath(path)}. Add surrounding lines to make it unique, or set replace_all to true.`,
+        `old_string matches ${matches} locations in ${displayPath(path, ctx.cwd)}. Add surrounding lines to make it unique, or set replace_all to true.`,
       )
     }
 
@@ -77,6 +77,8 @@ export const editTool: Tool = {
     await Bun.write(absolute, next)
 
     const diff = unifiedDiff(previous, next)
-    return { output: withDiff(`Updated ${displayPath(path)} (+${diff.added} -${diff.removed})`, diff.hunks) }
+    return {
+      output: withDiff(`Updated ${displayPath(path, ctx.cwd)} (+${diff.added} -${diff.removed})`, diff.hunks),
+    }
   },
 }

@@ -29,7 +29,7 @@ const resumeCommand: Command = {
   async run(args, ctx) {
     const everywhere = args[0] === "all"
     ctx.busy("Loading sessions")
-    const sessions = await listSessions(everywhere ? undefined : process.cwd())
+    const sessions = await listSessions(everywhere ? undefined : ctx.session.currentWorkingDirectory)
     ctx.busy()
     if (sessions.length === 0) {
       ctx.print("no saved sessions yet")

@@ -17,6 +17,7 @@ import skills from "./skills/plugin"
 import subAgents from "./sub-agents/plugin"
 import tasks from "./tasks/plugin"
 import tui from "./tui/plugin"
+import worktrees from "./worktrees/plugin"
 
 export const builtinPlugins: Plugin[] = [
   permissions,
@@ -30,6 +31,7 @@ export const builtinPlugins: Plugin[] = [
   jobs,
   search,
   skills,
+  worktrees,
   subAgents,
   tasks,
   deepseek,

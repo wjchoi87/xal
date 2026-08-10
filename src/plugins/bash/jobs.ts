@@ -13,7 +13,7 @@ function registerExitHook(): void {
   })
 }
 
-export function startJob(command: string, proc: CommandProcess): BackgroundJob {
+export function startJob(command: string, proc: CommandProcess, cwd: string): BackgroundJob {
   registerExitHook()
   runningProcs.add(proc)
   let exitCode: number | null = null
@@ -38,6 +38,7 @@ export function startJob(command: string, proc: CommandProcess): BackgroundJob {
     id: job.id,
     title: command,
     startedAt: Date.now(),
+    cwd,
     state: () => {
       if (!job.done) return { running: true }
       if (exitCode !== null) return { running: false, ok: exitCode === 0, detail: `exit ${exitCode}` }

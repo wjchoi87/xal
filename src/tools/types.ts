@@ -49,18 +49,27 @@ export interface ToolAvailabilityContext {
   mode: PermissionMode
 }
 
+export interface ToolCallContext {
+  cwd: string
+}
+
 interface ToolContract extends ToolDefinition {
   prompt?: string
   available?(ctx: ToolAvailabilityContext): boolean
-  title(args: Record<string, unknown>): string
-  readOnly?(args: Record<string, unknown>): boolean
-  sandboxed?(args: Record<string, unknown>): boolean
-  concurrency?(args: Record<string, unknown>): ToolConcurrency
-  permission?(args: Record<string, unknown>): ToolPermission
+  title(args: Record<string, unknown>, ctx: ToolCallContext): string
+  readOnly?(args: Record<string, unknown>, ctx: ToolCallContext): boolean
+  sandboxed?(args: Record<string, unknown>, ctx: ToolCallContext): boolean
+  concurrency?(args: Record<string, unknown>, ctx: ToolCallContext): ToolConcurrency
+  permission?(args: Record<string, unknown>, ctx: ToolCallContext): ToolPermission
+}
+
+export interface ToolExecutionContext extends ToolCallContext {
+  signal: AbortSignal
+  update(text: string): void
 }
 
 export interface Tool extends ToolContract {
-  execute(args: Record<string, unknown>, signal?: AbortSignal, update?: (text: string) => void): Promise<ToolResult>
+  execute(args: Record<string, unknown>, ctx: ToolExecutionContext): Promise<ToolResult>
 }
 
 export interface SessionToolContext {
@@ -72,6 +81,7 @@ export interface SessionToolContext {
     modelInputModalities?: ModelInputModality[]
     thinking?: ThinkingEffort
     mode: PermissionMode
+    changeWorkspace(cwd: string): void
   }
   signal: AbortSignal
   update(text: string): void

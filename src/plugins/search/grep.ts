@@ -40,11 +40,11 @@ export const grepTool: Tool = {
   },
   prompt:
     'Use grep to search file contents with a ripgrep regex instead of running rg or grep in bash. Default mode lists matching files; use output_mode "content" to see matching lines with line numbers. Scope with path and glob to keep results small.',
-  title(args) {
+  title(args, ctx) {
     const pattern = asString(args.pattern) ?? ""
     const glob = asString(args.glob)
     const path = asString(args.path)
-    return `${pattern}${glob ? ` (${glob})` : ""}${path ? ` in ${displayPath(path)}` : ""}`
+    return `${pattern}${glob ? ` (${glob})` : ""}${path ? ` in ${displayPath(path, ctx.cwd)}` : ""}`
   },
   readOnly() {
     return true
@@ -52,7 +52,7 @@ export const grepTool: Tool = {
   concurrency() {
     return "shared"
   },
-  async execute(args, signal) {
+  async execute(args, ctx) {
     const pattern = asString(args.pattern)
     if (!pattern) throw new Error("pattern is required")
     const content = asString(args.output_mode) === "content"
@@ -63,9 +63,9 @@ export const grepTool: Tool = {
     const glob = asString(args.glob)
     if (glob) argv.push("--glob", glob)
     argv.push("-e", pattern)
-    argv.push(...targetArgs(asString(args.path)))
+    argv.push(...targetArgs(asString(args.path), ctx.cwd))
 
-    const { lines, aborted } = await runRg(argv, signal)
+    const { lines, aborted } = await runRg(argv, ctx.cwd, ctx.signal)
     if (aborted) return { output: "(interrupted by user)" }
     if (lines.length === 0) return { output: "No matches found" }
 

@@ -23,6 +23,10 @@ export function sessionsDir(): string {
   return join(agentHome(), "sessions")
 }
 
+export function worktreesDir(): string {
+  return join(agentHome(), "worktrees")
+}
+
 function projectSlug(cwd: string): string {
   return cwd.replace(/[^a-zA-Z0-9]+/g, "-")
 }

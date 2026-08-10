@@ -1,4 +1,5 @@
 import type { Command } from "../../commands/types"
+import { runGit } from "../../git/command"
 import { asString } from "../../lib/json"
 import { findProjectRoot } from "../../project/root"
 import type { Tool } from "../../tools/types"
@@ -8,31 +9,6 @@ interface ReviewScope {
   description: string
   context: string
   toolInput: { base?: string }
-}
-
-async function runGit(root: string, args: string[], signal?: AbortSignal): Promise<string> {
-  if (signal?.aborted) throw new Error("Git inspection interrupted")
-  const proc = Bun.spawn(["git", ...args], {
-    cwd: root,
-    stdin: "ignore",
-    stdout: "pipe",
-    stderr: "pipe",
-  })
-  const abort = (): void => proc.kill()
-  signal?.addEventListener("abort", abort)
-  try {
-    const [stdout, stderr, exitCode] = await Promise.all([
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-      proc.exited,
-    ])
-    if (signal?.aborted) throw new Error("Git inspection interrupted")
-    if (exitCode === 0) return stdout.trimEnd()
-    const detail = stderr.trim().split("\n")[0]
-    throw new Error(`git ${args[0]} failed${detail ? `: ${detail}` : ` with exit code ${exitCode}`}`)
-  } finally {
-    signal?.removeEventListener("abort", abort)
-  }
 }
 
 function gitContext(output: string): string {
@@ -165,11 +141,11 @@ const reviewDiffTool: Tool = {
   readOnly() {
     return true
   },
-  async execute(args, signal) {
+  async execute(args, ctx) {
     const base = asString(args.base)?.trim()
     if (args.base !== undefined && !base) throw new Error("base must be a non-empty Git revision")
-    const root = await findProjectRoot(process.cwd())
-    return { output: base ? await branchDiff(root, base, signal) : await workingTreeDiff(root, signal) }
+    const root = await findProjectRoot(ctx.cwd)
+    return { output: base ? await branchDiff(root, base, ctx.signal) : await workingTreeDiff(root, ctx.signal) }
   },
 }
 
@@ -207,7 +183,7 @@ const reviewCommand: Command = {
     let scope: ReviewScope | undefined
     ctx.busy("Preparing review")
     try {
-      const root = await findProjectRoot(process.cwd())
+      const root = await findProjectRoot(ctx.session.currentWorkingDirectory)
       scope = args[0] ? await branchScope(root, args[0]) : await workingTreeScope(root)
     } finally {
       ctx.busy()

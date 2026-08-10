@@ -1,5 +1,5 @@
 import { release } from "node:os"
-import { dirname } from "node:path"
+import { dirname, resolve } from "node:path"
 import { setTimeout as sleep } from "node:timers/promises"
 import { appInfo } from "../app-info"
 import { projectSessionsDir } from "../config/paths"
@@ -54,6 +54,7 @@ import type { SessionKind } from "./types"
 
 export interface AgentSessionDeps {
   kind?: SessionKind
+  cwd?: string
   provider: Provider
   model: string
   modelInputModalities?: ModelInputModality[]
@@ -66,6 +67,7 @@ export interface AgentSessionDeps {
 export interface ResumeTarget {
   session: LoadedSession
   path: string
+  cwd: string
   provider: Provider
   model: string
   modelInputModalities?: ModelInputModality[]
@@ -172,6 +174,7 @@ export class AgentSession {
   private readonly kind: SessionKind
   private readonly outputContract: OutputContract | undefined
   private outputDirectory: string
+  private cwd: string
   private provider: Provider
   private model: string
   private modelInputModalities: ModelInputModality[] | undefined
@@ -190,13 +193,14 @@ export class AgentSession {
 
   constructor(deps: AgentSessionDeps) {
     this.kind = deps.kind ?? "primary"
+    this.cwd = resolve(deps.cwd ?? process.cwd())
     this.provider = deps.provider
     this.model = deps.model
     this.modelInputModalities = deps.modelInputModalities
     this.thinking = deps.thinking
     this.interactive = deps.interactive ?? false
     this.outputContract = deps.outputSchema ? new OutputContract(deps.outputSchema) : undefined
-    this.outputDirectory = toolOutputDirectory(projectSessionsDir(process.cwd()), this.sessionId)
+    this.outputDirectory = toolOutputDirectory(projectSessionsDir(this.cwd), this.sessionId)
     if (deps.persist) {
       this.recorder = new SessionRecorder((message) => this.emit({ type: "error", message }))
       this.recorder.start(this.meta())
@@ -213,6 +217,10 @@ export class AgentSession {
 
   get currentMode(): PermissionMode {
     return this.mode
+  }
+
+  get currentWorkingDirectory(): string {
+    return this.cwd
   }
 
   get currentPlan(): SessionPlan | undefined {
@@ -246,6 +254,7 @@ export class AgentSession {
       model: this.model,
       thinking: this.thinking,
       mode: this.mode,
+      cwd: this.cwd,
     }
   }
 
@@ -263,7 +272,7 @@ export class AgentSession {
     return {
       version: 1,
       id: this.sessionId,
-      cwd: process.cwd(),
+      cwd: this.cwd,
       provider: this.provider.id,
       model: this.model,
       thinking: this.thinking,
@@ -276,7 +285,7 @@ export class AgentSession {
     if (this.state !== "idle") return false
     this.sessionId = crypto.randomUUID()
     this.title = undefined
-    this.outputDirectory = toolOutputDirectory(projectSessionsDir(process.cwd()), this.sessionId)
+    this.outputDirectory = toolOutputDirectory(projectSessionsDir(this.cwd), this.sessionId)
     this.startedAt = Date.now()
     this.items = []
     this.contextTokens = undefined
@@ -295,12 +304,14 @@ export class AgentSession {
     this.sessionId = meta.id
     this.title = target.session.title
     this.outputDirectory = toolOutputDirectory(dirname(target.path), this.sessionId)
+    this.cwd = resolve(target.cwd)
     this.startedAt = meta.startedAt
     this.items = [...target.session.items]
     this.contextTokens = recordedContext(target.session.events)
     this.compactionFailures = 0
     this.plan = undefined
     this.planHandoffActive = false
+    let recordedCwd = meta.cwd
     for (const event of target.session.events) {
       if (event.type === "plan_updated") {
         this.plan = event.plan
@@ -308,6 +319,7 @@ export class AgentSession {
       }
       if (event.type === "mode_changed" && event.mode === "plan") this.planHandoffActive = false
       if (event.type === "turn_ended") this.planHandoffActive = false
+      if (event.type === "workspace_changed") recordedCwd = event.cwd
     }
     this.streaming = undefined
     this.provider = target.provider
@@ -318,6 +330,9 @@ export class AgentSession {
     this.recorder?.attach(target.path)
     this.emit(this.startEvent(true))
     for (const event of target.session.events) this.notify(event)
+    if (resolve(recordedCwd) !== this.cwd) {
+      this.notify({ type: "workspace_changed", cwd: this.cwd, previous: recordedCwd })
+    }
     return true
   }
 
@@ -354,6 +369,14 @@ export class AgentSession {
     this.mode = mode
     if (mode === "plan") this.planHandoffActive = false
     this.emit({ type: "mode_changed", mode })
+  }
+
+  changeWorkspace(cwd: string): void {
+    const next = resolve(cwd)
+    if (next === this.cwd) return
+    const previous = this.cwd
+    this.cwd = next
+    this.emit({ type: "workspace_changed", cwd: next, previous })
   }
 
   setTitle(input: string): string | undefined {
@@ -833,7 +856,7 @@ export class AgentSession {
       instructions: composeSystemPrompt({
         appName: appInfo.name,
         platform: `${process.platform} ${release()}`,
-        cwd: process.cwd(),
+        cwd: this.cwd,
         kind: this.kind,
         tools,
         mode: this.mode,
@@ -898,7 +921,7 @@ export class AgentSession {
     const batches: ToolCallBatch[] = []
     for (const call of calls) {
       const tool = this.availableTool(call.name)
-      const concurrency = tool?.concurrency?.(call.args) ?? "exclusive"
+      const concurrency = tool?.concurrency?.(call.args, { cwd: this.cwd }) ?? "exclusive"
       const previous = batches.at(-1)
       if (concurrency === "shared" && previous?.concurrency === "shared") {
         previous.calls.push(call)
@@ -930,8 +953,8 @@ export class AgentSession {
 
   private skippedToolCallOutcome(call: ToolCallItem, output: string): ToolCallOutcome {
     const tool = this.availableTool(call.name)
-    const title = tool?.title(call.args) ?? JSON.stringify(call.args)
-    const readOnly = tool?.readOnly?.(call.args) ?? false
+    const title = tool?.title(call.args, { cwd: this.cwd }) ?? JSON.stringify(call.args)
+    const readOnly = tool?.readOnly?.(call.args, { cwd: this.cwd }) ?? false
     return this.toolCallOutcome(call, title, readOnly, output)
   }
 
@@ -992,8 +1015,8 @@ export class AgentSession {
 
   private async prepareToolCall(call: ToolCallItem, signal: AbortSignal): Promise<ToolCallPreparation> {
     const tool = this.availableTool(call.name)
-    const title = tool?.title(call.args) ?? JSON.stringify(call.args)
-    const readOnly = tool?.readOnly?.(call.args) ?? false
+    const title = tool?.title(call.args, { cwd: this.cwd }) ?? JSON.stringify(call.args)
+    const readOnly = tool?.readOnly?.(call.args, { cwd: this.cwd }) ?? false
 
     if (signal.aborted) {
       return {
@@ -1009,8 +1032,8 @@ export class AgentSession {
       }
     }
 
-    const sandboxed = tool.sandboxed?.(call.args) ?? false
-    const permission = tool.permission?.(call.args)
+    const sandboxed = tool.sandboxed?.(call.args, { cwd: this.cwd }) ?? false
+    const permission = tool.permission?.(call.args, { cwd: this.cwd })
     const decision = await evaluatePolicy({
       tool: call.name,
       title,
@@ -1078,17 +1101,18 @@ export class AgentSession {
           ? await tool.execute(call.args, {
               session: {
                 kind: this.kind,
-                cwd: process.cwd(),
+                cwd: this.cwd,
                 provider: this.provider,
                 model: this.model,
                 modelInputModalities: this.modelInputModalities,
                 thinking: this.thinking,
                 mode: this.mode,
+                changeWorkspace: (cwd) => this.changeWorkspace(cwd),
               },
               signal,
               update,
             })
-          : await tool.execute(call.args, signal, update)
+          : await tool.execute(call.args, { cwd: this.cwd, signal, update })
       output = result.output
       events = result.events ?? []
     } catch (error) {

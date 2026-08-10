@@ -41,10 +41,10 @@ export const jobOutputTool: Tool = {
   readOnly() {
     return true
   },
-  async execute(args, signal) {
+  async execute(args, ctx) {
     const job = jobOf(args)
     const wait = Math.min(Math.max(asNumber(args.wait) ?? 0, 0), MAX_WAIT_S)
-    await waitForJob(job, wait * 1000, signal)
+    await waitForJob(job, wait * 1000, ctx.signal)
     const unread = unreadOutput(job)
     return { output: `${unread || "(no new output)"}\n(${jobStatus(job)})` }
   },

@@ -32,8 +32,8 @@ export const readTool: Tool = {
     additionalProperties: false,
   },
   prompt: "Use read to view file contents; page through large files with offset and limit.",
-  title(args) {
-    return displayPath(asString(args.file_path) ?? "")
+  title(args, ctx) {
+    return displayPath(asString(args.file_path) ?? "", ctx.cwd)
   },
   readOnly() {
     return true
@@ -41,20 +41,20 @@ export const readTool: Tool = {
   concurrency() {
     return "shared"
   },
-  permission(args) {
-    return pathPermission("read", args)
+  permission(args, ctx) {
+    return pathPermission("read", args, ctx.cwd)
   },
-  async execute(args) {
+  async execute(args, ctx) {
     const path = asString(args.file_path)
     if (!path) throw new Error("file_path is required")
 
-    const absolute = resolveFilePath(path)
+    const absolute = resolveFilePath(path, ctx.cwd)
     const stats = await stat(absolute).catch(() => undefined)
-    if (!stats) throw new Error(`File not found: ${displayPath(path)}`)
-    if (stats.isDirectory()) throw new Error(`Path is a directory, not a file: ${displayPath(path)}`)
+    if (!stats) throw new Error(`File not found: ${displayPath(path, ctx.cwd)}`)
+    if (stats.isDirectory()) throw new Error(`Path is a directory, not a file: ${displayPath(path, ctx.cwd)}`)
 
     const text = await Bun.file(absolute).text()
-    if (text.includes("\u0000")) throw new Error(`Cannot read binary file: ${displayPath(path)}`)
+    if (text.includes("\u0000")) throw new Error(`Cannot read binary file: ${displayPath(path, ctx.cwd)}`)
     const lines = text.split("\n")
     if (lines.at(-1) === "") lines.pop()
     const total = lines.length
