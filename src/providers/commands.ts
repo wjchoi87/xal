@@ -2,7 +2,7 @@ import { registerCommand } from "../commands/registry"
 import type { Command } from "../commands/types"
 import { saveSettings } from "../config/settings"
 import { resolveThinking, saveThinking, thinkingOptions } from "../config/thinking"
-import { listConnectTargets, listModelChoices } from "./catalog"
+import { listConnectTargets, listModelChoices, modelCatalog, modelSummary } from "./catalog"
 import type { ThinkingEffort } from "./types"
 
 const connectCommand: Command = {
@@ -28,8 +28,11 @@ const connectCommand: Command = {
     })
     if (!connected) return
     const model = await target.provider.defaultModel()
+    const catalog = await modelCatalog(target.provider, true)
+    if (catalog.warning) ctx.print(`model catalog · ${target.provider.name}: ${catalog.warning}`)
+    const modelInfo = catalog.models.find((info) => info.id === model)
     const thinking = await resolveThinking(target.provider, model)
-    if (!ctx.session.setModel(target.provider, model, thinking)) {
+    if (!ctx.session.setModel(target.provider, model, thinking, modelInfo?.inputModalities)) {
       ctx.print("cannot change provider while a turn is running")
       return
     }
@@ -46,9 +49,10 @@ const modelCommand: Command = {
       return
     }
 
-    ctx.busy("Loading models")
-    const choices = await listModelChoices()
-    ctx.busy()
+    ctx.busy("Discovering models")
+    const result = await listModelChoices(true).finally(() => ctx.busy())
+    const { choices, notices } = result
+    for (const notice of notices) ctx.print(`model catalog · ${notice.provider.name}: ${notice.message}`)
     if (choices.length === 0) throw new Error("no models available — run /connect first")
 
     while (true) {
@@ -57,9 +61,11 @@ const modelCommand: Command = {
       const choice = await ctx.select({
         options: choices.map((choice) => {
           const current = choice.provider === currentProvider && choice.model.id === currentModel
+          const summary = modelSummary(choice.model)
+          const source = choice.source === "runtime" ? "" : ` · ${choice.source}`
           return {
             label: choice.model.id,
-            detail: choice.provider.name,
+            detail: `${choice.provider.aliases[0] ?? choice.provider.id}${summary ? ` · ${summary}` : ""}${source}`,
             note: current ? "current" : undefined,
             active: current,
             value: choice,
@@ -67,7 +73,11 @@ const modelCommand: Command = {
         }),
       })
       if (!choice) return
-      if (choice.provider === currentProvider && choice.model.id === currentModel) return
+      if (choice.provider === currentProvider && choice.model.id === currentModel) {
+        const thinking = await resolveThinking(choice.provider, choice.model.id, ctx.session.currentThinking)
+        ctx.session.setModel(choice.provider, choice.model.id, thinking, choice.model.inputModalities)
+        return
+      }
 
       if (ctx.session.hasModelOutput) {
         ctx.print(
@@ -89,7 +99,7 @@ const modelCommand: Command = {
       }
 
       const thinking = await resolveThinking(choice.provider, choice.model.id)
-      if (!ctx.session.setModel(choice.provider, choice.model.id, thinking)) {
+      if (!ctx.session.setModel(choice.provider, choice.model.id, thinking, choice.model.inputModalities)) {
         ctx.print("cannot change model while a turn is running")
         return
       }

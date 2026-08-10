@@ -15,14 +15,14 @@ Commands that save model or thinking preferences write the user file. The effect
 
 ## Options
 
-| Option         | Type       | Default                  | Description                                                                 |
-| -------------- | ---------- | ------------------------ | --------------------------------------------------------------------------- |
-| `plugins`      | `string[]` | `[]`                     | Additional plugins loaded after built-in plugins.                           |
-| `provider`     | `string`   | Last registered provider | Provider ID or alias used for new sessions.                                 |
-| `model`        | `string`   | Provider default         | Model ID used for new sessions. Run `tack models` to list available models. |
-| `ui`           | `string`   | `"tui"`                  | UI ID started when Tack is run without a command.                           |
-| `pluginConfig` | `object`   | `{}`                     | Configuration keyed by plugin name.                                         |
-| `thinking`     | `object`   | `{}`                     | Thinking effort keyed by provider ID and then model ID.                     |
+| Option         | Type       | Default                  | Description                                                                             |
+| -------------- | ---------- | ------------------------ | --------------------------------------------------------------------------------------- |
+| `plugins`      | `string[]` | `[]`                     | Additional plugins loaded after built-in plugins.                                       |
+| `provider`     | `string`   | Last registered provider | Provider ID or alias used for new sessions.                                             |
+| `model`        | `string`   | Provider default         | Model ID used for new sessions. Run `tack models` to refresh and list available models. |
+| `ui`           | `string`   | `"tui"`                  | UI ID started when Tack is run without a command.                                       |
+| `pluginConfig` | `object`   | `{}`                     | Configuration keyed by plugin name.                                                     |
+| `thinking`     | `object`   | `{}`                     | Thinking effort keyed by provider ID and then model ID.                                 |
 
 Built-in provider IDs are `openai-chatgpt` and `deepseek`. `chatgpt` is an alias for `openai-chatgpt`. The only built-in UI ID is `tui`. Plugins may register more providers, aliases, and UIs.
 
@@ -66,6 +66,12 @@ Thinking preferences use this shape:
 ```
 
 Supported effort values are `none`, `low`, `medium`, `high`, `xhigh`, and `max`. Each provider and model may support only a subset. An unavailable saved effort is ignored in favor of that model's default.
+
+### Model discovery
+
+`tack models` and the TUI's `/model` command refresh every connected provider's model catalog. The catalog supplies the model picker, context-window tracking, input modalities, and the choices shown by `/thinking`.
+
+The ChatGPT provider discovers the account-visible catalog from the authenticated Codex service and stores the last successful result in `$TACK_HOME/cache/openai-chatgpt-models.json` (or `~/.tack/cache/openai-chatgpt-models.json`). If live discovery is unavailable, Tack reports the failure and uses that cache, then its bundled catalog. DeepSeek discovers models from its authenticated `/models` endpoint and reports when it must use bundled model metadata.
 
 ## Prompt commands
 

@@ -1,5 +1,6 @@
 import type { AgentSession } from "../../../agent/agent-session"
 import type { AgentEvent } from "../../../agent/events"
+import { describeError } from "../../../lib/error"
 import { contextWindow } from "../../../providers/catalog"
 import type { Screen } from "../screen"
 
@@ -13,10 +14,14 @@ export class AgentEventController {
     const provider = this.session.currentProvider
     const model = this.session.currentModel
     this.screen.statusBar.setContextWindow(undefined)
-    void contextWindow(provider, model).then((window) => {
-      if (this.session.currentProvider !== provider || this.session.currentModel !== model) return
-      this.screen.statusBar.setContextWindow(window)
-    })
+    void contextWindow(provider, model)
+      .then((window) => {
+        if (this.session.currentProvider !== provider || this.session.currentModel !== model) return
+        this.screen.statusBar.setContextWindow(window)
+      })
+      .catch((error) => {
+        this.screen.scrollback.append({ kind: "info", text: `model catalog: ${describeError(error)}` })
+      })
   }
 
   handle(event: AgentEvent): void {

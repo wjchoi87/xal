@@ -1,7 +1,7 @@
 import type { Provider } from "../../providers/types"
 import { PROVIDER_ID } from "./api"
 import { connect, isLoggedIn } from "./auth"
-import { defaultModel, listModels, thinking } from "./models"
+import { defaultModel, listModels } from "./models"
 import { streamResponse } from "./transport"
 
 export const deepSeekProvider: Provider = {
@@ -13,6 +13,5 @@ export const deepSeekProvider: Provider = {
   connect,
   listModels,
   defaultModel,
-  thinking,
   stream: streamResponse,
 }

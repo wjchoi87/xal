@@ -1,23 +1,18 @@
 import { appEnvVar, appInfo } from "../../app-info"
 import { ProviderError } from "../../providers/errors"
-import { errorDetail, httpError, providerFetch, sseEvents, streamError } from "../../providers/transport"
+import { errorDetail, httpError, sseEvents, streamError } from "../../providers/transport"
 import type { StreamEvent, StreamRequest } from "../../providers/types"
-import { ensureAccessToken, PROVIDER_ID } from "./oauth"
+import { chatGptFetch } from "./api"
+import { PROVIDER_ID } from "./oauth"
 import { buildInput, parseOutputItem, parseSseEvent } from "./wire"
 
-const RESPONSES_URL = "https://chatgpt.com/backend-api/codex/responses"
-
-function buildHeaders(access: string, accountId: string, sessionId: string): Record<string, string> {
+function buildHeaders(sessionId: string): Record<string, string> {
   return {
-    authorization: `Bearer ${access}`,
-    "chatgpt-account-id": accountId,
     "openai-beta": "responses=experimental",
-    originator: appInfo.name,
     accept: "text/event-stream",
     "content-type": "application/json",
     "session-id": sessionId,
     "x-client-request-id": crypto.randomUUID(),
-    "user-agent": `${appInfo.name}/${appInfo.version}`,
   }
 }
 
@@ -59,20 +54,12 @@ async function raiseForStatus(response: Response): Promise<never> {
 }
 
 export async function* streamResponse(request: StreamRequest): AsyncGenerator<StreamEvent> {
-  let auth = await ensureAccessToken()
-  const doFetch = () =>
-    fetch(RESPONSES_URL, {
-      method: "POST",
-      headers: buildHeaders(auth.access, auth.accountId, request.sessionId),
-      body: buildBody(request),
-      signal: request.signal,
-    })
-
-  let response = await providerFetch("ChatGPT", doFetch, request.signal)
-  if (response.status === 401) {
-    auth = await ensureAccessToken(true)
-    response = await providerFetch("ChatGPT", doFetch, request.signal)
-  }
+  const response = await chatGptFetch("/responses", {
+    method: "POST",
+    headers: buildHeaders(request.sessionId),
+    body: buildBody(request),
+    signal: request.signal,
+  })
   if (!response.ok) await raiseForStatus(response)
   if (!response.body) throw new ProviderError("ChatGPT response had no body", { retryable: true })
 

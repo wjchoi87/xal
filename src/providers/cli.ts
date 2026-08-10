@@ -2,7 +2,7 @@ import { appInfo } from "../app-info"
 import { registerCli } from "../cli/registry"
 import type { Cli } from "../cli/types"
 import { settings } from "../config/settings"
-import { listConnectTargets, listModelChoices } from "./catalog"
+import { listConnectTargets, listModelChoices, modelSummary } from "./catalog"
 import { getProvider } from "./registry"
 import type { Provider } from "./types"
 
@@ -45,7 +45,11 @@ const modelsCli: Cli = {
     const only = wanted ? getProvider(wanted) : undefined
     if (wanted && !only) throw new Error(`unknown provider: ${wanted}`)
 
-    const choices = (await listModelChoices()).filter((choice) => !only || choice.provider === only)
+    const catalog = await listModelChoices(true)
+    const choices = catalog.choices.filter((choice) => !only || choice.provider === only)
+    for (const notice of catalog.notices) {
+      if (!only || notice.provider === only) ctx.error(`warning: ${notice.provider.name}: ${notice.message}`)
+    }
     if (choices.length === 0) {
       ctx.print(`no models available — run: ${appInfo.name} connect`)
       return
@@ -68,8 +72,8 @@ const modelsCli: Cli = {
       }
       group = provider
       const marker = (active ?? defaults.get(provider.id)) === model.id ? "*" : " "
-      const context = model.contextWindow ? `  ${Math.round(model.contextWindow / 1000)}k ctx` : ""
-      ctx.print(`${marker} ${model.id.padEnd(28)} ${model.name}${context}`)
+      const summary = modelSummary(model, true)
+      ctx.print(`${marker} ${model.id.padEnd(28)} ${model.name}${summary ? `  · ${summary}` : ""}`)
     }
   },
 }

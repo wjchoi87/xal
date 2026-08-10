@@ -6,6 +6,12 @@ A terminal coding harness: an agentic TUI that integrates with AI providers to d
 
 Customizable and extensible full coding harness that remains as small as possible and allows everyone to extend and change its behaviours.
 
+## Temp Development Goal
+
+Reach to a point where we can continue the development of this app using itself. this means enough features to develop it by itself.
+
+This is a Temp goal and we consider it when we pick a task or decide which feature to work on.
+
 ## Architecture
 
 One sentence: **a headless agent core emits a typed, serializable, unidirectional event stream per session; UIs are subscribers; commands flow in through a narrow typed surface; every feature — tools, providers, CLIs, prompt, policy, the TUI itself — is contributed through plugin registration.**

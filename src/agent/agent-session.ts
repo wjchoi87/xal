@@ -11,7 +11,15 @@ import { contextWindow } from "../providers/catalog"
 import { prepareConversation } from "../providers/conversation"
 import { ProviderError } from "../providers/errors"
 import { occupiedContext } from "../providers/types"
-import type { ProviderOutputItem, Provider, ThinkingEffort, ToolCallItem, UserInput, Usage } from "../providers/types"
+import type {
+  ModelInputModality,
+  ProviderOutputItem,
+  Provider,
+  ThinkingEffort,
+  ToolCallItem,
+  UserInput,
+  Usage,
+} from "../providers/types"
 import { SessionRecorder } from "../sessions/recorder"
 import { normalizeSessionTitle, titleFromInput } from "../sessions/title"
 import type { LoadedSession, SessionMeta } from "../sessions/types"
@@ -42,6 +50,7 @@ import { composeSystemPrompt } from "./prompt"
 export interface AgentSessionDeps {
   provider: Provider
   model: string
+  modelInputModalities?: ModelInputModality[]
   thinking?: ThinkingEffort
   persist?: boolean
   interactive?: boolean
@@ -52,6 +61,7 @@ export interface ResumeTarget {
   path: string
   provider: Provider
   model: string
+  modelInputModalities?: ModelInputModality[]
   thinking?: ThinkingEffort
   mode: PermissionMode
 }
@@ -152,6 +162,7 @@ export class AgentSession {
   private outputDirectory: string
   private provider: Provider
   private model: string
+  private modelInputModalities: ModelInputModality[] | undefined
   private thinking: ThinkingEffort | undefined
   private state: AgentState = "idle"
   private mode: PermissionMode = "build"
@@ -166,6 +177,7 @@ export class AgentSession {
   constructor(deps: AgentSessionDeps) {
     this.provider = deps.provider
     this.model = deps.model
+    this.modelInputModalities = deps.modelInputModalities
     this.thinking = deps.thinking
     this.interactive = deps.interactive ?? false
     this.outputDirectory = toolOutputDirectory(projectSessionsDir(process.cwd()), this.sessionId)
@@ -197,6 +209,11 @@ export class AgentSession {
 
   get currentThinking(): ThinkingEffort | undefined {
     return this.thinking
+  }
+
+  get supportsImageInput(): boolean {
+    if (!this.provider.capabilities.imageInput) return false
+    return this.modelInputModalities?.includes("image") ?? true
   }
 
   startEvent(resumed = false): SessionStartedEvent {
@@ -263,6 +280,7 @@ export class AgentSession {
     this.streaming = undefined
     this.provider = target.provider
     this.model = target.model
+    this.modelInputModalities = target.modelInputModalities
     this.thinking = target.thinking
     this.mode = target.mode
     this.recorder?.attach(target.path)
@@ -271,11 +289,20 @@ export class AgentSession {
     return true
   }
 
-  setModel(provider: Provider, model: string, thinking?: ThinkingEffort): boolean {
+  setModel(
+    provider: Provider,
+    model: string,
+    thinking?: ThinkingEffort,
+    inputModalities?: ModelInputModality[],
+  ): boolean {
     if (this.state !== "idle") return false
-    if (this.provider === provider && this.model === model) return this.setThinking(thinking)
+    if (this.provider === provider && this.model === model) {
+      this.modelInputModalities = inputModalities
+      return this.setThinking(thinking)
+    }
     this.provider = provider
     this.model = model
+    this.modelInputModalities = inputModalities
     this.thinking = thinking
     this.emit({ type: "model_changed", provider: provider.id, model })
     this.emit({ type: "thinking_changed", thinking })
@@ -311,8 +338,8 @@ export class AgentSession {
   }
 
   send(input: UserInput): boolean {
-    if (input.images.length > 0 && !this.provider.capabilities.imageInput) {
-      this.emit({ type: "error", message: `${this.provider.name} does not support image input` })
+    if (input.images.length > 0 && !this.supportsImageInput) {
+      this.emit({ type: "error", message: `${this.model} does not support image input` })
       return false
     }
     if (this.turnActive) {

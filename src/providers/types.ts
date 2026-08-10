@@ -54,6 +54,18 @@ export interface ModelInfo {
   id: string
   name: string
   contextWindow?: number
+  inputModalities: ModelInputModality[]
+  thinking?: ThinkingOptions
+}
+
+export type ModelInputModality = "text" | "image"
+
+export type ModelCatalogSource = "runtime" | "cache" | "bundled"
+
+export interface ModelCatalog {
+  models: ModelInfo[]
+  source: ModelCatalogSource
+  warning?: string
 }
 
 export interface Usage {
@@ -121,8 +133,7 @@ export interface Provider {
   capabilities: { imageInput: boolean }
   isLoggedIn(): Promise<boolean>
   connect?(ctx: ConnectContext): Promise<boolean>
-  listModels(): Promise<ModelInfo[]>
+  listModels(refresh: boolean): Promise<ModelCatalog>
   defaultModel(): Promise<string>
-  thinking?(model: string): Promise<ThinkingOptions | undefined>
   stream(request: StreamRequest): AsyncIterable<StreamEvent>
 }

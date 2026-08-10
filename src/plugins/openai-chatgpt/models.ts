@@ -1,157 +1,248 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { appEnvVar } from "../../app-info"
 import { cacheDir } from "../../config/paths"
+import { readJsonFile, writeSecureJson } from "../../lib/fs"
+import { describeError } from "../../lib/error"
 import { asNumber, asString, asStringArray, isRecord } from "../../lib/json"
-import { isThinkingEffort, type ModelInfo, type ThinkingEffort, type ThinkingOptions } from "../../providers/types"
+import { errorDetail, httpError } from "../../providers/transport"
+import {
+  isThinkingEffort,
+  type ModelCatalog,
+  type ModelInfo,
+  type ModelInputModality,
+  type ThinkingEffort,
+  type ThinkingOptions,
+} from "../../providers/types"
+import { chatGptFetch } from "./api"
 
-const MODELS_URL = "https://models.dev/api.json"
-const CACHE_TTL_MS = 24 * 60 * 60 * 1000
+const MODEL_CATALOG_COMPATIBILITY_VERSION = "1.0.0"
 const DEFAULT_CONTEXT_WINDOW = 260_000
 
-const BACKEND_MODEL_IDS = [
-  "gpt-5.6-luna",
-  "gpt-5.6-sol",
-  "gpt-5.6-terra",
-  "gpt-5.5",
-  "gpt-5.4",
-  "gpt-5.4-mini",
-  "gpt-5.3-codex-spark",
+const BUNDLED_MODELS: ModelInfo[] = [
+  {
+    id: "gpt-5.6-luna",
+    name: "GPT-5.6-Luna",
+    contextWindow: 272_000,
+    inputModalities: ["text", "image"],
+    thinking: { options: ["low", "medium", "high", "xhigh", "max"], default: "medium" },
+  },
+  {
+    id: "gpt-5.6-sol",
+    name: "GPT-5.6-Sol",
+    contextWindow: 272_000,
+    inputModalities: ["text", "image"],
+    thinking: { options: ["low", "medium", "high", "xhigh", "max"], default: "low" },
+  },
+  {
+    id: "gpt-5.6-terra",
+    name: "GPT-5.6-Terra",
+    contextWindow: 272_000,
+    inputModalities: ["text", "image"],
+    thinking: { options: ["low", "medium", "high", "xhigh", "max"], default: "medium" },
+  },
+  {
+    id: "gpt-5.5",
+    name: "GPT-5.5",
+    contextWindow: 272_000,
+    inputModalities: ["text", "image"],
+    thinking: { options: ["low", "medium", "high", "xhigh"], default: "medium" },
+  },
+  {
+    id: "gpt-5.4",
+    name: "GPT-5.4",
+    contextWindow: 272_000,
+    inputModalities: ["text", "image"],
+    thinking: { options: ["low", "medium", "high", "xhigh"], default: "medium" },
+  },
+  {
+    id: "gpt-5.4-mini",
+    name: "GPT-5.4-Mini",
+    contextWindow: 272_000,
+    inputModalities: ["text", "image"],
+    thinking: { options: ["low", "medium", "high", "xhigh"], default: "medium" },
+  },
+  {
+    id: "gpt-5.3-codex-spark",
+    name: "GPT-5.3-Codex-Spark",
+    contextWindow: 128_000,
+    inputModalities: ["text"],
+    thinking: { options: ["low", "medium", "high", "xhigh"], default: "high" },
+  },
 ]
 
-interface ModelMetadata {
-  name?: string
-  contextWindow?: number
-  thinking?: ThinkingEffort[]
-}
-
-type MetadataMap = Record<string, ModelMetadata>
-
-let memo: MetadataMap | undefined
 let contextWindowCap = DEFAULT_CONTEXT_WINDOW
 
 export function setContextWindowCap(cap: number | undefined): void {
   contextWindowCap = cap ?? DEFAULT_CONTEXT_WINDOW
 }
 
-function effectiveContextWindow(reported: number | undefined): number {
-  return reported === undefined ? contextWindowCap : Math.min(reported, contextWindowCap)
-}
-
-function parseThinking(raw: unknown): ThinkingEffort[] | undefined {
-  if (!Array.isArray(raw)) return undefined
-  for (const option of raw) {
-    if (!isRecord(option) || option.type !== "effort") continue
-    const efforts = asStringArray(option.values).filter(isThinkingEffort)
-    if (efforts.length > 0) return efforts
-  }
-  return undefined
-}
-
 function cachePath(): string {
-  return join(cacheDir(), "models.json")
+  return join(cacheDir(), "openai-chatgpt-models.json")
 }
 
-function parseNetworkEntry(raw: unknown): ModelMetadata | undefined {
-  if (!isRecord(raw)) return undefined
-  const limit = isRecord(raw.limit) ? raw.limit : undefined
+function inputModalities(raw: unknown): ModelInputModality[] {
+  const modalities = asStringArray(raw).filter(
+    (modality): modality is ModelInputModality => modality === "text" || modality === "image",
+  )
+  return modalities.length > 0 ? modalities : ["text"]
+}
+
+function thinkingOptions(options: ThinkingEffort[], preferred: unknown): ThinkingOptions | undefined {
+  if (options.length === 0) return undefined
+  const defaultEffort = isThinkingEffort(preferred) && options.includes(preferred) ? preferred : options[0]!
+  return { options, default: defaultEffort }
+}
+
+function runtimeThinking(raw: unknown, preferred: unknown): ThinkingOptions | undefined {
+  if (!Array.isArray(raw)) return undefined
+  const options = raw.flatMap((entry): ThinkingEffort[] => {
+    if (!isRecord(entry)) return []
+    const effort = asString(entry.effort)
+    return effort && isThinkingEffort(effort) ? [effort] : []
+  })
+  return thinkingOptions(options, preferred)
+}
+
+function positiveInteger(raw: unknown): number | undefined {
+  const value = asNumber(raw)
+  return value !== undefined && Number.isInteger(value) && value > 0 ? value : undefined
+}
+
+function parseRuntimeModel(raw: unknown): { model: ModelInfo; priority: number } | undefined {
+  if (!isRecord(raw)) throw new Error("ChatGPT models response contained an invalid model")
+  if (raw.visibility !== "list") return undefined
+  const id = asString(raw.slug)?.trim()
+  const name = asString(raw.display_name)?.trim()
+  if (!id || !name) throw new Error("ChatGPT models response contained an incomplete visible model")
   return {
-    name: asString(raw.name),
-    contextWindow: limit ? asNumber(limit.context) : undefined,
-    thinking: parseThinking(raw.reasoning_options),
+    model: {
+      id,
+      name,
+      contextWindow: positiveInteger(raw.context_window) ?? positiveInteger(raw.max_context_window),
+      inputModalities: inputModalities(raw.input_modalities),
+      thinking: runtimeThinking(raw.supported_reasoning_levels, raw.default_reasoning_level),
+    },
+    priority: asNumber(raw.priority) ?? Number.MAX_SAFE_INTEGER,
   }
 }
 
-function parseCachedEntry(raw: unknown): ModelMetadata | undefined {
+async function discoverModels(): Promise<ModelInfo[]> {
+  const response = await chatGptFetch(`/models?client_version=${MODEL_CATALOG_COMPATIBILITY_VERSION}`, {
+    signal: AbortSignal.timeout(5_000),
+  })
+  if (!response.ok) {
+    const text = await response.text().catch(() => "")
+    throw httpError("ChatGPT models", response, errorDetail(text) ?? text.slice(0, 500))
+  }
+  const raw: unknown = await response.json()
+  if (!isRecord(raw) || !Array.isArray(raw.models)) throw new Error("ChatGPT models response was invalid")
+  const models = raw.models
+    .flatMap((entry) => {
+      const parsed = parseRuntimeModel(entry)
+      return parsed ? [parsed] : []
+    })
+    .sort((left, right) => left.priority - right.priority)
+    .map((entry) => entry.model)
+  if (models.length === 0) throw new Error("ChatGPT returned no visible models")
+  return models
+}
+
+function parseCachedThinking(raw: unknown): ThinkingOptions | undefined {
   if (!isRecord(raw)) return undefined
-  const thinking = asStringArray(raw.thinking).filter(isThinkingEffort)
+  const options = asStringArray(raw.options).filter(isThinkingEffort)
+  return thinkingOptions(options, raw.default)
+}
+
+function parseCachedModel(raw: unknown): ModelInfo | undefined {
+  if (!isRecord(raw)) return undefined
+  const id = asString(raw.id)?.trim()
+  const name = asString(raw.name)?.trim()
+  if (!id || !name) return undefined
   return {
-    name: asString(raw.name),
-    contextWindow: asNumber(raw.contextWindow),
-    thinking: thinking.length > 0 ? thinking : undefined,
-  }
-}
-
-function parseMetadataMap(raw: unknown, parseEntry: (raw: unknown) => ModelMetadata | undefined): MetadataMap {
-  if (!isRecord(raw)) return {}
-  const metadata: MetadataMap = {}
-  for (const id of BACKEND_MODEL_IDS) {
-    const entry = parseEntry(raw[id])
-    if (entry) metadata[id] = entry
-  }
-  return metadata
-}
-
-async function readCache(): Promise<{ fetchedAt: number; metadata: MetadataMap } | undefined> {
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(await readFile(cachePath(), "utf8"))
-  } catch {
-    return undefined
-  }
-  if (!isRecord(parsed)) return undefined
-  const fetchedAt = asNumber(parsed.fetchedAt)
-  if (fetchedAt === undefined) return undefined
-  return { fetchedAt, metadata: parseMetadataMap(parsed.metadata, parseCachedEntry) }
-}
-
-async function writeCache(metadata: MetadataMap): Promise<void> {
-  try {
-    await mkdir(cacheDir(), { recursive: true })
-    await writeFile(cachePath(), JSON.stringify({ fetchedAt: Date.now(), metadata }, null, 2) + "\n")
-  } catch {}
-}
-
-async function fetchMetadata(): Promise<MetadataMap> {
-  const response = await fetch(MODELS_URL, { signal: AbortSignal.timeout(15_000) })
-  if (!response.ok) throw new Error(`models.dev returned ${response.status}`)
-  const data: unknown = await response.json()
-  if (!isRecord(data) || !isRecord(data.openai)) return {}
-  return parseMetadataMap(data.openai.models, parseNetworkEntry)
-}
-
-async function loadMetadata(): Promise<MetadataMap> {
-  if (memo) return memo
-  const cache = await readCache()
-  if (cache && Date.now() - cache.fetchedAt < CACHE_TTL_MS) {
-    memo = cache.metadata
-    return memo
-  }
-  try {
-    const fresh = await fetchMetadata()
-    await writeCache(fresh)
-    memo = fresh
-    return memo
-  } catch {
-    memo = cache?.metadata ?? {}
-    return memo
-  }
-}
-
-export async function listModels(): Promise<ModelInfo[]> {
-  const metadata = await loadMetadata()
-  return BACKEND_MODEL_IDS.map((id) => ({
     id,
-    name: metadata[id]?.name ?? id,
-    contextWindow: effectiveContextWindow(metadata[id]?.contextWindow),
+    name,
+    contextWindow: positiveInteger(raw.contextWindow),
+    inputModalities: inputModalities(raw.inputModalities),
+    thinking: parseCachedThinking(raw.thinking),
+  }
+}
+
+async function readCache(): Promise<ModelInfo[] | undefined> {
+  const raw = await readJsonFile(cachePath())
+  if (raw === undefined) return undefined
+  if (!isRecord(raw) || !Array.isArray(raw.models)) throw new Error(`${cachePath()} is malformed — fix or delete it`)
+  const models: ModelInfo[] = []
+  for (const entry of raw.models) {
+    const model = parseCachedModel(entry)
+    if (!model) throw new Error(`${cachePath()} is malformed — fix or delete it`)
+    models.push(model)
+  }
+  return models.length > 0 ? models : undefined
+}
+
+function capped(models: ModelInfo[]): ModelInfo[] {
+  return models.map((model) => ({
+    ...model,
+    contextWindow:
+      model.contextWindow === undefined ? contextWindowCap : Math.min(model.contextWindow, contextWindowCap),
   }))
+}
+
+async function refreshModels(): Promise<ModelCatalog> {
+  try {
+    const models = await discoverModels()
+    try {
+      await writeSecureJson(cachePath(), { models })
+      return { models: capped(models), source: "runtime" }
+    } catch (error) {
+      return {
+        models: capped(models),
+        source: "runtime",
+        warning: `models were discovered, but the cache could not be updated: ${describeError(error)}`,
+      }
+    }
+  } catch (discoveryError) {
+    try {
+      const cached = await readCache()
+      if (cached) {
+        return {
+          models: capped(cached),
+          source: "cache",
+          warning: `live discovery failed: ${describeError(discoveryError)} — using cached models`,
+        }
+      }
+    } catch (cacheError) {
+      return {
+        models: capped(BUNDLED_MODELS),
+        source: "bundled",
+        warning: `live discovery failed: ${describeError(discoveryError)}; cache failed: ${describeError(cacheError)} — using bundled models`,
+      }
+    }
+    return {
+      models: capped(BUNDLED_MODELS),
+      source: "bundled",
+      warning: `live discovery failed: ${describeError(discoveryError)} — using bundled models`,
+    }
+  }
+}
+
+export async function listModels(refresh: boolean): Promise<ModelCatalog> {
+  if (refresh) return refreshModels()
+  try {
+    const cached = await readCache()
+    if (cached) return { models: capped(cached), source: "cache" }
+  } catch (cacheError) {
+    const refreshed = await refreshModels()
+    if (refreshed.warning) return refreshed
+    return {
+      ...refreshed,
+      warning: `cached catalog failed: ${describeError(cacheError)} — replaced with live models`,
+    }
+  }
+  return refreshModels()
 }
 
 export async function defaultModel(): Promise<string> {
   const override = process.env[appEnvVar("MODEL")]?.trim()
-  if (override) return override
-  return BACKEND_MODEL_IDS[0]!
-}
-
-export async function thinking(model: string): Promise<ThinkingOptions | undefined> {
-  const metadata = await loadMetadata()
-  const options = metadata[model]?.thinking
-  if (options) return { options, default: "medium" }
-  if (!BACKEND_MODEL_IDS.includes(model)) return undefined
-  return {
-    options: model.startsWith("gpt-5.6-")
-      ? ["none", "low", "medium", "high", "xhigh", "max"]
-      : ["none", "low", "medium", "high", "xhigh"],
-    default: "medium",
-  }
+  return override || BUNDLED_MODELS[0]!.id
 }

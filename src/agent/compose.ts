@@ -1,6 +1,7 @@
 import { settings } from "../config/settings"
 import { resolveThinking } from "../config/thinking"
 import type { PermissionMode } from "../permissions/types"
+import { findModel } from "../providers/catalog"
 import { getProvider, listProviders } from "../providers/registry"
 import type { Provider, ThinkingEffort } from "../providers/types"
 import { loadSession } from "../sessions/store"
@@ -36,10 +37,12 @@ export async function createSession(options: SessionOptions = {}): Promise<Sessi
   const model =
     options.model ?? (options.provider === undefined ? settings().model : undefined) ?? (await provider.defaultModel())
   const thinking = await resolveThinking(provider, model)
+  const modelInfo = await findModel(provider, model)
   return {
     session: new AgentSession({
       provider,
       model,
+      modelInputModalities: modelInfo?.inputModalities,
       thinking,
       persist: options.persist,
       interactive: options.interactive,
@@ -112,6 +115,7 @@ export async function resumeSession(session: AgentSession, summary: SessionSumma
   const provider = recorded ?? session.currentProvider
   const model = recorded ? last.model : session.currentModel
   const thinking = await resolveThinking(provider, model, last.thinking)
+  const modelInfo = await findModel(provider, model)
   if (!recorded) {
     notices.push(`provider ${last.provider} is not available — continuing with ${provider.id} · ${model}`)
   }
@@ -119,7 +123,17 @@ export async function resumeSession(session: AgentSession, summary: SessionSumma
     notices.push(`this session was recorded in ${loaded.meta.cwd} — paths may not match ${process.cwd()}`)
   }
 
-  if (!session.resume({ session: loaded, path: summary.path, provider, model, thinking, mode: last.mode })) {
+  if (
+    !session.resume({
+      session: loaded,
+      path: summary.path,
+      provider,
+      model,
+      modelInputModalities: modelInfo?.inputModalities,
+      thinking,
+      mode: last.mode,
+    })
+  ) {
     throw new Error("cannot resume while a turn is running")
   }
   return notices

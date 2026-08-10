@@ -73,12 +73,12 @@ export class Screen {
     )
     this.composer = new Composer(renderer, history, {
       submit: (input) => {
-        if (input.images.length === 0 || this.session.currentProvider.capabilities.imageInput) {
+        if (input.images.length === 0 || this.session.supportsImageInput) {
           return actions.submit(input)
         }
         this.scrollback.append({
           kind: "error",
-          text: `${this.session.currentProvider.name} does not support image input`,
+          text: `${this.session.currentModel} does not support image input`,
         })
         return false
       },
