@@ -1,5 +1,6 @@
 import { asBoolean, asNumber, asString } from "../../lib/json"
 import type { Tool } from "../../tools/types"
+import { expandSnapshotAliases, snapshotEnvironment, snapshotLaunch } from "./environment"
 import { startJob } from "./jobs"
 import { killTree, spawnCommand } from "./process"
 import { sandboxAvailable, sandboxLaunch } from "./sandbox"
@@ -13,6 +14,10 @@ export const COMPOUND_COMMAND = /[;|&\n`<>(){}]/
 
 export function commandOf(args: Record<string, unknown>): string {
   return asString(args.command)?.trim() ?? ""
+}
+
+export function policyCommandOf(args: Record<string, unknown>): string {
+  return expandSnapshotAliases(commandOf(args))
 }
 
 export function sandboxRequested(args: Record<string, unknown>): boolean {
@@ -83,7 +88,7 @@ export const bashTool: Tool = {
   },
   readOnly(args) {
     if (backgroundRequested(args)) return false
-    const command = commandOf(args)
+    const command = policyCommandOf(args)
     if (COMPOUND_COMMAND.test(command)) return false
     return READ_ONLY_COMMAND.test(command)
   },
@@ -91,7 +96,7 @@ export const bashTool: Tool = {
     return sandboxRequested(args)
   },
   permission(args) {
-    const command = commandOf(args)
+    const command = policyCommandOf(args)
     if (COMPOUND_COMMAND.test(command)) return { subject: command }
     const words = command.split(/\s+/)
     if (words.length < 2) return { subject: command, suggestion: `bash(${command})` }
@@ -102,17 +107,19 @@ export const bashTool: Tool = {
     if (!command) return { output: "(no command provided)" }
 
     const sandboxed = sandboxRequested(args)
-    const launch = sandboxed ? sandboxLaunch(command, process.cwd()) : ["bash", "-c", command]
+    const environment = snapshotEnvironment()
+    const shellLaunch = snapshotLaunch(command)
+    const launch = sandboxed ? sandboxLaunch(shellLaunch, process.cwd()) : shellLaunch
 
     if (backgroundRequested(args)) {
-      const job = startJob(command, spawnCommand(launch))
+      const job = startJob(command, spawnCommand(launch, environment))
       return {
         output: `Started background job ${job.id}${sandboxed ? " (sandboxed)" : ""}. Read its output with bash_output and stop it with bash_kill.`,
       }
     }
 
     const timeoutSeconds = timeoutSecondsOf(args)
-    const proc = spawnCommand(launch)
+    const proc = spawnCommand(launch, environment)
 
     let output = ""
     const collect = (chunk: Buffer): void => {
