@@ -1,4 +1,11 @@
-import type { AssistantMessageItem, ConversationItem, ProviderReplay, ReasoningItem, ToolCallItem } from "./types"
+import type {
+  AssistantMessageItem,
+  ConversationItem,
+  ProviderReplay,
+  ReasoningItem,
+  ToolCallItem,
+  UserMessageItem,
+} from "./types"
 
 export interface ConversationTarget {
   provider: string
@@ -26,9 +33,14 @@ function toolCall(item: ToolCallItem, target: ConversationTarget): ToolCallItem 
   return { type: "tool_call", callId: item.callId, name: item.name, args: item.args }
 }
 
+function userMessage(item: UserMessageItem): UserMessageItem {
+  return { type: "user_message", text: item.modelText ?? item.text, images: item.images }
+}
+
 function portable(item: ConversationItem, target: ConversationTarget): ConversationItem | undefined {
   switch (item.type) {
     case "user_message":
+      return userMessage(item)
     case "tool_result":
       return item
     case "assistant_message":

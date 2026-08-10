@@ -101,6 +101,36 @@ Additional context: $ARGUMENTS
 
 After startup, type `/` in the TUI to see discovered commands in the command palette. Selecting one submits the expanded prompt through the same session path as a typed message.
 
+## Skills
+
+Tack discovers reusable skill packages from four directories, in increasing priority:
+
+| Scope   | Path                                    |
+| ------- | --------------------------------------- |
+| User    | `~/.agents/skills/**/SKILL.md`          |
+| User    | `$TACK_HOME/skills/**/SKILL.md`         |
+| Project | `<git-root>/.agents/skills/**/SKILL.md` |
+| Project | `<git-root>/.tack/skills/**/SKILL.md`   |
+
+When `TACK_HOME` is unset, its user skill directory is `~/.tack/skills`. A later package replaces an earlier package with the same skill name. Project skill directories are read only after workspace trust is established.
+
+Every package is a directory named after its skill and containing a `SKILL.md` entry file. The entry file requires YAML frontmatter with a lower-case, hyphen-separated `name` and a `description`, followed by non-empty instructions:
+
+```md
+---
+name: review-changes
+description: Review the current workspace changes for correctness
+---
+
+Inspect the current diff, validate every finding, and report only actionable issues.
+```
+
+Only skill names and descriptions enter the system prompt. The model loads full instructions on demand with the read-only `skill` tool, which can also read referenced text files inside that package without allowing paths to escape the package directory. `SKILL.md` files are limited to 64 KiB and supporting files read through the tool are limited to 50,000 bytes.
+
+Type `$` anywhere in the TUI composer to open skill completion. Continue typing to filter, then press Tab, Right, or Enter to replace only the skill reference at the cursor. Known `$skill-name` references are highlighted both while editing and in the submitted user message.
+
+A prompt beginning with `$skill-name` explicitly invokes that skill. Tack keeps the compact original prompt visible in the conversation while sending the full skill instructions and the remaining user input to the model. A `$skill-name` reference later in a prompt remains ordinary user text, matching the behavior of other inline references. Skills do not register slash commands or appear in `/` completion.
+
 ## Built-in plugin configuration
 
 ### `permissions`

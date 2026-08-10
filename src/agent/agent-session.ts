@@ -18,11 +18,13 @@ import type {
   ThinkingEffort,
   ToolCallItem,
   UserInput,
+  UserMessageItem,
   Usage,
 } from "../providers/types"
 import { SessionRecorder } from "../sessions/recorder"
 import { normalizeSessionTitle, titleFromInput } from "../sessions/title"
 import type { LoadedSession, SessionMeta } from "../sessions/types"
+import { expandSkillInvocation } from "../skills/invoke"
 import { getTool, listTools } from "../tools/registry"
 import { boundToolOutput, TOOL_FAILED_PREFIX, TOOL_OUTPUT_UNSAVED_PREFIX, toolOutputDirectory } from "../tools/output"
 import { isInteractiveTool, MAX_ELICITATION_ANSWER_LENGTH } from "../tools/types"
@@ -355,7 +357,7 @@ export class AgentSession {
   private startTurn(inputs: UserInput[]): void {
     for (const input of inputs) {
       this.ensureTitle(input)
-      this.pushItem({ type: "user_message", ...input })
+      this.pushItem(this.userMessage(input))
       this.emit({ type: "user_message", text: input.text, imageCount: input.images.length, sentAt: Date.now() })
     }
     const controller = new AbortController()
@@ -394,7 +396,7 @@ export class AgentSession {
     if (this.queued.length === 0) return false
     for (const input of this.queued.splice(0)) {
       this.ensureTitle(input)
-      this.pushItem({ type: "user_message", ...input })
+      this.pushItem(this.userMessage(input))
       this.emit({ type: "user_message", text: input.text, imageCount: input.images.length, sentAt: Date.now() })
     }
     this.emit({ type: "queue_changed", entries: [] })
@@ -405,6 +407,11 @@ export class AgentSession {
     if (this.title) return
     const title = titleFromInput(input.text, input.images.length)
     if (title) this.setTitle(title)
+  }
+
+  private userMessage(input: UserInput): UserMessageItem {
+    const modelText = expandSkillInvocation(input.text)
+    return modelText ? { type: "user_message", ...input, modelText } : { type: "user_message", ...input }
   }
 
   private flushQueue(): void {

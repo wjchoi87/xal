@@ -188,7 +188,10 @@ function parseConversationItem(raw: unknown): ConversationItem | undefined {
     case "user_message": {
       const text = asString(raw.text)
       const images = parseImages(raw.images)
-      return text === undefined || !images ? undefined : { type: "user_message", text, images }
+      if (text === undefined || !images) return undefined
+      if (raw.modelText === undefined) return { type: "user_message", text, images }
+      const modelText = asString(raw.modelText)
+      return modelText === undefined ? undefined : { type: "user_message", text, images, modelText }
     }
     case "assistant_message": {
       const text = asString(raw.text)

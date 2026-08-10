@@ -11,6 +11,7 @@ import prompt from "./prompt/plugin"
 import promptCommands from "./prompt-commands/plugin"
 import projectInstructions from "./project-instructions/plugin"
 import search from "./search/plugin"
+import skills from "./skills/plugin"
 import tasks from "./tasks/plugin"
 import tui from "./tui/plugin"
 
@@ -23,6 +24,7 @@ export const builtinPlugins: Plugin[] = [
   bash,
   files,
   search,
+  skills,
   tasks,
   deepseek,
   openaiChatgpt,

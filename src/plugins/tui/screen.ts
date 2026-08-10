@@ -8,8 +8,8 @@ import type { PermissionMode } from "../../permissions/types"
 import type { ThinkingEffort, UserInput } from "../../providers/types"
 import type { ElicitationQuestion } from "../../tools/types"
 import { BackgroundTasks } from "./components/background-tasks"
-import { CommandPalette, PALETTE_CHROME_ROWS } from "./components/command-palette"
 import { Composer } from "./components/composer"
+import { CompletionPalette, PALETTE_CHROME_ROWS } from "./components/completion-palette"
 import { ElicitationPopover, type ElicitationPopoverActions } from "./components/elicitation-popover"
 import { LiveTools } from "./components/live-tools"
 import { Picker } from "./components/picker"
@@ -38,7 +38,7 @@ export class Screen {
   readonly elicitation: ElicitationPopover
   readonly secret: SecretInput
   readonly picker: Picker
-  readonly palette: CommandPalette
+  readonly palette: CompletionPalette
   readonly composer: Composer
   readonly statusBar: StatusBar
   readonly tasks: BackgroundTasks
@@ -63,11 +63,12 @@ export class Screen {
     this.elicitation = new ElicitationPopover(renderer, actions, () => this.syncFooter())
     this.secret = new SecretInput(renderer, () => this.syncFooter())
     this.picker = new Picker(renderer, () => this.syncFooter())
-    this.palette = new CommandPalette(
+    this.palette = new CompletionPalette(
       renderer,
       {
-        complete: (line) => this.composer.setValue(line),
-        run: (line) => this.runCommand(line),
+        completeCommand: (line) => this.composer.setValue(line),
+        completeSkill: (query, name, trailingSpace) => this.composer.completeSkill(query, name, trailingSpace),
+        runCommand: (line) => this.runCommand(line),
       },
       () => this.syncFooter(),
     )
@@ -84,9 +85,9 @@ export class Screen {
       },
       run: (line) => this.runCommand(line),
       error: (message) => this.scrollback.append({ kind: "error", text: message }),
-      change: (value) => {
+      change: (value, cursor) => {
         this.placePalette()
-        this.palette.update(value, this.paletteLimit())
+        this.palette.update(value, cursor, this.paletteLimit())
       },
       resize: () => this.syncFooter(),
     })

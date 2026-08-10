@@ -13,6 +13,7 @@ import { appInfo } from "../../../app-info"
 import { describeError } from "../../../lib/error"
 import { asNumber, asString, isRecord } from "../../../lib/json"
 import type { ImageInput, UserInput } from "../../../providers/types"
+import { findSkillReferences, type SkillQuery } from "../../../skills/references"
 import { label, row } from "../lib/renderables"
 import type { MessageHistory } from "../message-history"
 import { COLORS, resolveColor } from "../theme/colors"
@@ -24,7 +25,7 @@ interface ComposerActions {
   submit(input: UserInput): boolean
   run(line: string): void
   error(message: string): void
-  change(value: string): void
+  change(value: string, cursor: number): void
   resize(): void
 }
 
@@ -53,6 +54,11 @@ function isPastedImage(value: unknown): value is PastedImage {
   )
 }
 
+function editorOffset(text: string, index: number): number {
+  const prefix = text.slice(0, index)
+  return Bun.stringWidth(prefix) + (prefix.match(/\n/g)?.length ?? 0) + (prefix.match(/\t/g)?.length ?? 0) * 2
+}
+
 async function linuxClipboardImage(): Promise<Bun.Image | undefined> {
   for (const command of [
     ["wl-paste", "--no-newline", "--type", "image/png"],
@@ -73,8 +79,10 @@ export class Composer {
   private readonly input: TextareaRenderable
   private readonly pastedContentType: number
   private readonly pastedImageType: number
+  private readonly skillHighlightType: number
   private readonly syntaxStyle: SyntaxStyle
   private readonly imageStyleId: number
+  private readonly skillStyleId: number
   private currentRows = COMPOSER_ROWS
   private readingImage = false
 
@@ -99,8 +107,12 @@ export class Composer {
     this.view.add(label(ctx, { content: "❯", width: 2, attributes: TextAttributes.BOLD, color: COLORS.accent }))
     this.syntaxStyle = SyntaxStyle.create()
     this.imageStyleId = this.syntaxStyle.registerStyle("composer-image", { fg: resolveColor(COLORS.accent) })
+    this.skillStyleId = this.syntaxStyle.registerStyle("composer-skill", {
+      fg: resolveColor(COLORS.accent),
+      bold: true,
+    })
     this.input = new TextareaRenderable(ctx, {
-      placeholder: `Ask ${appInfo.name} anything · / for commands`,
+      placeholder: `Ask ${appInfo.name} anything · / commands · $ skills`,
       height: 1,
       flexGrow: 1,
       flexShrink: 1,
@@ -118,6 +130,7 @@ export class Composer {
         { name: "j", ctrl: true, action: "newline" },
       ],
       onContentChange: () => this.change(),
+      onCursorChange: () => this.notifyCompletion(),
       onSubmit: () => this.submit(),
       onPaste: (event) => this.paste(event),
       syntaxStyle: this.syntaxStyle,
@@ -125,6 +138,7 @@ export class Composer {
     })
     this.pastedContentType = this.input.extmarks.registerType("composer-pasted-content")
     this.pastedImageType = this.input.extmarks.registerType("composer-pasted-image")
+    this.skillHighlightType = this.input.extmarks.registerType("composer-skill-highlight")
     this.view.add(this.input)
     this.view.on(RenderableEvents.DESTROYED, () => this.syntaxStyle.destroy())
   }
@@ -140,6 +154,16 @@ export class Composer {
   setValue(text: string): void {
     this.history.reset()
     this.replaceInput({ text, images: [] })
+  }
+
+  completeSkill(query: SkillQuery, name: string, trailingSpace: boolean): void {
+    const text = this.input.plainText
+    if (!text.slice(query.start, query.end).startsWith("$")) return
+    const next = text.slice(query.end).match(/^./u)?.[0]
+    const suffix = trailingSpace && (next === undefined || !/\s/.test(next)) ? " " : ""
+    this.input.setSelection(editorOffset(text, query.start), editorOffset(text, query.end))
+    this.input.deleteSelection()
+    this.input.insertText(`$${name}${suffix}`)
   }
 
   clear(): boolean {
@@ -239,8 +263,29 @@ export class Composer {
   }
 
   private change(): void {
+    this.syncSkillHighlights()
     this.reflow()
-    this.actions.change(this.input.plainText)
+    this.notifyCompletion()
+  }
+
+  private notifyCompletion(): void {
+    const cursor = this.input.getTextRange(0, this.input.cursorOffset).length
+    this.actions.change(this.input.plainText, cursor)
+  }
+
+  private syncSkillHighlights(): void {
+    for (const mark of this.input.extmarks.getAllForTypeId(this.skillHighlightType)) {
+      this.input.extmarks.delete(mark.id)
+    }
+    const text = this.input.plainText
+    for (const reference of findSkillReferences(text)) {
+      this.input.extmarks.create({
+        start: editorOffset(text, reference.start),
+        end: editorOffset(text, reference.end),
+        styleId: this.skillStyleId,
+        typeId: this.skillHighlightType,
+      })
+    }
   }
 
   private paste(event: PasteEvent): void {

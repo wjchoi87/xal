@@ -18,6 +18,7 @@ export interface UserInput {
 
 export interface UserMessageItem extends UserInput {
   type: "user_message"
+  modelText?: string
 }
 
 export interface AssistantMessageItem {

@@ -45,7 +45,7 @@ function replayTokens(replay: ProviderReplay | undefined): number {
 function itemTokens(item: HistoryItem): number {
   switch (item.type) {
     case "user_message":
-      return textTokens(item.text) + item.images.length * IMAGE_TOKENS
+      return textTokens(item.modelText ?? item.text) + item.images.length * IMAGE_TOKENS
     case "assistant_message":
       return Math.max(textTokens(item.text), replayTokens(item.replay))
     case "reasoning":

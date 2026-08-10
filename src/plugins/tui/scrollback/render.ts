@@ -6,6 +6,7 @@ import { getToolRenderer } from "../../../ui/extension"
 import { commandLabel, settledStatus, type ToolOutcome } from "../components/tool-status"
 import { formatTimestamp, formatTokens } from "../lib/format"
 import { column, detailPanel, label, paragraph, row } from "../lib/renderables"
+import { highlightSkillReferences } from "../lib/skill-text"
 import { renderMarkdown, type RenderedMarkdown } from "../markdown/render"
 import { MAX_OUTPUT_ROWS, renderToolOutput } from "../output/render"
 import { summarizeToolOutput, toolOutputFailed } from "../output/summary"
@@ -76,7 +77,7 @@ function bubble(ctx: RenderContext, block: UserBlock): Renderable {
   const images = Array.from({ length: block.imageCount }, (_, index) => `[Image #${index + 1}]`).join(" ")
   box.add(
     paragraph(ctx, {
-      content: [block.text, images].filter(Boolean).join("\n"),
+      content: highlightSkillReferences([block.text, images].filter(Boolean).join("\n")),
       flexGrow: 1,
       background: COLORS.dim,
     }),
