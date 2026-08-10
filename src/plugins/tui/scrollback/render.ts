@@ -148,6 +148,7 @@ const denialSummary: Record<DenialCause, string> = {
   user: "denied",
   policy: "blocked",
   plan: "plan mode",
+  hook: "hook",
 }
 
 function tool(ctx: RenderContext, block: ToolBlock, expanded: boolean, grouped: boolean): Renderable {

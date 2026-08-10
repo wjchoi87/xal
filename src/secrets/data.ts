@@ -157,6 +157,16 @@ export function redactAgentEvent(event: AgentEvent): AgentEvent {
       return { ...event, provider: redactText(event.provider), model: redactText(event.model) }
     case "user_message":
       return { ...event, text: redactText(event.text) }
+    case "tool_call_updated":
+      return {
+        ...event,
+        callId: redactText(event.callId),
+        tool: redactText(event.tool),
+        args: redactJsonObject(event.args),
+      }
+    case "hook_started":
+    case "hook_finished":
+      return { ...event, hook: redactText(event.hook) }
     case "queue_changed":
       return {
         ...event,

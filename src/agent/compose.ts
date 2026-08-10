@@ -91,6 +91,9 @@ function lastState(loaded: LoadedSession): {
       case "session_title_changed":
       case "state_changed":
       case "user_message":
+      case "tool_call_updated":
+      case "hook_started":
+      case "hook_finished":
       case "queue_changed":
       case "queue_flushed":
       case "text_delta":

@@ -56,6 +56,9 @@ export function runAgentTurn(
         case "model_changed":
         case "thinking_changed":
         case "user_message":
+        case "tool_call_updated":
+        case "hook_started":
+        case "hook_finished":
         case "queue_changed":
         case "queue_flushed":
         case "text_delta":

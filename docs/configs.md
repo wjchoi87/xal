@@ -48,6 +48,47 @@ The referenced directory must contain a `plugin.ts` whose default export has a `
 
 Plugins can contribute slash commands with `ctx.registerCommand`. Commands known synchronously belong in `register`; commands discovered from files or services may be added during `bootstrap`, before interactive input is released.
 
+### Hooks
+
+Plugins register trusted in-process lifecycle hooks with `ctx.registerHook`. Hooks run in built-in/plugin configuration order, and multiple hooks for the same event run sequentially. A replacement from one hook becomes the input to the next hook.
+
+| Handler      | Input                                       | Allowed result                                              |
+| ------------ | ------------------------------------------- | ----------------------------------------------------------- |
+| `prompt`     | Model-facing prompt text and image count    | Replace the text or reject the prompt                       |
+| `beforeTool` | Tool name, call ID, and JSON arguments      | Replace the arguments or block the call                     |
+| `afterTool`  | Tool details and its model-facing output    | Replace the output                                          |
+| `turnEnd`    | Final output and token usage when available | No result; use it for lifecycle automation or observability |
+
+Every handler also receives a context containing an abort signal and the session ID, kind, working directory, provider, model, and permission mode. Prompt changes affect what the model sees while the TUI keeps the user's original text. Tool argument changes happen before scheduling and permission evaluation, so Tack authorizes and records the effective action. Post-tool hooks also run for failed or interrupted tool executions, but not for calls blocked before execution.
+
+Hook failures stop prompt, pre-tool, and turn-completion processing. A post-tool failure becomes a failed tool result that warns the model the tool may already have changed state. Hook inputs and code run inside Tack's process, so only load hooks you trust. Returned text and arguments pass through secret redaction before they reach the model, session storage, or TUI.
+
+This plugin marks prompts and read results, and blocks an exact `git push` command:
+
+```ts
+export default {
+  name: "visual-hooks",
+  register(ctx) {
+    ctx.registerHook({
+      name: "marker",
+      prompt(input) {
+        return { type: "replace", text: `${input.text}\n\nInclude the exact marker HOOKS_ACTIVE in the answer.` }
+      },
+      beforeTool(input) {
+        if (input.tool !== "bash" || input.args.command !== "git push") return
+        return { type: "block", reason: "Publishing is disabled by the visual hook." }
+      },
+      afterTool(input) {
+        if (input.tool !== "read") return
+        return { type: "replace", output: `[visual-hooks]\n${input.output}` }
+      },
+    })
+  },
+}
+```
+
+Put the file at `plugin.ts` inside a plugin directory and add that directory's absolute path to `plugins`. In the TUI, `/hooks` lists every registered hook and the events it handles. Each completed primary-session hook invocation appears in the transcript with its action and elapsed time; sub-agent hook invocations appear in that agent's job output.
+
 ### Thinking
 
 Thinking preferences use this shape:

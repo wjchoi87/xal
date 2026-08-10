@@ -1,12 +1,14 @@
 import type { JsonObject } from "../lib/json"
+import type { HookAction, HookEvent } from "../hooks/types"
 import type { PermissionMode } from "../permissions/types"
 import type { ThinkingEffort, Usage, UserInput } from "../providers/types"
 import type { ElicitationQuestion } from "../tools/types"
 import type { ToolEvent } from "../tools/types"
 
-export type AgentState = "idle" | "streaming" | "awaiting_approval" | "awaiting_input" | "running_tool" | "compacting"
+export type AgentState =
+  "idle" | "streaming" | "awaiting_approval" | "awaiting_input" | "running_hook" | "running_tool" | "compacting"
 
-export type DenialCause = "user" | "policy" | "plan"
+export type DenialCause = "user" | "policy" | "plan" | "hook"
 
 export interface QueuedEntry {
   text: string
@@ -35,6 +37,9 @@ export type AgentEvent =
   | { type: "model_changed"; provider: string; model: string }
   | { type: "thinking_changed"; thinking?: ThinkingEffort }
   | { type: "user_message"; text: string; imageCount: number; sentAt: number }
+  | { type: "tool_call_updated"; callId: string; tool: string; args: JsonObject }
+  | { type: "hook_started"; hook: string; event: HookEvent }
+  | { type: "hook_finished"; hook: string; event: HookEvent; action: HookAction; elapsedMs: number }
   | { type: "queue_changed"; entries: QueuedEntry[] }
   | { type: "queue_flushed"; inputs: UserInput[] }
   | { type: "text_delta"; text: string }

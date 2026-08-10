@@ -83,7 +83,21 @@ export async function loadSession(path: string): Promise<LoadedSession | undefin
     if (!record) continue
     if (record.type === "meta") meta = record.meta
     else if (record.type === "item") items.push(record.item)
-    else events.push(record.event)
+    else {
+      events.push(record.event)
+      if (record.event.type !== "tool_call_updated") continue
+      for (let index = items.length - 1; index >= 0; index--) {
+        const item = items[index]!
+        if (item.type !== "tool_call" || item.callId !== record.event.callId) continue
+        items[index] = {
+          type: "tool_call",
+          callId: record.event.callId,
+          name: record.event.tool,
+          args: record.event.args,
+        }
+        break
+      }
+    }
   }
 
   return meta ? { meta, items, events, title: titleFromEvents(events) } : undefined

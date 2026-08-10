@@ -5,6 +5,7 @@ import { agentHome } from "../config/paths"
 import type { Settings } from "../config/settings"
 import { events, type PluginFailure, type PluginStatus } from "../events"
 import { describeError } from "../lib/error"
+import { clearHooks, registerHook, removeHooks } from "../hooks/registry"
 import { contributeRules } from "../permissions/rules"
 import { registerPolicyRule } from "../permissions/service"
 import { registerProvider } from "../providers/registry"
@@ -19,13 +20,15 @@ import type { Plugin, PluginContext } from "./types"
 interface RegisteredPlugin {
   plugin: Plugin
   ctx: PluginContext
+  pluginOrder: number
 }
 
 let status: PluginStatus = { total: 0, failures: [] }
 let registered: RegisteredPlugin[] = []
 let bootstrapRun: Promise<PluginStatus> | undefined
 
-function contextFor(plugin: Plugin, settings: Settings): PluginContext {
+function contextFor(plugin: Plugin, settings: Settings, pluginOrder: number): PluginContext {
+  let hookOrder = 0
   return {
     config: settings.pluginConfig[plugin.name] ?? {},
     events,
@@ -33,6 +36,7 @@ function contextFor(plugin: Plugin, settings: Settings): PluginContext {
     registerProvider,
     registerCli,
     registerCommand,
+    registerHook: (hook) => registerHook(plugin.name, pluginOrder, hookOrder++, hook),
     registerPrompt,
     registerPolicyRule,
     registerPermissionRules: contributeRules,
@@ -42,30 +46,33 @@ function contextFor(plugin: Plugin, settings: Settings): PluginContext {
   }
 }
 
-function registerPlugin(plugin: Plugin, settings: Settings): RegisteredPlugin {
-  const ctx = contextFor(plugin, settings)
+function registerPlugin(plugin: Plugin, settings: Settings, pluginOrder: number): RegisteredPlugin {
+  const ctx = contextFor(plugin, settings, pluginOrder)
   plugin.register(ctx)
-  return { plugin, ctx }
+  return { plugin, ctx, pluginOrder }
 }
 
 export async function registerPlugins(settings: Settings): Promise<PluginStatus> {
   const failures: PluginFailure[] = []
   registered = []
   bootstrapRun = undefined
+  clearHooks()
 
-  for (const plugin of builtinPlugins) {
+  for (const [pluginOrder, plugin] of builtinPlugins.entries()) {
     try {
-      registered.push(registerPlugin(plugin, settings))
+      registered.push(registerPlugin(plugin, settings, pluginOrder))
     } catch (error) {
+      removeHooks(pluginOrder)
       failures.push({ plugin: plugin.name, phase: "register", reason: describeError(error) })
     }
   }
 
-  for (const spec of settings.plugins) {
+  for (const [index, spec] of settings.plugins.entries()) {
     try {
       const plugin = await importPlugin(spec, agentHome())
-      registered.push(registerPlugin(plugin, settings))
+      registered.push(registerPlugin(plugin, settings, builtinPlugins.length + index))
     } catch (error) {
+      removeHooks(builtinPlugins.length + index)
       failures.push({ plugin: spec, phase: "register", reason: describeError(error) })
     }
   }
@@ -83,7 +90,9 @@ async function runBootstrap(): Promise<PluginStatus> {
   )
   const failures = outcomes.flatMap((outcome, index): PluginFailure[] => {
     if (outcome.status === "fulfilled") return []
-    return [{ plugin: entries[index]!.plugin.name, phase: "bootstrap", reason: describeError(outcome.reason) }]
+    const entry = entries[index]!
+    removeHooks(entry.pluginOrder)
+    return [{ plugin: entry.plugin.name, phase: "bootstrap", reason: describeError(outcome.reason) }]
   })
   status = { total: status.total, failures: [...status.failures, ...failures] }
   events.emitRetained({ type: "plugin_bootstrap_finished", status })

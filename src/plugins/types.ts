@@ -2,6 +2,7 @@ import type { PromptSection } from "../agent/prompt"
 import type { Cli } from "../cli/types"
 import type { Command } from "../commands/types"
 import type { EventService } from "../events"
+import type { Hook } from "../hooks/types"
 import type { PermissionRules, PolicyRule } from "../permissions/types"
 import type { Provider } from "../providers/types"
 import type { RegisteredTool } from "../tools/types"
@@ -21,6 +22,7 @@ export interface PluginContext {
   registerProvider(provider: Provider): void
   registerCli(cli: Cli, parent?: string): void
   registerCommand(command: Command): void
+  registerHook(hook: Hook): void
   registerPrompt(section: PromptSection): void
   registerPolicyRule(rule: PolicyRule): void
   registerPermissionRules(rules: PermissionRules): void

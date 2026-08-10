@@ -68,6 +68,16 @@ export class AgentEventController {
       case "user_message":
         scrollback.append({ kind: "user", text: event.text, imageCount: event.imageCount, sentAt: event.sentAt })
         break
+      case "tool_call_updated":
+        break
+      case "hook_started":
+        break
+      case "hook_finished":
+        scrollback.append({
+          kind: "info",
+          text: `hook: ${event.hook} · ${event.event} · ${event.action} · ${event.elapsedMs}ms`,
+        })
+        break
       case "queue_changed":
         this.screen.queued.set(event.entries)
         break

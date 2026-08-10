@@ -111,6 +111,11 @@ function activity(event: AgentEvent, child: AgentSession, state: ActivityState, 
         backgroundTasksChanged()
       }
       break
+    case "hook_finished":
+      state.activity = `Hook ${event.hook}: ${event.event} ${event.action}`
+      record(`\n> hook: ${event.hook} · ${event.event} · ${event.action} · ${event.elapsedMs}ms\n`)
+      backgroundTasksChanged()
+      break
     case "turn_ended":
       state.activity = "Report ready"
       state.usage = event.usage
@@ -125,6 +130,8 @@ function activity(event: AgentEvent, child: AgentSession, state: ActivityState, 
     case "model_changed":
     case "thinking_changed":
     case "user_message":
+    case "tool_call_updated":
+    case "hook_started":
     case "queue_changed":
     case "queue_flushed":
     case "reasoning_summary_delta":

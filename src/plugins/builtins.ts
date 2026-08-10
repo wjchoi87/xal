@@ -5,6 +5,7 @@ import codeReview from "./code-review/plugin"
 import deepseek from "./deepseek/plugin"
 import files from "./files/plugin"
 import headless from "./headless/plugin"
+import hooks from "./hooks/plugin"
 import openaiChatgpt from "./openai-chatgpt/plugin"
 import permissions from "./permissions/plugin"
 import plan from "./plan/plugin"
@@ -24,6 +25,7 @@ export const builtinPlugins: Plugin[] = [
   permissions,
   redaction,
   prompt,
+  hooks,
   plan,
   codeReview,
   promptCommands,

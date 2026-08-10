@@ -115,7 +115,12 @@ export class StatusBar {
   }
 
   private get busy(): boolean {
-    return this.state === "streaming" || this.state === "running_tool" || this.state === "compacting"
+    return (
+      this.state === "streaming" ||
+      this.state === "running_hook" ||
+      this.state === "running_tool" ||
+      this.state === "compacting"
+    )
   }
 
   resetUsage(): void {
@@ -167,7 +172,8 @@ export class StatusBar {
     }
     if (this.state !== "idle") {
       const hint = this.view.width > WIDE ? " · Esc interrupt" : ""
-      const activity = this.state === "compacting" ? "Compacting context" : "Working"
+      const activity =
+        this.state === "compacting" ? "Compacting context" : this.state === "running_hook" ? "Running hooks" : "Working"
       return new StyledText([paint(COLORS.agent, this.spinner.glyph), muted(` ${activity}${hint}`)])
     }
     return new StyledText([muted("")])

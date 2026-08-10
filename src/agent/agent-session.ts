@@ -4,6 +4,15 @@ import { setTimeout as sleep } from "node:timers/promises"
 import { appInfo } from "../app-info"
 import { projectSessionsDir } from "../config/paths"
 import { describeError } from "../lib/error"
+import type { JsonObject } from "../lib/json"
+import {
+  runAfterToolHooks,
+  runBeforeToolHooks,
+  runPromptHooks,
+  runTurnEndHooks,
+  type HookReporter,
+} from "../hooks/registry"
+import type { HookContext } from "../hooks/types"
 import { rememberRule } from "../permissions/rules"
 import { evaluatePolicy } from "../permissions/service"
 import type { PermissionMode, PermissionScope } from "../permissions/types"
@@ -119,8 +128,10 @@ interface TurnUsage {
 
 interface ToolCallBatch {
   concurrency: ToolConcurrency
-  calls: ToolCallItem[]
+  entries: ToolCallEntry[]
 }
+
+type ToolCallEntry = { type: "call"; call: ToolCallItem } | { type: "outcome"; outcome: ToolCallOutcome }
 
 interface PreparedToolCall {
   call: ToolCallItem
@@ -144,6 +155,7 @@ const denialMessages: Record<DenialCause, string> = {
   user: "User denied permission to run this action.",
   policy: "Blocked by the active permission rules.",
   plan: "Plan mode is active, so this action was not run. Finish investigating and present a plan instead of retrying.",
+  hook: "Blocked by a lifecycle hook.",
 }
 
 const subagentPlanDenial =
@@ -200,6 +212,15 @@ export class AgentSession {
   private queued: UserInput[] = []
   private turnActive = false
   private promoteOnAbort = false
+  private readonly hookReporter: HookReporter = {
+    started: (hook, event) => {
+      this.setState("running_hook")
+      this.emit({ type: "hook_started", hook, event })
+    },
+    finished: (hook, event, action, elapsedMs) => {
+      this.emit({ type: "hook_finished", hook, event, action, elapsedMs })
+    },
+  }
 
   constructor(deps: AgentSessionDeps) {
     this.kind = deps.kind ?? "primary"
@@ -423,11 +444,6 @@ export class AgentSession {
 
   private startTurn(inputs: UserInput[]): void {
     this.outputContract?.reset()
-    for (const input of inputs) {
-      this.ensureTitle(input)
-      this.pushItem(this.userMessage(input))
-      this.emit({ type: "user_message", text: input.text, imageCount: input.images.length, sentAt: Date.now() })
-    }
     const controller = new AbortController()
     const provider = this.provider
     const model = this.model
@@ -437,8 +453,13 @@ export class AgentSession {
     this.promoteOnAbort = false
     this.setState("streaming")
     let errored = false
-    void this.runTurn(controller.signal, provider, model, thinking)
+    void this.acceptInputs(inputs, controller.signal)
+      .then(() => this.runTurn(controller.signal, provider, model, thinking))
       .catch((error) => {
+        if (isAbortError(error) || controller.signal.aborted) {
+          this.emit({ type: "turn_interrupted" })
+          return
+        }
         errored = true
         this.emit({ type: "turn_failed", message: describeError(error) })
       })
@@ -460,15 +481,42 @@ export class AgentSession {
     return this.queued.map((input) => ({ text: input.text, imageCount: input.images.length }))
   }
 
-  private drainQueue(): boolean {
+  private async drainQueue(signal: AbortSignal): Promise<boolean> {
     if (this.queued.length === 0) return false
-    for (const input of this.queued.splice(0)) {
-      this.ensureTitle(input)
-      this.pushItem(this.userMessage(input))
-      this.emit({ type: "user_message", text: input.text, imageCount: input.images.length, sentAt: Date.now() })
-    }
+    const inputs = this.queued.splice(0)
     this.emit({ type: "queue_changed", entries: [] })
+    await this.acceptInputs(inputs, signal)
     return true
+  }
+
+  private async acceptInputs(inputs: UserInput[], signal: AbortSignal): Promise<void> {
+    for (const [index, input] of inputs.entries()) {
+      try {
+        await this.acceptInput(input, signal)
+      } catch (error) {
+        const remaining = inputs.slice(index + 1)
+        if (remaining.length > 0) {
+          this.queued.unshift(...remaining)
+          this.emit({ type: "queue_changed", entries: this.queueEntries() })
+        }
+        throw error
+      }
+    }
+  }
+
+  private async acceptInput(input: UserInput, signal: AbortSignal): Promise<void> {
+    this.ensureTitle(input)
+    this.emit({ type: "user_message", text: input.text, imageCount: input.images.length, sentAt: Date.now() })
+    const expanded = redactText(expandSkillInvocation(input.text) ?? input.text)
+    const outcome = await runPromptHooks(
+      { text: expanded, imageCount: input.images.length },
+      this.hookContext(signal),
+      this.hookReporter,
+    )
+    if (outcome.type === "blocked") {
+      throw new Error(`prompt rejected by hook ${outcome.hook}: ${redactText(outcome.reason)}`)
+    }
+    this.pushItem(this.userMessage(input, redactText(outcome.text)))
   }
 
   private ensureTitle(input: UserInput): void {
@@ -477,11 +525,9 @@ export class AgentSession {
     if (title) this.setTitle(title)
   }
 
-  private userMessage(input: UserInput): UserMessageItem {
-    const modelText = expandSkillInvocation(input.text)
-    return modelText
-      ? { type: "user_message", ...input, modelText: redactText(modelText) }
-      : { type: "user_message", ...input }
+  private userMessage(input: UserInput, modelText: string): UserMessageItem {
+    if (modelText === input.text) return { type: "user_message", ...input }
+    return { type: "user_message", ...input, modelText }
   }
 
   private flushQueue(): void {
@@ -598,6 +644,20 @@ export class AgentSession {
     const contract = this.outputContract
     if (!contract) return tools
     return [...tools.filter((tool) => tool.name !== contract.tool.name), contract.tool]
+  }
+
+  private hookContext(signal: AbortSignal): HookContext {
+    return {
+      session: {
+        id: this.sessionId,
+        kind: this.kind,
+        cwd: this.cwd,
+        provider: this.provider.id,
+        model: this.model,
+        mode: this.mode,
+      },
+      signal,
+    }
   }
 
   private availableTool(name: string): RegisteredTool | undefined {
@@ -748,7 +808,7 @@ export class AgentSession {
         this.emit({ type: "turn_interrupted" })
         return
       }
-      if (this.drainQueue()) toolLoops.reset()
+      if (await this.drainQueue(signal)) toolLoops.reset()
 
       this.setState("streaming")
       const items = await this.streamRound(signal, provider, model, thinking, usage)
@@ -766,36 +826,43 @@ export class AgentSession {
           this.pushItem({ type: "user_message", text: correction, images: [] })
           continue
         }
-        this.emit({ type: "turn_ended", usage: usage.turn, context: usage.context })
+        const final = items.findLast((item) => item.type === "assistant_message")
+        await this.endTurn(usage, final?.type === "assistant_message" ? final.text : undefined, signal)
         return
       }
 
       let loopError: Error | undefined
-      const batches = this.toolCallBatches(toolCalls)
-      for (const [index, batch] of batches.entries()) {
-        if (loopError) {
-          for (const call of batch.calls) {
-            this.finishSkippedToolCall(call, "Not run because a repeated tool loop stopped the turn.")
-          }
+      let sharedEntries: ToolCallEntry[] = []
+      for (const [index, call] of toolCalls.entries()) {
+        const entry = await this.applyBeforeToolHook(call, signal)
+        if (this.toolCallConcurrency(entry) === "shared") {
+          sharedEntries.push(entry)
           continue
         }
-        loopError = await this.runToolCallBatch(batch, signal, toolLoops)
-        if (!this.outputContract?.output && !this.outputContract?.exhausted) continue
-        for (const remaining of batches.slice(index + 1)) {
-          for (const call of remaining.calls) {
-            this.finishSkippedToolCall(call, "Not run because structured output ended the turn.")
+
+        if (sharedEntries.length > 0) {
+          loopError = await this.runToolCallBatch({ concurrency: "shared", entries: sharedEntries }, signal, toolLoops)
+          sharedEntries = []
+          const stopReason = this.toolCallStopReason(loopError, signal)
+          if (stopReason) {
+            this.finishSkippedToolEntry(entry, stopReason)
+            for (const remaining of toolCalls.slice(index + 1)) this.finishSkippedToolCall(remaining, stopReason)
+            break
           }
         }
+
+        loopError = await this.runToolCallBatch({ concurrency: "exclusive", entries: [entry] }, signal, toolLoops)
+        const stopReason = this.toolCallStopReason(loopError, signal)
+        if (!stopReason) continue
+        for (const remaining of toolCalls.slice(index + 1)) this.finishSkippedToolCall(remaining, stopReason)
         break
+      }
+      if (sharedEntries.length > 0) {
+        loopError = await this.runToolCallBatch({ concurrency: "shared", entries: sharedEntries }, signal, toolLoops)
       }
       if (loopError) throw loopError
       if (this.outputContract?.output) {
-        this.emit({
-          type: "turn_ended",
-          usage: usage.turn,
-          context: usage.context,
-          output: this.outputContract.output,
-        })
+        await this.endTurn(usage, this.outputContract.output, signal)
         return
       }
       if (this.outputContract?.exhausted) throw this.outputContract.failure()
@@ -805,6 +872,24 @@ export class AgentSession {
         return
       }
     }
+  }
+
+  private async endTurn(usage: TurnUsage, output: string | JsonObject | undefined, signal: AbortSignal): Promise<void> {
+    await runTurnEndHooks(
+      {
+        ...(output === undefined ? {} : { output }),
+        ...(usage.turn ? { usage: usage.turn } : {}),
+        ...(usage.context ? { context: usage.context } : {}),
+      },
+      this.hookContext(signal),
+      this.hookReporter,
+    )
+    this.emit({
+      type: "turn_ended",
+      usage: usage.turn,
+      context: usage.context,
+      ...(typeof output === "string" || output === undefined ? {} : { output }),
+    })
   }
 
   private async streamRound(
@@ -967,19 +1052,51 @@ export class AgentSession {
     if (rawReasoningTail) this.emit({ type: "reasoning_delta", text: rawReasoningTail })
   }
 
-  private toolCallBatches(calls: ToolCallItem[]): ToolCallBatch[] {
-    const batches: ToolCallBatch[] = []
-    for (const call of calls) {
-      const tool = this.availableTool(call.name)
-      const concurrency = tool?.concurrency?.(call.args, { cwd: this.cwd }) ?? "exclusive"
-      const previous = batches.at(-1)
-      if (concurrency === "shared" && previous?.concurrency === "shared") {
-        previous.calls.push(call)
-        continue
-      }
-      batches.push({ concurrency, calls: [call] })
+  private async applyBeforeToolHook(original: ToolCallItem, signal: AbortSignal): Promise<ToolCallEntry> {
+    const outcome = await runBeforeToolHooks(
+      { callId: original.callId, tool: original.name, args: original.args },
+      this.hookContext(signal),
+      this.hookReporter,
+    )
+    const args = redactJsonObject(outcome.args)
+    const call: ToolCallItem = outcome.modified
+      ? { type: "tool_call", callId: original.callId, name: original.name, args }
+      : original
+    if (outcome.modified) this.updateToolCall(call)
+    if (outcome.type === "continue") return { type: "call", call }
+    return {
+      type: "outcome",
+      outcome: this.skippedToolCallOutcome(
+        call,
+        `Blocked by hook ${outcome.hook}: ${redactText(outcome.reason)}`,
+        "hook",
+      ),
     }
-    return batches
+  }
+
+  private updateToolCall(call: ToolCallItem): void {
+    for (let index = this.items.length - 1; index >= 0; index--) {
+      const item = this.items[index]!
+      if (item.type !== "tool_call" || item.callId !== call.callId) continue
+      this.items[index] = call
+      this.emit({ type: "tool_call_updated", callId: call.callId, tool: call.name, args: call.args })
+      return
+    }
+    throw new Error(`cannot update missing tool call: ${call.callId}`)
+  }
+
+  private toolCallConcurrency(entry: ToolCallEntry): ToolConcurrency {
+    if (entry.type === "outcome") return "exclusive"
+    const tool = this.availableTool(entry.call.name)
+    return tool?.concurrency?.(entry.call.args, { cwd: this.cwd }) ?? "exclusive"
+  }
+
+  private toolCallStopReason(loopError: Error | undefined, signal: AbortSignal): string | undefined {
+    if (loopError) return "Not run because a repeated tool loop stopped the turn."
+    if (this.outputContract?.output || this.outputContract?.exhausted) {
+      return "Not run because structured output ended the turn."
+    }
+    if (signal.aborted) return "Interrupted by user before execution."
   }
 
   private toolCallOutcome(
@@ -1001,15 +1118,23 @@ export class AgentSession {
     return this.skippedToolCallOutcome(call, output)
   }
 
-  private skippedToolCallOutcome(call: ToolCallItem, output: string): ToolCallOutcome {
+  private skippedToolCallOutcome(call: ToolCallItem, output: string, denial?: DenialCause): ToolCallOutcome {
     const tool = this.availableTool(call.name)
     const title = tool?.title(call.args, { cwd: this.cwd }) ?? JSON.stringify(call.args)
     const readOnly = tool?.readOnly?.(call.args, { cwd: this.cwd }) ?? false
-    return this.toolCallOutcome(call, title, readOnly, output)
+    return this.toolCallOutcome(call, title, readOnly, output, denial)
   }
 
   private finishSkippedToolCall(call: ToolCallItem, output: string): void {
     this.commitToolCall(this.skippedToolCallOutcome(call, output))
+  }
+
+  private finishSkippedToolEntry(entry: ToolCallEntry, output: string): void {
+    if (entry.type === "outcome") {
+      this.commitToolCall(entry.outcome)
+      return
+    }
+    this.finishSkippedToolCall(entry.call, output)
   }
 
   private async runToolCallBatch(
@@ -1017,12 +1142,13 @@ export class AgentSession {
     signal: AbortSignal,
     toolLoops: ToolLoopDetector,
   ): Promise<Error | undefined> {
-    const outcomes: Array<ToolCallOutcome | undefined> = batch.calls.map(() => undefined)
+    const outcomes: Array<ToolCallOutcome | undefined> = batch.entries.map(() => undefined)
     const ready: Array<{ index: number; prepared: PreparedToolCall }> = []
-    const recorded = batch.calls.map(() => false)
+    const recorded = batch.entries.map(() => false)
     let loopError: Error | undefined
 
-    for (const [index, call] of batch.calls.entries()) {
+    for (const [index, entry] of batch.entries.entries()) {
+      const call = entry.type === "call" ? entry.call : entry.outcome.call
       if (loopError) {
         outcomes[index] = this.skippedToolCallOutcome(call, "Not run because a repeated tool loop stopped the turn.")
         continue
@@ -1036,6 +1162,10 @@ export class AgentSession {
       }
 
       recorded[index] = true
+      if (entry.type === "outcome") {
+        outcomes[index] = entry.outcome
+        continue
+      }
       const preparation = await this.prepareToolCall(call, signal)
       if (preparation.type === "outcome") {
         outcomes[index] = preparation.outcome
@@ -1138,14 +1268,14 @@ export class AgentSession {
     this.setState("running_tool")
     this.emit({ type: "tool_started", callId: call.callId, tool: call.name, title, readOnly })
     let output: string
-    let result: ToolResult
+    let events: ToolEvent[] = []
     const updates = createRedactedStream()
     const update = (text: string): void => {
       const redacted = updates.write(text)
       if (redacted) this.emit({ type: "tool_updated", callId: call.callId, text: redacted })
     }
     try {
-      result = isInteractiveTool(tool)
+      const result: ToolResult = isInteractiveTool(tool)
         ? await tool.execute(call.args, {
             session: { directory: this.outputDirectory, mode: this.mode },
             publish: (event) => this.publishToolEvent(event),
@@ -1167,15 +1297,30 @@ export class AgentSession {
               update,
             })
           : await tool.execute(call.args, { cwd: this.cwd, signal, update })
+      output = redactText(result.output)
+      events = result.events ?? []
     } catch (error) {
-      output = `${TOOL_FAILED_PREFIX}${describeError(error)}`
-      return this.toolCallOutcome(call, title, readOnly, output)
+      output = redactText(`${TOOL_FAILED_PREFIX}${describeError(error)}`)
     } finally {
       const tail = updates.end()
       if (tail) this.emit({ type: "tool_updated", callId: call.callId, text: tail })
     }
-    output = redactText(result.output)
-    const events = result.events ?? []
+    try {
+      output = redactText(
+        await runAfterToolHooks(
+          { callId: call.callId, tool: call.name, args: call.args, title, readOnly, output },
+          this.hookContext(signal),
+          this.hookReporter,
+        ),
+      )
+    } catch (error) {
+      if (!isAbortError(error)) {
+        output = redactText(
+          `${TOOL_FAILED_PREFIX}${describeError(error)}. The tool may have changed state; inspect it before retrying.`,
+        )
+      }
+    }
+    output = redactText(output)
     try {
       output = await boundToolOutput(this.outputDirectory, output)
     } catch (error) {

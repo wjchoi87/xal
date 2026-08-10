@@ -1,5 +1,6 @@
 import type { AgentEvent, DenialCause } from "../agent/events"
 import type { CompactionItem, HistoryItem } from "../agent/history"
+import type { HookAction, HookEvent } from "../hooks/types"
 import { asBoolean, asNumber, asString, isJsonObject, isRecord } from "../lib/json"
 import { isPermissionMode } from "../permissions/types"
 import { parseSessionPlan } from "../plans/types"
@@ -21,7 +22,27 @@ export function isPersistable(event: AgentEvent): boolean {
 
 function parseDenial(value: unknown): DenialCause | undefined {
   const denial = asString(value)
-  if (denial === "user" || denial === "policy" || denial === "plan") return denial
+  if (denial === "user" || denial === "policy" || denial === "plan" || denial === "hook") return denial
+  return undefined
+}
+
+function parseHookEvent(value: unknown): HookEvent | undefined {
+  const event = asString(value)
+  if (event === "prompt" || event === "before_tool" || event === "after_tool" || event === "turn_end") return event
+  return undefined
+}
+
+function parseHookAction(value: unknown): HookAction | undefined {
+  const action = asString(value)
+  if (
+    action === "continued" ||
+    action === "modified" ||
+    action === "blocked" ||
+    action === "failed" ||
+    action === "interrupted"
+  ) {
+    return action
+  }
   return undefined
 }
 
@@ -72,6 +93,20 @@ function parseEvent(raw: unknown): AgentEvent | undefined {
         imageCount: asNumber(raw.imageCount) ?? 0,
         sentAt: asNumber(raw.sentAt) ?? 0,
       }
+    }
+    case "hook_finished": {
+      const hook = asString(raw.hook)
+      const event = parseHookEvent(raw.event)
+      const action = parseHookAction(raw.action)
+      const elapsedMs = asNumber(raw.elapsedMs)
+      if (!hook || !event || !action || elapsedMs === undefined) return undefined
+      return { type: "hook_finished", hook, event, action, elapsedMs }
+    }
+    case "tool_call_updated": {
+      const callId = asString(raw.callId)
+      const tool = asString(raw.tool)
+      if (!callId || !tool || !isJsonObject(raw.args)) return undefined
+      return { type: "tool_call_updated", callId, tool, args: raw.args }
     }
     case "assistant_message": {
       const text = asString(raw.text)
