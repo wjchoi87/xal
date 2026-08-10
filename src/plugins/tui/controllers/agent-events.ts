@@ -127,6 +127,9 @@ export class AgentEventController {
       case "turn_ended":
         statusBar.setUsage(event.context)
         break
+      case "turn_failed":
+        scrollback.append({ kind: "error", text: event.message })
+        break
       case "error":
         scrollback.append({ kind: "error", text: event.message })
         break

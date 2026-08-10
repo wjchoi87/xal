@@ -33,7 +33,8 @@ function resolveProvider(id?: string): Provider {
 
 export async function createSession(options: SessionOptions = {}): Promise<SessionSetup> {
   const provider = resolveProvider(options.provider)
-  const model = options.model ?? settings().model ?? (await provider.defaultModel())
+  const model =
+    options.model ?? (options.provider === undefined ? settings().model : undefined) ?? (await provider.defaultModel())
   const thinking = await resolveThinking(provider, model)
   return {
     session: new AgentSession({
@@ -90,6 +91,7 @@ function lastState(loaded: LoadedSession): {
       case "tool_finished":
       case "compacted":
       case "turn_ended":
+      case "turn_failed":
       case "turn_interrupted":
       case "error":
         break

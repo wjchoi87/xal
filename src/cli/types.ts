@@ -1,5 +1,6 @@
 export interface CliContext {
   print(line: string): void
+  error(line: string): void
   ask(question: string): Promise<string>
   askSecret(question: string): Promise<string | undefined>
 }

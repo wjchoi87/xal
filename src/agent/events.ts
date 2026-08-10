@@ -11,15 +11,18 @@ export interface QueuedEntry {
   imageCount: number
 }
 
+export interface SessionStartedEvent {
+  type: "session_started"
+  id: string
+  resumed: boolean
+  provider: string
+  model: string
+  thinking?: ThinkingEffort
+  mode: PermissionMode
+}
+
 export type AgentEvent =
-  | {
-      type: "session_started"
-      id: string
-      resumed: boolean
-      model: string
-      thinking?: ThinkingEffort
-      mode: PermissionMode
-    }
+  | SessionStartedEvent
   | { type: "state_changed"; state: AgentState }
   | { type: "mode_changed"; mode: PermissionMode }
   | { type: "model_changed"; provider: string; model: string }
@@ -49,5 +52,6 @@ export type AgentEvent =
     }
   | { type: "compacted"; summary: string; replaced: number; tokensBefore?: number }
   | { type: "turn_ended"; usage?: Usage; context?: Usage }
+  | { type: "turn_failed"; message: string }
   | { type: "turn_interrupted" }
   | { type: "error"; message: string }

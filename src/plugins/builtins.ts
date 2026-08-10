@@ -3,6 +3,7 @@ import ask from "./ask/plugin"
 import bash from "./bash/plugin"
 import deepseek from "./deepseek/plugin"
 import files from "./files/plugin"
+import headless from "./headless/plugin"
 import openaiChatgpt from "./openai-chatgpt/plugin"
 import permissions from "./permissions/plugin"
 import prompt from "./prompt/plugin"
@@ -19,6 +20,7 @@ export const builtinPlugins: Plugin[] = [
   search,
   deepseek,
   openaiChatgpt,
+  headless,
   ask,
   tui,
 ]

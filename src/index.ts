@@ -17,6 +17,9 @@ const ctx: CliContext = {
   print(line) {
     console.log(line)
   },
+  error(line) {
+    console.error(line)
+  },
   ask(question) {
     return Promise.resolve(prompt(question) ?? "")
   },
@@ -41,7 +44,7 @@ function normalize(args: string[]): string[] {
 async function main(input: string[]): Promise<void> {
   const args = normalize(input)
   const trusted = await ensureWorkspaceTrust({
-    print: ctx.print,
+    print: args.length === 0 ? ctx.print : ctx.error,
     choose: args.length === 0 && process.stdin.isTTY ? chooseOption : undefined,
   })
   if (!trusted) return
@@ -53,7 +56,7 @@ async function main(input: string[]): Promise<void> {
     const uiId = settings.ui ?? "tui"
     const ui = getUi(uiId)
     if (!ui) {
-      ctx.print(`unknown ui: ${uiId}`)
+      ctx.error(`unknown ui: ${uiId}`)
       process.exitCode = 1
       return
     }
@@ -63,17 +66,21 @@ async function main(input: string[]): Promise<void> {
   }
 
   for (const failure of plugins.failures) {
-    ctx.print(`plugin failed: ${failure.plugin}: ${failure.reason}`)
+    ctx.error(`plugin failed: ${failure.plugin}: ${failure.reason}`)
   }
 
   const bootstrapped = await bootstrapPlugins()
   for (const failure of bootstrapped.failures) {
     if (failure.phase !== "bootstrap") continue
-    ctx.print(`plugin bootstrap failed: ${failure.plugin}: ${failure.reason}`)
+    ctx.error(`plugin bootstrap failed: ${failure.plugin}: ${failure.reason}`)
   }
 
   await runCli(args, ctx)
 }
 
 await main(process.argv.slice(2))
+await Promise.all([
+  new Promise<void>((resolve) => process.stdout.write("", () => resolve())),
+  new Promise<void>((resolve) => process.stderr.write("", () => resolve())),
+])
 process.exit(process.exitCode ?? 0)

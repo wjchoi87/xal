@@ -84,6 +84,11 @@ function parseEvent(raw: unknown): AgentEvent | undefined {
     }
     case "turn_ended":
       return { type: "turn_ended", usage: parseUsage(raw.usage), context: parseUsage(raw.context) }
+    case "turn_failed": {
+      const message = asString(raw.message)
+      if (message === undefined) return undefined
+      return { type: "turn_failed", message }
+    }
     case "turn_interrupted":
       return { type: "turn_interrupted" }
     case "mode_changed": {

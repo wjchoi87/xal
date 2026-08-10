@@ -1,6 +1,5 @@
 import { isRecord } from "../../lib/json"
 import type { Plugin } from "../types"
-import { askCli } from "./cli"
 import { requestUserInputTool } from "./tool"
 
 function summarize(output: string): string | undefined {
@@ -21,7 +20,6 @@ function summarize(output: string): string | undefined {
 const plugin: Plugin = {
   name: "ask",
   register(ctx) {
-    ctx.registerCli(askCli)
     ctx.registerTool(requestUserInputTool)
     ctx.registerToolRenderer({
       tool: requestUserInputTool.name,

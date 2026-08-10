@@ -26,7 +26,7 @@ import {
   tailBudget,
 } from "./compaction"
 import type { CompactionTrigger } from "./compaction"
-import type { AgentEvent, AgentState, DenialCause, QueuedEntry } from "./events"
+import type { AgentEvent, AgentState, DenialCause, QueuedEntry, SessionStartedEvent } from "./events"
 import { activeHistory, type HistoryItem } from "./history"
 import { OutputLoopDetector, ToolLoopDetector, type OutputLoop, type ToolLoopAction } from "./loop-detection"
 import { composeSystemPrompt } from "./prompt"
@@ -167,6 +167,18 @@ export class AgentSession {
     return this.thinking
   }
 
+  startEvent(resumed = false): SessionStartedEvent {
+    return {
+      type: "session_started",
+      id: this.sessionId,
+      resumed,
+      provider: this.provider.id,
+      model: this.model,
+      thinking: this.thinking,
+      mode: this.mode,
+    }
+  }
+
   get hasModelOutput(): boolean {
     return this.items.some(
       (item) =>
@@ -200,14 +212,7 @@ export class AgentSession {
     this.compactionFailures = 0
     this.streaming = undefined
     this.recorder?.start(this.meta())
-    this.emit({
-      type: "session_started",
-      id: this.sessionId,
-      resumed: false,
-      model: this.model,
-      thinking: this.thinking,
-      mode: this.mode,
-    })
+    this.emit(this.startEvent())
     return true
   }
 
@@ -226,14 +231,7 @@ export class AgentSession {
     this.thinking = target.thinking
     this.mode = target.mode
     this.recorder?.attach(target.path)
-    this.emit({
-      type: "session_started",
-      id: this.sessionId,
-      resumed: true,
-      model: this.model,
-      thinking: this.thinking,
-      mode: this.mode,
-    })
+    this.emit(this.startEvent(true))
     for (const event of target.session.events) this.notify(event)
     return true
   }
@@ -300,7 +298,7 @@ export class AgentSession {
     void this.runTurn(controller.signal, provider, model, thinking)
       .catch((error) => {
         errored = true
-        this.emit({ type: "error", message: describeError(error) })
+        this.emit({ type: "turn_failed", message: describeError(error) })
       })
       .finally(() => {
         this.turnActive = false
@@ -720,12 +718,18 @@ export class AgentSession {
           break
         case "item_done": {
           if (event.item.type === "assistant_message") {
-            if (!assistantStreamed) detectLoop(outputLoops.assistant, event.item.text, "assistant response")
+            if (!assistantStreamed) {
+              detectLoop(outputLoops.assistant, event.item.text, "assistant response")
+              if (event.item.text) this.emit({ type: "assistant_message", text: event.item.text })
+            }
             finishLoop(outputLoops.assistant, "assistant response")
             assistantStreamed = false
           }
           if (event.item.type === "reasoning") {
-            if (!reasoningStreamed) detectLoop(outputLoops.reasoning, event.item.summary, "reasoning summary")
+            if (!reasoningStreamed) {
+              detectLoop(outputLoops.reasoning, event.item.summary, "reasoning summary")
+              if (event.item.summary) this.emit({ type: "reasoning_summary", text: event.item.summary })
+            }
             finishLoop(outputLoops.reasoning, "reasoning summary")
             reasoningStreamed = false
           }
