@@ -112,7 +112,7 @@ export class Composer {
       bold: true,
     })
     this.input = new TextareaRenderable(ctx, {
-      placeholder: `Ask ${appInfo.name} anything · / commands · $ skills`,
+      placeholder: `Ask ${appInfo.name} anything · / commands · $ skills · ? help`,
       height: 1,
       flexGrow: 1,
       flexShrink: 1,

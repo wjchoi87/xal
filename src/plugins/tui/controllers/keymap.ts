@@ -70,6 +70,14 @@ export function bindKeys(renderer: CliRenderer, deps: KeymapDeps): void {
       screen.scrollback.toggleExpanded()
       return
     }
+    if (key.ctrl && key.name === "t") {
+      key.preventDefault()
+      const visible = screen.scrollback.toggleReasoning()
+      screen.statusBar.setNotice(`Thinking output ${visible ? "shown" : "hidden"}`)
+      const timer = setTimeout(() => screen.statusBar.clearNotice(), 2_000)
+      timer.unref()
+      return
+    }
     if (key.ctrl && key.name === "v" && !key.repeated && !screen.overlayVisible) {
       key.preventDefault()
       screen.statusBar.setNotice("Pasting image…")

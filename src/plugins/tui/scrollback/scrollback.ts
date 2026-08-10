@@ -16,6 +16,7 @@ export class Scrollback {
   private readonly blocks: Block[] = []
   private stream: Stream | undefined
   private expanded = false
+  private reasoningVisible = true
   private committed = 0
   private origin: number
 
@@ -71,6 +72,12 @@ export class Scrollback {
     this.replay()
   }
 
+  toggleReasoning(): boolean {
+    this.reasoningVisible = !this.reasoningVisible
+    this.replay()
+    return this.reasoningVisible
+  }
+
   replay(): void {
     const streaming = this.stream
     if (streaming) {
@@ -81,7 +88,7 @@ export class Scrollback {
     this.reset()
     let previous: Block | undefined
     for (const block of this.blocks) {
-      if (block === streaming?.block) continue
+      if (block === streaming?.block || !this.visible(block)) continue
       this.emit(block, previous)
       previous = block
     }
@@ -120,6 +127,7 @@ export class Scrollback {
   }
 
   private flush(stream: Stream, final: boolean): void {
+    if (!this.visible(stream.block)) return
     const rendered = streamContent(stream.block, contentWidth(stream.surface.renderContext))
     stream.text.content = rendered.content
     stream.text.height = rendered.rows
@@ -136,6 +144,7 @@ export class Scrollback {
   }
 
   private emit(block: Block, previous: Block | undefined): void {
+    if (!this.visible(block)) return
     const surface = this.renderer.createScrollbackSurface()
     try {
       surface.root.add(renderBlock(surface.renderContext, block, this.expanded, previous))
@@ -146,5 +155,9 @@ export class Scrollback {
     } finally {
       surface.destroy()
     }
+  }
+
+  private visible(block: Block): boolean {
+    return block.kind !== "reasoning" || this.reasoningVisible
   }
 }

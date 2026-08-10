@@ -19,6 +19,7 @@ import { Picker } from "./components/picker"
 import { PermissionPopover, type PermissionPopoverActions } from "./components/permission-popover"
 import { QueuedInputs } from "./components/queued-inputs"
 import { SecretInput } from "./components/secret-input"
+import { ShortcutHelp } from "./components/shortcut-help"
 import { StatusBar, STATUS_ROWS } from "./components/status-bar"
 import { TaskList } from "./components/task-list"
 import { column } from "./lib/renderables"
@@ -49,6 +50,7 @@ export class Screen {
   readonly statusBar: StatusBar
   readonly tasks: BackgroundTasks
   readonly taskList: TaskList
+  private readonly shortcutHelp: ShortcutHelp
   private overlaid = false
   private paletteBelow = true
   private reserved = 0
@@ -88,6 +90,8 @@ export class Screen {
       },
       () => this.syncFooter(),
     )
+    this.statusBar = new StatusBar(renderer, session.currentModel, session.currentThinking, session.currentMode)
+    this.shortcutHelp = new ShortcutHelp(renderer, () => this.syncFooter())
     this.composer = new Composer(renderer, history, {
       submit: (input) => {
         if (input.images.length === 0 || this.session.supportsImageInput) {
@@ -102,12 +106,17 @@ export class Screen {
       run: (line) => this.runCommand(line),
       error: (message) => this.scrollback.append({ kind: "error", text: message }),
       change: (value, cursor) => {
+        const help = value.startsWith("?")
+        if (this.shortcutHelp.setActive(help)) this.syncFooter()
+        if (help) {
+          this.palette.hide()
+          return
+        }
         this.placePalette()
         this.palette.update(value, cursor, this.paletteLimit())
       },
       resize: () => this.syncFooter(),
     })
-    this.statusBar = new StatusBar(renderer, session.currentModel, session.currentThinking, session.currentMode)
     this.tasks = new BackgroundTasks(renderer, {
       changed: () => {
         this.agentViewer.refresh()
@@ -132,6 +141,7 @@ export class Screen {
     this.view.add(this.picker.view)
     this.view.add(this.agentViewer.view)
     this.view.add(this.composer.view)
+    this.view.add(this.shortcutHelp.view)
     this.view.add(this.palette.view)
     this.view.add(this.statusBar.view)
     this.view.add(this.tasks.view)
@@ -243,6 +253,7 @@ export class Screen {
 
   syncFooter(): void {
     const overlaid = this.overlayVisible
+    this.shortcutHelp.setCovered(overlaid)
     if (overlaid !== this.overlaid) {
       this.overlaid = overlaid
       this.composer.setVisible(!overlaid)
@@ -268,7 +279,8 @@ export class Screen {
     if (this.agentViewer.visible) {
       this.palette.hide()
       this.reserved = 0
-      const chrome = (overlaid ? overlayRows : this.composer.rows) + STATUS_ROWS + this.tasks.height
+      const chrome =
+        (overlaid ? overlayRows : this.composer.rows + this.shortcutHelp.height) + STATUS_ROWS + this.tasks.height
       this.agentViewer.resize(this.renderer.terminalHeight - chrome)
       this.renderer.footerHeight = this.agentViewer.height + chrome
       return
@@ -276,7 +288,7 @@ export class Screen {
     const paletteRows = this.palette.visible ? this.palette.height : 0
     if (this.paletteBelow || overlaid) this.reserved = 0
     else this.reserved = Math.max(this.reserved, paletteRows)
-    const editing = this.composer.rows + Math.max(paletteRows, this.reserved)
+    const editing = this.composer.rows + this.shortcutHelp.height + Math.max(paletteRows, this.reserved)
     this.renderer.footerHeight =
       this.agentSummary.height +
       this.live.height +
@@ -295,7 +307,7 @@ export class Screen {
 
   private closedFooterRows(): number {
     if (this.agentViewer.visible) {
-      return this.agentViewer.height + this.composer.rows + STATUS_ROWS + this.tasks.height
+      return this.agentViewer.height + this.composer.rows + this.shortcutHelp.height + STATUS_ROWS + this.tasks.height
     }
     return (
       this.agentSummary.height +
@@ -303,6 +315,7 @@ export class Screen {
       this.queued.height +
       this.taskList.height +
       this.composer.rows +
+      this.shortcutHelp.height +
       STATUS_ROWS +
       this.tasks.height
     )
