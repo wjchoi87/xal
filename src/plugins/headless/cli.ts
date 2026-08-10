@@ -1,9 +1,12 @@
 import { createSession } from "../../agent/compose"
 import type { AgentSession } from "../../agent/agent-session"
 import type { AgentEvent } from "../../agent/events"
+import { parseOutputSchema, type OutputSchema } from "../../agent/output-contract"
 import { appInfo } from "../../app-info"
 import type { Cli } from "../../cli/types"
 import { describeError } from "../../lib/error"
+import { readJsonFile } from "../../lib/fs"
+import type { JsonObject } from "../../lib/json"
 import { isPermissionMode, permissionModes, type PermissionMode } from "../../permissions/types"
 import type { Usage } from "../../providers/types"
 
@@ -15,13 +18,14 @@ interface RunOptions {
   mode: PermissionMode
   provider?: string
   model?: string
+  outputSchemaPath?: string
   prompt: string[]
   help: boolean
 }
 
 interface RunOutcome {
   status: RunStatus
-  response: string
+  response: string | JsonObject
   usage?: Usage
   context?: Usage
   error?: string
@@ -39,7 +43,7 @@ interface SetupFailure {
 }
 
 function usage(): string {
-  return `${appInfo.name} run [--format text|json|jsonl] [--mode ${permissionModes.join("|")}] [--provider id] [--model id] [prompt]`
+  return `${appInfo.name} run [--format text|json|jsonl] [--mode ${permissionModes.join("|")}] [--provider id] [--model id] [--output-schema file] [prompt]`
 }
 
 function optionValue(args: string[], index: number, option: string): string {
@@ -84,6 +88,10 @@ function parseArgs(args: string[]): RunOptions {
         options.model = optionValue(args, index, arg)
         index++
         break
+      case "--output-schema":
+        options.outputSchemaPath = optionValue(args, index, arg)
+        index++
+        break
       case "--":
         options.prompt.push(...args.slice(index + 1))
         return options
@@ -106,6 +114,7 @@ function printHelp(print: (line: string) => void): void {
   print(`  --mode ${permissionModes.join("|")}  permission mode (default: build)`)
   print("  --provider id             override the configured provider")
   print("  --model id                override the configured model")
+  print("  --output-schema file      require the final response to match a JSON Schema")
   print("")
   print("When prompt is omitted, it is read from standard input.")
 }
@@ -117,6 +126,16 @@ async function readPrompt(parts: string[]): Promise<string> {
   const piped = (await Bun.stdin.text()).trim()
   if (!piped) throw new Error("prompt from standard input was empty")
   return piped
+}
+
+async function readOutputSchema(path: string): Promise<OutputSchema> {
+  const value = await readJsonFile(path)
+  if (value === undefined) throw new Error(`output schema ${JSON.stringify(path)} does not exist`)
+  try {
+    return parseOutputSchema(value)
+  } catch (error) {
+    throw new Error(`invalid output schema ${JSON.stringify(path)}: ${describeError(error)}`, { cause: error })
+  }
 }
 
 function printJson(print: (line: string) => void, value: AgentEvent | RunResult | SetupFailure): void {
@@ -149,7 +168,7 @@ function runSession(
   print: (line: string) => void,
   error: (line: string) => void,
 ): Promise<RunOutcome> {
-  let response = ""
+  let response: string | JsonObject = ""
   let settled = false
   let unsubscribe = (): void => {}
 
@@ -182,6 +201,7 @@ function runSession(
           }
           break
         case "turn_ended":
+          if (event.output !== undefined) response = event.output
           finish({ status: "completed", usage: event.usage, context: event.context })
           break
         case "turn_failed":
@@ -229,7 +249,9 @@ export const runCli: Cli = {
     }
 
     let prompt: string
+    let outputSchema: OutputSchema | undefined
     try {
+      outputSchema = options.outputSchemaPath ? await readOutputSchema(options.outputSchemaPath) : undefined
       prompt = await readPrompt(options.prompt)
     } catch (error) {
       reportSetupFailure(options.format, describeError(error), ctx.print, ctx.error)
@@ -242,6 +264,7 @@ export const runCli: Cli = {
         provider: options.provider,
         model: options.model,
         interactive: false,
+        outputSchema,
       })
       session = setup.session
     } catch (error) {
@@ -263,7 +286,9 @@ export const runCli: Cli = {
       process.off("SIGINT", interrupt)
     }
 
-    if (options.format === "text" && outcome.status === "completed") ctx.print(outcome.response)
+    if (options.format === "text" && outcome.status === "completed") {
+      ctx.print(typeof outcome.response === "string" ? outcome.response : JSON.stringify(outcome.response, null, 2))
+    }
     if (options.format === "text" && outcome.status === "failed") ctx.error(outcome.error ?? "turn failed")
     if (options.format === "json") printJson(ctx.print, result(outcome, session))
 

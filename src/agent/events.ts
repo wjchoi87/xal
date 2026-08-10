@@ -1,3 +1,4 @@
+import type { JsonObject } from "../lib/json"
 import type { PermissionMode } from "../permissions/types"
 import type { ThinkingEffort, Usage, UserInput } from "../providers/types"
 import type { ElicitationQuestion } from "../tools/types"
@@ -55,7 +56,7 @@ export type AgentEvent =
       denial?: DenialCause
     }
   | { type: "compacted"; summary: string; replaced: number; tokensBefore?: number }
-  | { type: "turn_ended"; usage?: Usage; context?: Usage }
+  | { type: "turn_ended"; usage?: Usage; context?: Usage; output?: JsonObject }
   | { type: "turn_failed"; message: string }
   | { type: "turn_interrupted" }
   | { type: "error"; message: string }

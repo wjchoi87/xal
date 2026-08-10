@@ -94,8 +94,15 @@ function parseEvent(raw: unknown): AgentEvent | undefined {
       if (!summary || replaced === undefined) return undefined
       return { type: "compacted", summary, replaced, tokensBefore: asNumber(raw.tokensBefore) }
     }
-    case "turn_ended":
-      return { type: "turn_ended", usage: parseUsage(raw.usage), context: parseUsage(raw.context) }
+    case "turn_ended": {
+      if (raw.output !== undefined && !isJsonObject(raw.output)) return undefined
+      return {
+        type: "turn_ended",
+        usage: parseUsage(raw.usage),
+        context: parseUsage(raw.context),
+        output: raw.output,
+      }
+    }
     case "turn_failed": {
       const message = asString(raw.message)
       if (message === undefined) return undefined

@@ -7,6 +7,7 @@ import type { Provider, ThinkingEffort } from "../providers/types"
 import { loadSession } from "../sessions/store"
 import type { LoadedSession, SessionSummary } from "../sessions/types"
 import { AgentSession } from "./agent-session"
+import type { OutputSchema } from "./output-contract"
 
 export interface SessionSetup {
   session: AgentSession
@@ -18,6 +19,7 @@ export interface SessionOptions {
   model?: string
   persist?: boolean
   interactive?: boolean
+  outputSchema?: OutputSchema
 }
 
 function resolveProvider(id?: string): Provider {
@@ -46,6 +48,7 @@ export async function createSession(options: SessionOptions = {}): Promise<Sessi
       thinking,
       persist: options.persist,
       interactive: options.interactive,
+      outputSchema: options.outputSchema,
     }),
     model,
   }

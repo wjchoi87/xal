@@ -47,6 +47,7 @@ import type { CompactionTrigger } from "./compaction"
 import type { AgentEvent, AgentState, DenialCause, QueuedEntry, SessionStartedEvent } from "./events"
 import { activeHistory, type HistoryItem } from "./history"
 import { OutputLoopDetector, ToolLoopDetector, type OutputLoop, type ToolLoopAction } from "./loop-detection"
+import { OutputContract, type OutputSchema } from "./output-contract"
 import { composeSystemPrompt } from "./prompt"
 
 export interface AgentSessionDeps {
@@ -56,6 +57,7 @@ export interface AgentSessionDeps {
   thinking?: ThinkingEffort
   persist?: boolean
   interactive?: boolean
+  outputSchema?: OutputSchema
 }
 
 export interface ResumeTarget {
@@ -161,6 +163,7 @@ export class AgentSession {
   private readonly listeners = new Set<(event: AgentEvent) => void>()
   private readonly recorder: SessionRecorder | undefined
   private readonly interactive: boolean
+  private readonly outputContract: OutputContract | undefined
   private outputDirectory: string
   private provider: Provider
   private model: string
@@ -182,6 +185,7 @@ export class AgentSession {
     this.modelInputModalities = deps.modelInputModalities
     this.thinking = deps.thinking
     this.interactive = deps.interactive ?? false
+    this.outputContract = deps.outputSchema ? new OutputContract(deps.outputSchema) : undefined
     this.outputDirectory = toolOutputDirectory(projectSessionsDir(process.cwd()), this.sessionId)
     if (deps.persist) {
       this.recorder = new SessionRecorder((message) => this.emit({ type: "error", message }))
@@ -355,6 +359,7 @@ export class AgentSession {
   }
 
   private startTurn(inputs: UserInput[]): void {
+    this.outputContract?.reset()
     for (const input of inputs) {
       this.ensureTitle(input)
       this.pushItem(this.userMessage(input))
@@ -524,10 +529,14 @@ export class AgentSession {
   }
 
   private availableTools(): RegisteredTool[] {
-    return listTools().filter((tool) => this.canUseTool(tool))
+    const tools = listTools().filter((tool) => this.canUseTool(tool))
+    const contract = this.outputContract
+    if (!contract) return tools
+    return [...tools.filter((tool) => tool.name !== contract.tool.name), contract.tool]
   }
 
   private availableTool(name: string): RegisteredTool | undefined {
+    if (this.outputContract?.tool.name === name) return this.outputContract.tool
     const tool = getTool(name)
     if (!tool || !this.canUseTool(tool)) return undefined
     return tool
@@ -662,12 +671,19 @@ export class AgentSession {
       const toolCalls = items.filter((item): item is ToolCallItem => item.type === "tool_call")
       if (toolCalls.length === 0) {
         if (this.queued.length > 0) continue
+        if (this.outputContract) {
+          const correction = this.outputContract.missing()
+          if (this.outputContract.exhausted) throw this.outputContract.failure()
+          this.pushItem({ type: "user_message", text: correction, images: [] })
+          continue
+        }
         this.emit({ type: "turn_ended", usage: usage.turn, context: usage.context })
         return
       }
 
       let loopError: Error | undefined
-      for (const batch of this.toolCallBatches(toolCalls)) {
+      const batches = this.toolCallBatches(toolCalls)
+      for (const [index, batch] of batches.entries()) {
         if (loopError) {
           for (const call of batch.calls) {
             this.finishSkippedToolCall(call, "Not run because a repeated tool loop stopped the turn.")
@@ -675,8 +691,25 @@ export class AgentSession {
           continue
         }
         loopError = await this.runToolCallBatch(batch, signal, toolLoops)
+        if (!this.outputContract?.output && !this.outputContract?.exhausted) continue
+        for (const remaining of batches.slice(index + 1)) {
+          for (const call of remaining.calls) {
+            this.finishSkippedToolCall(call, "Not run because structured output ended the turn.")
+          }
+        }
+        break
       }
       if (loopError) throw loopError
+      if (this.outputContract?.output) {
+        this.emit({
+          type: "turn_ended",
+          usage: usage.turn,
+          context: usage.context,
+          output: this.outputContract.output,
+        })
+        return
+      }
+      if (this.outputContract?.exhausted) throw this.outputContract.failure()
 
       if (signal.aborted) {
         this.emit({ type: "turn_interrupted" })
