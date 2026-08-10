@@ -22,6 +22,15 @@ import type {
   UserMessageItem,
   Usage,
 } from "../providers/types"
+import {
+  redactAgentEvent,
+  redactHistoryItem,
+  redactProviderOutputItem,
+  redactSessionStartedEvent,
+  redactStreamRequest,
+  redactUserInput,
+} from "../secrets/data"
+import { createRedactedStream, redactJsonObject, redactText, type RedactedStream } from "../secrets/redactor"
 import { SessionRecorder } from "../sessions/recorder"
 import { normalizeSessionTitle, titleFromInput } from "../sessions/title"
 import type { LoadedSession, SessionMeta } from "../sessions/types"
@@ -36,6 +45,7 @@ import type {
   RegisteredTool,
   ToolConcurrency,
   ToolEvent,
+  ToolResult,
 } from "../tools/types"
 import {
   COMPACTION_TRIGGER_RATIO,
@@ -48,7 +58,7 @@ import type { CompactionTrigger } from "./compaction"
 import type { AgentEvent, AgentState, DenialCause, QueuedEntry, SessionStartedEvent } from "./events"
 import { activeHistory, type HistoryItem } from "./history"
 import { OutputLoopDetector, ToolLoopDetector, type OutputLoop, type ToolLoopAction } from "./loop-detection"
-import { OutputContract, type OutputSchema } from "./output-contract"
+import { OutputContract, parseOutputSchema, type OutputSchema } from "./output-contract"
 import { composeSystemPrompt } from "./prompt"
 import type { SessionKind } from "./types"
 
@@ -183,7 +193,7 @@ export class AgentSession {
   private mode: PermissionMode = "build"
   private plan: SessionPlan | undefined
   private planHandoffActive = false
-  private streaming: { kind: StreamKind; text: string } | undefined
+  private streaming: { kind: StreamKind; text: string; redactor: RedactedStream } | undefined
   private abortController: AbortController | undefined
   private pendingApproval: ((result: ApprovalResult) => void) | undefined
   private pendingElicitation: PendingElicitation | undefined
@@ -199,11 +209,13 @@ export class AgentSession {
     this.modelInputModalities = deps.modelInputModalities
     this.thinking = deps.thinking
     this.interactive = deps.interactive ?? false
-    this.outputContract = deps.outputSchema ? new OutputContract(deps.outputSchema) : undefined
+    this.outputContract = deps.outputSchema
+      ? new OutputContract(parseOutputSchema(redactJsonObject(deps.outputSchema)))
+      : undefined
     this.outputDirectory = toolOutputDirectory(projectSessionsDir(this.cwd), this.sessionId)
     if (deps.persist) {
       this.recorder = new SessionRecorder((message) => this.emit({ type: "error", message }))
-      this.recorder.start(this.meta())
+      this.recorder.start(this.meta(), this.cwd)
     }
   }
 
@@ -245,7 +257,7 @@ export class AgentSession {
   }
 
   startEvent(resumed = false): SessionStartedEvent {
-    return {
+    return redactSessionStartedEvent({
       type: "session_started",
       id: this.sessionId,
       resumed,
@@ -255,7 +267,7 @@ export class AgentSession {
       thinking: this.thinking,
       mode: this.mode,
       cwd: this.cwd,
-    }
+    })
   }
 
   get hasModelOutput(): boolean {
@@ -272,9 +284,9 @@ export class AgentSession {
     return {
       version: 1,
       id: this.sessionId,
-      cwd: this.cwd,
-      provider: this.provider.id,
-      model: this.model,
+      cwd: redactText(this.cwd),
+      provider: redactText(this.provider.id),
+      model: redactText(this.model),
       thinking: this.thinking,
       mode: this.mode,
       startedAt: this.startedAt,
@@ -293,7 +305,7 @@ export class AgentSession {
     this.plan = undefined
     this.planHandoffActive = false
     this.streaming = undefined
-    this.recorder?.start(this.meta())
+    this.recorder?.start(this.meta(), this.cwd)
     this.emit(this.startEvent())
     return true
   }
@@ -302,11 +314,11 @@ export class AgentSession {
     if (this.state !== "idle") return false
     const { meta } = target.session
     this.sessionId = meta.id
-    this.title = target.session.title
+    this.title = target.session.title ? redactText(target.session.title) : undefined
     this.outputDirectory = toolOutputDirectory(dirname(target.path), this.sessionId)
     this.cwd = resolve(target.cwd)
     this.startedAt = meta.startedAt
-    this.items = [...target.session.items]
+    this.items = target.session.items.map(redactHistoryItem)
     this.contextTokens = recordedContext(target.session.events)
     this.compactionFailures = 0
     this.plan = undefined
@@ -380,7 +392,7 @@ export class AgentSession {
   }
 
   setTitle(input: string): string | undefined {
-    const title = normalizeSessionTitle(input)
+    const title = normalizeSessionTitle(redactText(input))
     if (!title) return undefined
     if (title === this.title) return title
     this.title = title
@@ -394,17 +406,18 @@ export class AgentSession {
   }
 
   send(input: UserInput): boolean {
-    if (input.images.length > 0 && !this.supportsImageInput) {
+    const redacted = redactUserInput(input)
+    if (redacted.images.length > 0 && !this.supportsImageInput) {
       this.emit({ type: "error", message: `${this.model} does not support image input` })
       return false
     }
     if (this.turnActive) {
-      this.queued.push(input)
+      this.queued.push(redacted)
       this.emit({ type: "queue_changed", entries: this.queueEntries() })
       return true
     }
     if (this.state !== "idle") return false
-    this.startTurn([input])
+    this.startTurn([redacted])
     return true
   }
 
@@ -466,7 +479,9 @@ export class AgentSession {
 
   private userMessage(input: UserInput): UserMessageItem {
     const modelText = expandSkillInvocation(input.text)
-    return modelText ? { type: "user_message", ...input, modelText } : { type: "user_message", ...input }
+    return modelText
+      ? { type: "user_message", ...input, modelText: redactText(modelText) }
+      : { type: "user_message", ...input }
   }
 
   private flushQueue(): void {
@@ -579,7 +594,7 @@ export class AgentSession {
   }
 
   private availableTools(): RegisteredTool[] {
-    const tools = listTools().filter((tool) => this.canUseTool(tool))
+    const tools = listTools().filter((tool) => redactText(tool.name) === tool.name && this.canUseTool(tool))
     const contract = this.outputContract
     if (!contract) return tools
     return [...tools.filter((tool) => tool.name !== contract.tool.name), contract.tool]
@@ -598,32 +613,54 @@ export class AgentSession {
   }
 
   private emit(event: AgentEvent): void {
-    this.recorder?.event(event)
-    this.notify(event)
+    const redacted = redactAgentEvent(event)
+    this.recorder?.event(redacted)
+    this.notifyRedacted(redacted)
     if (event.type === "turn_ended") this.planHandoffActive = false
   }
 
   private notify(event: AgentEvent): void {
+    this.notifyRedacted(redactAgentEvent(event))
+  }
+
+  private notifyRedacted(event: AgentEvent): void {
     for (const listener of this.listeners) listener(event)
   }
 
   private pushItem(item: HistoryItem): void {
-    this.items.push(item)
-    this.recorder?.item(item)
+    const redacted = redactHistoryItem(item)
+    this.items.push(redacted)
+    this.recorder?.item(redacted)
   }
 
   private stream(kind: StreamKind, text: string): void {
     if (this.streaming && this.streaming.kind !== kind) this.flushStream()
-    const streaming = this.streaming ?? { kind, text: "" }
-    streaming.text += text
+    const streaming = this.streaming ?? { kind, text: "", redactor: createRedactedStream() }
+    const redacted = streaming.redactor.write(text)
+    streaming.text += redacted
     this.streaming = streaming
-    this.emit(kind === "assistant" ? { type: "text_delta", text } : { type: "reasoning_summary_delta", text })
+    if (!redacted) return
+    this.emit(
+      kind === "assistant"
+        ? { type: "text_delta", text: redacted }
+        : { type: "reasoning_summary_delta", text: redacted },
+    )
   }
 
   private flushStream(): void {
     const streaming = this.streaming
     this.streaming = undefined
-    if (!streaming || !streaming.text) return
+    if (!streaming) return
+    const tail = streaming.redactor.end()
+    if (tail) {
+      streaming.text += tail
+      this.emit(
+        streaming.kind === "assistant"
+          ? { type: "text_delta", text: tail }
+          : { type: "reasoning_summary_delta", text: tail },
+      )
+    }
+    if (!streaming.text) return
     this.emit(
       streaming.kind === "assistant"
         ? { type: "assistant_message", text: streaming.text }
@@ -850,23 +887,26 @@ export class AgentSession {
       rejectLoop(detector.finish(), label)
     }
 
-    for await (const event of provider.stream({
-      model,
-      thinking,
-      instructions: composeSystemPrompt({
-        appName: appInfo.name,
-        platform: `${process.platform} ${release()}`,
-        cwd: this.cwd,
-        kind: this.kind,
-        tools,
-        mode: this.mode,
-        plan: this.mode === "plan" || this.planHandoffActive ? this.plan : undefined,
+    const rawReasoning = createRedactedStream()
+    for await (const event of provider.stream(
+      redactStreamRequest({
+        model,
+        thinking,
+        instructions: composeSystemPrompt({
+          appName: appInfo.name,
+          platform: `${process.platform} ${release()}`,
+          cwd: this.cwd,
+          kind: this.kind,
+          tools,
+          mode: this.mode,
+          plan: this.mode === "plan" || this.planHandoffActive ? this.plan : undefined,
+        }),
+        input: prepareConversation(activeHistory(this.items), { provider: provider.id, model }),
+        tools: tools.map(({ name, description, parameters }) => ({ name, description, parameters })),
+        sessionId: this.id,
+        signal,
       }),
-      input: prepareConversation(activeHistory(this.items), { provider: provider.id, model }),
-      tools: tools.map(({ name, description, parameters }) => ({ name, description, parameters })),
-      sessionId: this.id,
-      signal,
-    })) {
+    )) {
       round.received = true
       switch (event.type) {
         case "text_delta":
@@ -881,13 +921,19 @@ export class AgentSession {
           break
         case "reasoning_delta":
           detectLoop(outputLoops.rawReasoning, event.text, "reasoning")
-          this.emit({ type: "reasoning_delta", text: event.text })
+          {
+            const text = rawReasoning.write(event.text)
+            if (text) this.emit({ type: "reasoning_delta", text })
+          }
           break
         case "item_done": {
+          const item = redactProviderOutputItem(event.item)
           if (event.item.type === "assistant_message") {
             if (!assistantStreamed) {
               detectLoop(outputLoops.assistant, event.item.text, "assistant response")
-              if (event.item.text) this.emit({ type: "assistant_message", text: event.item.text })
+              if (item.type === "assistant_message" && item.text) {
+                this.emit({ type: "assistant_message", text: item.text })
+              }
             }
             finishLoop(outputLoops.assistant, "assistant response")
             assistantStreamed = false
@@ -895,12 +941,14 @@ export class AgentSession {
           if (event.item.type === "reasoning") {
             if (!reasoningStreamed) {
               detectLoop(outputLoops.reasoning, event.item.summary, "reasoning summary")
-              if (event.item.summary) this.emit({ type: "reasoning_summary", text: event.item.summary })
+              if (item.type === "reasoning" && item.summary) {
+                this.emit({ type: "reasoning_summary", text: item.summary })
+              }
             }
             finishLoop(outputLoops.reasoning, "reasoning summary")
             reasoningStreamed = false
           }
-          round.items.push(event.item)
+          round.items.push(item)
           break
         }
         case "done": {
@@ -915,6 +963,8 @@ export class AgentSession {
         }
       }
     }
+    const rawReasoningTail = rawReasoning.end()
+    if (rawReasoningTail) this.emit({ type: "reasoning_delta", text: rawReasoningTail })
   }
 
   private toolCallBatches(calls: ToolCallItem[]): ToolCallBatch[] {
@@ -1088,10 +1138,14 @@ export class AgentSession {
     this.setState("running_tool")
     this.emit({ type: "tool_started", callId: call.callId, tool: call.name, title, readOnly })
     let output: string
-    let events: ToolEvent[]
+    let result: ToolResult
+    const updates = createRedactedStream()
+    const update = (text: string): void => {
+      const redacted = updates.write(text)
+      if (redacted) this.emit({ type: "tool_updated", callId: call.callId, text: redacted })
+    }
     try {
-      const update = (text: string): void => this.emit({ type: "tool_updated", callId: call.callId, text })
-      const result = isInteractiveTool(tool)
+      result = isInteractiveTool(tool)
         ? await tool.execute(call.args, {
             session: { directory: this.outputDirectory, mode: this.mode },
             publish: (event) => this.publishToolEvent(event),
@@ -1113,12 +1167,15 @@ export class AgentSession {
               update,
             })
           : await tool.execute(call.args, { cwd: this.cwd, signal, update })
-      output = result.output
-      events = result.events ?? []
     } catch (error) {
       output = `${TOOL_FAILED_PREFIX}${describeError(error)}`
       return this.toolCallOutcome(call, title, readOnly, output)
+    } finally {
+      const tail = updates.end()
+      if (tail) this.emit({ type: "tool_updated", callId: call.callId, text: tail })
     }
+    output = redactText(result.output)
+    const events = result.events ?? []
     try {
       output = await boundToolOutput(this.outputDirectory, output)
     } catch (error) {

@@ -1,5 +1,6 @@
 import { readJsonFile, writeSecureJson } from "../lib/fs"
 import { asNumber, asString, isRecord } from "../lib/json"
+import { replaceSecretValues } from "../secrets/redactor"
 import { credentialsPath } from "./paths"
 
 export interface OAuthCredential {
@@ -16,6 +17,13 @@ export interface ApiKeyCredential {
 }
 
 export type Credential = OAuthCredential | ApiKeyCredential
+
+function secretValues(providers: Record<string, Credential>): string[] {
+  return Object.values(providers).flatMap((credential) => {
+    if (credential.type === "api_key") return [credential.key]
+    return [credential.access, credential.refresh]
+  })
+}
 
 function parseCredential(raw: unknown): Credential | undefined {
   if (!isRecord(raw)) return undefined
@@ -35,7 +43,10 @@ function parseCredential(raw: unknown): Credential | undefined {
 async function loadProviders(): Promise<Record<string, Credential>> {
   const path = credentialsPath()
   const parsed = await readJsonFile(path)
-  if (parsed === undefined) return {}
+  if (parsed === undefined) {
+    replaceSecretValues("credentials", [])
+    return {}
+  }
   if (!isRecord(parsed) || !isRecord(parsed.providers)) {
     throw new Error(`${path} is malformed — fix or delete it`)
   }
@@ -45,7 +56,12 @@ async function loadProviders(): Promise<Record<string, Credential>> {
     if (!credential) throw new Error(`${path} has a malformed credential for ${providerId} — fix or delete it`)
     providers[providerId] = credential
   }
+  replaceSecretValues("credentials", secretValues(providers))
   return providers
+}
+
+export async function loadCredentialSecrets(): Promise<void> {
+  await loadProviders()
 }
 
 export async function loadCredential(providerId: string): Promise<Credential | undefined> {
@@ -56,4 +72,5 @@ export async function saveCredential(providerId: string, credential: Credential)
   const providers = await loadProviders()
   providers[providerId] = credential
   await writeSecureJson(credentialsPath(), { providers })
+  replaceSecretValues("credentials", secretValues(providers))
 }

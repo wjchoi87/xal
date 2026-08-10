@@ -14,6 +14,7 @@ import {
 } from "../../../background/registry"
 import { describeError } from "../../../lib/error"
 import { occupiedContext } from "../../../providers/types"
+import { redactText } from "../../../secrets/redactor"
 import { formatDuration, formatTokens } from "../lib/format"
 import { column, detailPanel, label, row } from "../lib/renderables"
 import { Spinner } from "../lib/spinner"
@@ -330,7 +331,7 @@ export class BackgroundTasks {
       const glyph = !state.running && !state.ok ? "x" : terminalGlyph(viewed ? "●" : "○", viewed ? "*" : "o")
       const glyphColor = !state.running && !state.ok ? COLORS.error : viewed ? COLORS.foreground : COLORS.faint
       entry.glyph.content = new StyledText([paint(glyphColor, glyph)])
-      const name = entry.task.role
+      const name = redactText(entry.task.role)
       entry.text.content = active
         ? new StyledText([paint(COLORS.accent, name)])
         : new StyledText([state.running || viewed ? paint(COLORS.foreground, name) : muted(name)])
@@ -342,12 +343,12 @@ export class BackgroundTasks {
     entry.glyph.content = state.running
       ? new StyledText([paint(COLORS.agent, this.spinner.glyph)])
       : new StyledText([paint(state.ok ? COLORS.success : COLORS.error, state.ok ? "✓" : "x")])
-    const name = `${entry.task.id} · ${firstLine(entry.task.title)}`
+    const name = `${entry.task.id} · ${firstLine(redactText(entry.task.title))}`
     entry.text.content = active
       ? new StyledText([paint(COLORS.accent, name)])
       : new StyledText([state.running ? paint(COLORS.foreground, name) : muted(name)])
     entry.status.content = new StyledText([
-      muted(state.running ? formatDuration(Date.now() - entry.task.startedAt) : state.detail),
+      muted(state.running ? formatDuration(Date.now() - entry.task.startedAt) : redactText(state.detail)),
     ])
   }
 
@@ -390,7 +391,7 @@ export class BackgroundTasks {
   }
 
   private previewLines(task: BackgroundTask): string[] {
-    const lines = sanitize(task.output().slice(-PREVIEW_KEPT_CHARS))
+    const lines = sanitize(redactText(task.output().slice(-PREVIEW_KEPT_CHARS)))
       .split("\n")
       .map((line) => line.trimEnd())
       .filter((line) => line.length > 0)

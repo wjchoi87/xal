@@ -1,4 +1,5 @@
 import type { CliRenderer, ScrollbackSurface, TextRenderable } from "@opentui/core"
+import { createRedactedStream, redactText, type RedactedStream } from "../../../secrets/redactor"
 import type { Block, StreamBlock, StreamKind } from "./blocks"
 import { contentWidth, renderBlock, streamContent, streamView } from "./render"
 
@@ -10,6 +11,32 @@ interface Stream {
   text: TextRenderable
   committed: number
   flushedAt: number
+  redactor: RedactedStream
+}
+
+function redactBlock(block: Block): Block {
+  switch (block.kind) {
+    case "banner":
+      return { ...block, model: redactText(block.model), cwd: redactText(block.cwd) }
+    case "user":
+    case "info":
+    case "error":
+    case "text":
+    case "reasoning":
+      return { ...block, text: redactText(block.text) }
+    case "notice":
+      return {
+        ...block,
+        summary: redactText(block.summary),
+        details: block.details.map(redactText),
+      }
+    case "compaction":
+      return { ...block, summary: redactText(block.summary) }
+    case "plan":
+      return { ...block, path: redactText(block.path), text: redactText(block.text) }
+    case "tool":
+      return { ...block, title: redactText(block.title), output: redactText(block.output) }
+  }
 }
 
 export class Scrollback {
@@ -34,15 +61,16 @@ export class Scrollback {
 
   append(block: Block): void {
     this.endStream()
+    const redacted = redactBlock(block)
     const previous = this.blocks[this.blocks.length - 1]
-    this.blocks.push(block)
-    this.emit(block, previous)
+    this.blocks.push(redacted)
+    this.emit(redacted, previous)
   }
 
   appendStream(kind: StreamKind, delta: string): void {
     if (this.stream && this.stream.block.kind !== kind) this.endStream()
     const stream = this.stream ?? this.beginStream(kind)
-    stream.block.text += delta
+    stream.block.text += stream.redactor.write(delta)
     const now = Date.now()
     if (now - stream.flushedAt < FLUSH_MS) return
     stream.flushedAt = now
@@ -53,6 +81,7 @@ export class Scrollback {
     const stream = this.stream
     if (!stream) return false
     this.stream = undefined
+    stream.block.text += stream.redactor.end()
     const flushed = stream.block.text.length > 0
     if (flushed) this.flush(stream, true)
     else this.drop(stream.block)
@@ -93,7 +122,7 @@ export class Scrollback {
       previous = block
     }
     if (!streaming) return
-    this.stream = this.openStream(streaming.block)
+    this.stream = this.openRedactedStream(streaming.block, streaming.redactor)
     this.flush(this.stream, false)
   }
 
@@ -120,10 +149,14 @@ export class Scrollback {
   }
 
   private openStream(block: StreamBlock): Stream {
+    return this.openRedactedStream(block, createRedactedStream())
+  }
+
+  private openRedactedStream(block: StreamBlock, redactor: RedactedStream): Stream {
     const surface = this.renderer.createScrollbackSurface()
     const { view, text } = streamView(surface.renderContext, block)
     surface.root.add(view)
-    return { block, surface, text, committed: 0, flushedAt: 0 }
+    return { block, surface, text, committed: 0, flushedAt: 0, redactor }
   }
 
   private flush(stream: Stream, final: boolean): void {

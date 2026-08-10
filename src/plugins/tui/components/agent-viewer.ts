@@ -2,6 +2,7 @@ import { StyledText, TextAttributes, type BoxRenderable, type CliRenderer, type 
 import type { BackgroundAgentTask } from "../../../background/registry"
 import { compactPath } from "../../../lib/path"
 import { occupiedContext } from "../../../providers/types"
+import { redactText } from "../../../secrets/redactor"
 import { formatDuration, formatTokens } from "../lib/format"
 import { column, label, row } from "../lib/renderables"
 import { firstLine, sanitize, sliceToWidth, terminalGlyph, truncateToWidth } from "../lib/text"
@@ -124,16 +125,18 @@ export class AgentViewer {
     if (!task) return
     const snapshot = task.snapshot()
     const width = Math.max(10, this.ctx.terminalWidth - HORIZONTAL_PADDING * 2)
-    this.view.title = truncateToWidth(firstLine(task.title), Math.max(10, Math.floor(width * 0.6)))
+    this.view.title = truncateToWidth(firstLine(redactText(task.title)), Math.max(10, Math.floor(width * 0.6)))
     this.role.content = new StyledText([
       paint(task.state().running ? COLORS.agent : COLORS.foreground, task.state().running ? "● " : "○ "),
-      paint(COLORS.foreground, task.role),
-      muted(` · ${task.model} · ${compactPath(task.cwd)}`),
+      paint(COLORS.foreground, redactText(task.role)),
+      muted(redactText(` · ${task.model} · ${compactPath(task.cwd)}`)),
     ])
     const tokens = snapshot.usage ? ` · ↓ ${formatTokens(occupiedContext(snapshot.usage))} tokens` : ""
     this.metrics.content = `${formatDuration(snapshot.elapsedMs)}${tokens}`
-    const output = sanitize(task.output()).trimEnd()
-    const wrapped = (output ? output.split("\n") : [snapshot.activity]).flatMap((line) => wrapLine(line, width))
+    const output = sanitize(redactText(task.output())).trimEnd()
+    const wrapped = (output ? output.split("\n") : [redactText(snapshot.activity)]).flatMap((line) =>
+      wrapLine(line, width),
+    )
     const visible = wrapped.slice(-this.lines.length)
     this.lines.forEach((line, index) => {
       const content = visible[index]

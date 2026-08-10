@@ -8,6 +8,7 @@ import {
 } from "@opentui/core"
 import { listBackgroundTasks, subscribeBackgroundTasks, type BackgroundAgentTask } from "../../../background/registry"
 import { occupiedContext } from "../../../providers/types"
+import { redactText } from "../../../secrets/redactor"
 import { formatTokens } from "../lib/format"
 import { column, label, row } from "../lib/renderables"
 import { Spinner } from "../lib/spinner"
@@ -117,11 +118,11 @@ export class AgentSummary {
       const snapshot = agent.snapshot()
       const last = index === this.agents.length - 1
       entry.branch.content = `${terminalGlyph(last ? "└" : "├", last ? "`" : "|")} `
-      entry.title.content = firstLine(agent.title)
+      entry.title.content = firstLine(redactText(agent.title))
       const toolCount = `${snapshot.toolCount} tool ${snapshot.toolCount === 1 ? "use" : "uses"}`
       const tokens = snapshot.usage ? ` · ${formatTokens(occupiedContext(snapshot.usage))} tokens` : ""
       entry.metrics.content = `${toolCount}${tokens}`
-      entry.activity.content = `${terminalGlyph("└", "`")} ${snapshot.activity}`
+      entry.activity.content = redactText(`${terminalGlyph("└", "`")} ${snapshot.activity}`)
     })
   }
 }

@@ -2,6 +2,7 @@ import { appInfo } from "../../app-info"
 import type { ConnectContext } from "../../providers/types"
 import { loadCredential, saveCredential, type OAuthCredential } from "../../config/credentials"
 import { asString, isRecord } from "../../lib/json"
+import { protectSecretValue } from "../../secrets/redactor"
 import { parseTokenResponse, type TokenResponse } from "./wire"
 
 export const PROVIDER_ID = "openai-chatgpt"
@@ -217,6 +218,8 @@ export async function login(ctx: ConnectContext): Promise<boolean> {
     )
     code = parsePastedCode(await ask!("paste redirect URL or code:"), state)
   }
+
+  protectSecretValue(code)
 
   const tokens = await requestTokens(
     new URLSearchParams({

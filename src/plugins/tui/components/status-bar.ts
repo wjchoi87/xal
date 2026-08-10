@@ -9,6 +9,7 @@ import {
 import type { AgentState } from "../../../agent/events"
 import type { PermissionMode } from "../../../permissions/types"
 import { occupiedContext, type ThinkingEffort, type Usage } from "../../../providers/types"
+import { redactText } from "../../../secrets/redactor"
 import { formatTokens } from "../lib/format"
 import { label, row } from "../lib/renderables"
 import { Spinner } from "../lib/spinner"
@@ -37,18 +38,20 @@ export class StatusBar {
   private notice: string | undefined
   private contextTokens: number | undefined
   private contextWindow: number | undefined
+  private model: string
 
   constructor(
     ctx: RenderContext,
-    private model: string,
+    model: string,
     private thinking: ThinkingEffort | undefined,
     private mode: PermissionMode,
   ) {
+    this.model = redactText(model)
     this.view = row(ctx, { height: STATUS_ROWS, paddingLeft: 2, paddingRight: 2 })
     this.activity = label(ctx, { content: "", flexGrow: 1, flexShrink: 1 })
     this.modeLabel = label(ctx, { content: "", flexShrink: 0, marginLeft: 1 })
     this.meta = label(ctx, {
-      content: model,
+      content: this.model,
       flexShrink: 0,
       marginLeft: 1,
       color: COLORS.faint,
@@ -71,7 +74,7 @@ export class StatusBar {
   }
 
   setModel(model: string): void {
-    this.model = model
+    this.model = redactText(model)
     this.renderMeta()
   }
 
@@ -93,14 +96,14 @@ export class StatusBar {
   }
 
   setLoading(loading: string | undefined): void {
-    this.loading = loading
+    this.loading = loading === undefined ? undefined : redactText(loading)
     this.notice = undefined
     this.toggleSpinner(loading !== undefined)
     this.render()
   }
 
   setNotice(notice: string): void {
-    this.notice = notice
+    this.notice = redactText(notice)
     this.toggleSpinner(false)
     this.render()
   }

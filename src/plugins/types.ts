@@ -24,6 +24,7 @@ export interface PluginContext {
   registerPrompt(section: PromptSection): void
   registerPolicyRule(rule: PolicyRule): void
   registerPermissionRules(rules: PermissionRules): void
+  registerSecrets(values: string[]): void
   registerUi(ui: Ui): void
   registerToolRenderer(renderer: ToolRenderer): void
 }

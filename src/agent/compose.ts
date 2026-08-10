@@ -1,4 +1,5 @@
 import { settings } from "../config/settings"
+import { loadCredentialSecrets } from "../config/credentials"
 import { resolveThinking } from "../config/thinking"
 import { pathExists } from "../lib/fs"
 import type { PermissionMode } from "../permissions/types"
@@ -36,6 +37,7 @@ function resolveProvider(id?: string): Provider {
 }
 
 export async function createSession(options: SessionOptions = {}): Promise<SessionSetup> {
+  await loadCredentialSecrets()
   const provider = resolveProvider(options.provider)
   const model =
     options.model ?? (options.provider === undefined ? settings().model : undefined) ?? (await provider.defaultModel())

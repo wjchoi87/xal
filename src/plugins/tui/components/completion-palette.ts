@@ -1,6 +1,7 @@
 import { StyledText, type BoxRenderable, type RenderContext, type TextRenderable } from "@opentui/core"
 import { listCommands } from "../../../commands/registry"
 import type { Command } from "../../../commands/types"
+import { redactText } from "../../../secrets/redactor"
 import { skillQuery, type SkillQuery } from "../../../skills/references"
 import { listSkills } from "../../../skills/registry"
 import type { Skill } from "../../../skills/types"
@@ -40,6 +41,7 @@ function fuzzyRank(query: string, candidate: string): number | undefined {
 
 function skillCompletions(query: string): Completion[] {
   return listSkills()
+    .filter((skill) => redactText(skill.name) === skill.name)
     .flatMap((skill) => {
       const rank = fuzzyRank(query, skill.name)
       return rank === undefined ? [] : [{ skill, rank }]
@@ -54,13 +56,21 @@ function commandCompletions(value: string, cursor: number): Completion[] | undef
   if (/\s/.test(query)) return undefined
   const needle = query.toLowerCase()
   return listCommands()
-    .filter((command) => !command.hidden && command.name.toLowerCase().includes(needle))
+    .filter(
+      (command) =>
+        !command.hidden && redactText(command.name) === command.name && command.name.toLowerCase().includes(needle),
+    )
     .map((command) => ({ kind: "command", command }))
 }
 
 function completionText(entry: Completion): { name: string; description: string } {
-  if (entry.kind === "command") return { name: `/${entry.command.name}`, description: entry.command.describe }
-  return { name: `$${entry.skill.name}`, description: entry.skill.description.replace(/\s+/g, " ") }
+  if (entry.kind === "command") {
+    return { name: redactText(`/${entry.command.name}`), description: redactText(entry.command.describe) }
+  }
+  return {
+    name: redactText(`$${entry.skill.name}`),
+    description: redactText(entry.skill.description.replace(/\s+/g, " ")),
+  }
 }
 
 export class CompletionPalette {

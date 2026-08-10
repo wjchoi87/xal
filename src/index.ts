@@ -3,7 +3,9 @@ import { chooseOption } from "./cli/choose"
 import { runCli } from "./cli/run"
 import { askSecret } from "./cli/secret"
 import type { CliContext } from "./cli/types"
+import { loadCredentialSecrets } from "./config/credentials"
 import { loadSettings } from "./config/settings"
+import { describeError } from "./lib/error"
 import { bootstrapPlugins, registerPlugins } from "./plugins/discover"
 import { registerTrustClis } from "./project/cli"
 import { ensureWorkspaceTrust } from "./project/trust"
@@ -11,19 +13,24 @@ import { registerProviderClis } from "./providers/cli"
 import { registerProviderCommands } from "./providers/commands"
 import { registerSessionClis } from "./sessions/cli"
 import { registerSessionCommands } from "./sessions/commands"
+import { protectSecretValue, redactText } from "./secrets/redactor"
 import { getUi } from "./ui/registry"
 
 const ctx: CliContext = {
   print(line) {
-    console.log(line)
+    console.log(redactText(line))
   },
   error(line) {
-    console.error(line)
+    console.error(redactText(line))
   },
   ask(question) {
-    return Promise.resolve(prompt(question) ?? "")
+    return Promise.resolve(prompt(redactText(question)) ?? "")
   },
-  askSecret,
+  async askSecret(question) {
+    const value = await askSecret(redactText(question))
+    if (value !== undefined) protectSecretValue(value)
+    return value
+  },
 }
 
 function registerCore(): void {
@@ -49,6 +56,7 @@ async function main(input: string[]): Promise<void> {
   })
   if (!trusted) return
   const settings = await loadSettings()
+  await loadCredentialSecrets()
   registerCore()
   const plugins = await registerPlugins(settings)
 
@@ -78,7 +86,12 @@ async function main(input: string[]): Promise<void> {
   await runCli(args, ctx)
 }
 
-await main(process.argv.slice(2))
+try {
+  await main(process.argv.slice(2))
+} catch (error) {
+  console.error(redactText(describeError(error)))
+  process.exitCode = 1
+}
 await Promise.all([
   new Promise<void>((resolve) => process.stdout.write("", () => resolve())),
   new Promise<void>((resolve) => process.stderr.write("", () => resolve())),

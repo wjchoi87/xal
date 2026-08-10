@@ -1,5 +1,7 @@
 import { prepareConversation } from "../providers/conversation"
 import type { ConversationItem, Provider, ProviderReplay, ThinkingEffort, UserMessageItem } from "../providers/types"
+import { redactStreamRequest } from "../secrets/data"
+import { redactText } from "../secrets/redactor"
 import { activeHistory, conversationOnly, type HistoryItem } from "./history"
 
 export const COMPACTION_TRIGGER_RATIO = 0.85
@@ -127,20 +129,22 @@ export async function summarizeHistory(request: SummaryRequest): Promise<string>
 
   let streamed = ""
   let settled = ""
-  for await (const event of request.provider.stream({
-    model: request.model,
-    thinking: request.thinking,
-    instructions: SUMMARY_INSTRUCTIONS,
-    input,
-    tools: [],
-    sessionId: request.sessionId,
-    signal: request.signal,
-  })) {
+  for await (const event of request.provider.stream(
+    redactStreamRequest({
+      model: request.model,
+      thinking: request.thinking,
+      instructions: SUMMARY_INSTRUCTIONS,
+      input,
+      tools: [],
+      sessionId: request.sessionId,
+      signal: request.signal,
+    }),
+  )) {
     if (event.type === "text_delta") streamed += event.text
     if (event.type === "item_done" && event.item.type === "assistant_message") settled += event.item.text
   }
 
   const summary = (settled || streamed).trim()
   if (!summary) throw new Error(`${request.provider.name} returned an empty summary`)
-  return summary
+  return redactText(summary)
 }

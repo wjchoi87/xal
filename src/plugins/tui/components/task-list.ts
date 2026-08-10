@@ -1,5 +1,6 @@
 import { StyledText, type BoxRenderable, type RenderContext } from "@opentui/core"
 import type { TrackedTask } from "../../../tasks/types"
+import { redactText } from "../../../secrets/redactor"
 import { column, label, row } from "../lib/renderables"
 import { terminalGlyph } from "../lib/text"
 import { COLORS } from "../theme/colors"
@@ -16,9 +17,10 @@ function glyph(task: TrackedTask): StyledText {
 }
 
 function step(task: TrackedTask): StyledText {
-  if (task.status === "completed") return new StyledText([muted(task.step)])
-  if (task.status === "in_progress") return new StyledText([paint(COLORS.agent, task.step)])
-  return new StyledText([paint(COLORS.foreground, task.step)])
+  const text = redactText(task.step)
+  if (task.status === "completed") return new StyledText([muted(text)])
+  if (task.status === "in_progress") return new StyledText([paint(COLORS.agent, text)])
+  return new StyledText([paint(COLORS.foreground, text)])
 }
 
 export class TaskList {

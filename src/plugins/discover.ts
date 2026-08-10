@@ -8,6 +8,7 @@ import { describeError } from "../lib/error"
 import { contributeRules } from "../permissions/rules"
 import { registerPolicyRule } from "../permissions/service"
 import { registerProvider } from "../providers/registry"
+import { replaceSecretValues } from "../secrets/redactor"
 import { registerTool } from "../tools/registry"
 import { registerToolRenderer } from "../ui/extension"
 import { registerUi } from "../ui/registry"
@@ -35,6 +36,7 @@ function contextFor(plugin: Plugin, settings: Settings): PluginContext {
     registerPrompt,
     registerPolicyRule,
     registerPermissionRules: contributeRules,
+    registerSecrets: (values) => replaceSecretValues(`plugin:${plugin.name}`, values),
     registerUi,
     registerToolRenderer,
   }

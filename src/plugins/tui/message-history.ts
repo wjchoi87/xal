@@ -4,6 +4,7 @@ import { projectMessageHistoryPath } from "../../config/paths"
 import { isMissingPathError } from "../../lib/error"
 import { asNumber, asString, isRecord } from "../../lib/json"
 import type { UserInput } from "../../providers/types"
+import { redactText } from "../../secrets/redactor"
 
 interface MessageHistoryRecord {
   version: 1
@@ -59,7 +60,7 @@ export class MessageHistory {
       const line = lines[index]
       if (!line) continue
       const record = parseRecord(line, path, index + 1)
-      entries.push(record.text)
+      entries.push(redactText(record.text))
     }
     return new MessageHistory(path, entries)
   }
@@ -95,9 +96,10 @@ export class MessageHistory {
 
   record(text: string): Promise<void> {
     if (!text) return Promise.resolve()
-    this.entries.push(text)
+    const redacted = redactText(text)
+    this.entries.push(redacted)
     this.reset()
-    const record = { version: 1, text } satisfies MessageHistoryRecord
+    const record = { version: 1, text: redacted } satisfies MessageHistoryRecord
     const payload = `${JSON.stringify(record)}\n`
     this.writes = this.writes.then(async () => {
       await mkdir(dirname(this.path), { recursive: true })

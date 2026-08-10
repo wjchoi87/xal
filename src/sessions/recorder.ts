@@ -13,15 +13,15 @@ function line(record: SessionRecord): string {
 
 export class SessionRecorder {
   private path: string | undefined
-  private pending: SessionMeta | undefined
+  private pending: { meta: SessionMeta; cwd: string } | undefined
   private queue: Promise<void> = Promise.resolve()
   private failed = false
 
   constructor(private readonly onError: (message: string) => void) {}
 
-  start(meta: SessionMeta): void {
+  start(meta: SessionMeta, cwd: string): void {
     this.path = undefined
-    this.pending = meta
+    this.pending = { meta, cwd }
     this.failed = false
   }
 
@@ -42,14 +42,16 @@ export class SessionRecorder {
 
   private append(record: SessionRecord): void {
     if (this.failed) return
-    const meta = this.pending
-    if (meta) {
-      this.path = join(projectSessionsDir(meta.cwd), `${meta.id}.jsonl`)
+    const pending = this.pending
+    if (pending) {
+      this.path = join(projectSessionsDir(pending.cwd), `${pending.meta.id}.jsonl`)
       this.pending = undefined
     }
     const path = this.path
     if (!path) return
-    this.queue = this.queue.then(() => this.write(path, record, meta)).catch((error: unknown) => this.fail(error))
+    this.queue = this.queue
+      .then(() => this.write(path, record, pending?.meta))
+      .catch((error: unknown) => this.fail(error))
   }
 
   private async write(path: string, record: SessionRecord, meta: SessionMeta | undefined): Promise<void> {

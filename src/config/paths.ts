@@ -2,6 +2,7 @@ import { createHash } from "node:crypto"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { appEnvVar, appInfo } from "../app-info"
+import { redactText } from "../secrets/redactor"
 
 export function agentHome(): string {
   return process.env[appEnvVar("HOME")]?.trim() || join(homedir(), `.${appInfo.name}`)
@@ -28,7 +29,10 @@ export function worktreesDir(): string {
 }
 
 function projectSlug(cwd: string): string {
-  return cwd.replace(/[^a-zA-Z0-9]+/g, "-")
+  const redacted = redactText(cwd)
+  const slug = redacted.replace(/[^a-zA-Z0-9]+/g, "-")
+  if (redacted === cwd) return slug
+  return `${slug}-${createHash("sha256").update(cwd).digest("hex").slice(0, 12)}`
 }
 
 export function projectSessionsDir(cwd: string): string {

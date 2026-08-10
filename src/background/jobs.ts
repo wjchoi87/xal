@@ -1,4 +1,5 @@
 import { setTimeout as sleep } from "node:timers/promises"
+import { createRedactedStream, redactText, type RedactedStream } from "../secrets/redactor"
 import { backgroundTasksChanged, listBackgroundTasks, subscribeBackgroundTasks } from "./registry"
 
 const MAX_PENDING_CHARS = 2_000_000
@@ -19,6 +20,7 @@ export interface BackgroundJob {
 
 const jobs = new Map<string, BackgroundJob>()
 const completions = new WeakMap<BackgroundJob, () => void>()
+const redactors = new WeakMap<BackgroundJob, RedactedStream>()
 let nextId = 1
 let cleanupRegistered = false
 
@@ -53,11 +55,12 @@ export function createJob(prefix: string, stop: () => void): BackgroundJob {
     stop,
   }
   completions.set(job, complete)
+  redactors.set(job, createRedactedStream())
   jobs.set(job.id, job)
   return job
 }
 
-export function appendJobOutput(job: BackgroundJob, text: string): void {
+function append(job: BackgroundJob, text: string): void {
   if (!text) return
   job.pending += text
   if (job.pending.length > MAX_PENDING_CHARS) {
@@ -69,10 +72,20 @@ export function appendJobOutput(job: BackgroundJob, text: string): void {
   wake(job)
 }
 
+export function appendJobOutput(job: BackgroundJob, text: string): void {
+  const redactor = redactors.get(job)
+  if (!redactor) throw new Error(`background job ${job.id} is no longer accepting output`)
+  append(job, redactor.write(text))
+}
+
 export function finishJob(job: BackgroundJob, detail: string): void {
   if (job.done) return
+  const redactor = redactors.get(job)
+  if (!redactor) throw new Error(`background job ${job.id} has no redaction stream`)
+  append(job, redactor.end())
+  redactors.delete(job)
   job.done = true
-  job.detail = detail
+  job.detail = redactText(detail)
   completions.get(job)?.()
   wake(job)
 }

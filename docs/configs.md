@@ -149,6 +149,17 @@ A prompt beginning with `$skill-name` explicitly invokes that skill. Tack keeps 
 
 `allow`, `ask`, and `deny` are arrays of permission rules. A rule is either a tool name, such as `bash`, or a tool and subject pattern, such as `bash(git status*)` or `write(src/*)`. `*` matches any sequence of characters. Deny rules are evaluated before all other permission rules.
 
+### `redaction`
+
+| Option        | Type       | Default | Description                                                     |
+| ------------- | ---------- | ------- | --------------------------------------------------------------- |
+| `values`      | `string[]` | `[]`    | Exact sensitive values to replace.                              |
+| `environment` | `string[]` | `[]`    | Environment variable names whose current values should be used. |
+
+Matches are case-sensitive and normally become `[REDACTED]` before content reaches a model, session or prompt-history storage, tool-output artifacts, CLI output, or the TUI. Tack chooses a safe alternate marker when a configured value is part of that text. Provider access tokens, refresh tokens, and API keys in Tack's credential store are included automatically. Prefer `environment` for additional values so the secret itself does not need to appear in a configuration file.
+
+Custom plugins can add values from their own credential sources with `ctx.registerSecrets`.
+
 ### `project-instructions`
 
 | Option     | Type             | Default | Description                                                          |
@@ -183,6 +194,9 @@ Every option is optional. A configuration using all currently supported built-in
       "allow": ["bash(git status*)"],
       "ask": ["bash(git push*)"],
       "deny": ["bash(rm *)"]
+    },
+    "redaction": {
+      "environment": ["MY_PROJECT_TOKEN"]
     },
     "project-instructions": {
       "maxBytes": 65536

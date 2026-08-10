@@ -1,4 +1,25 @@
 import type { AppEvent, EventService } from "./types"
+import { redactText } from "../secrets/redactor"
+
+function redactEvent(event: AppEvent): AppEvent {
+  switch (event.type) {
+    case "plugin_registration_finished":
+    case "plugin_bootstrap_finished":
+      return {
+        ...event,
+        status: {
+          ...event.status,
+          failures: event.status.failures.map((failure) => ({
+            ...failure,
+            plugin: redactText(failure.plugin),
+            reason: redactText(failure.reason),
+          })),
+        },
+      }
+    case "plugin_bootstrap_started":
+      return event
+  }
+}
 
 class AppEventService implements EventService {
   private readonly listeners = new Set<(event: AppEvent) => void>()
@@ -8,13 +29,15 @@ class AppEventService implements EventService {
     try {
       listener(event)
     } catch (error) {
-      console.error(`event listener failed for ${event.type}:`, error)
+      const detail = error instanceof Error ? error.message : String(error)
+      console.error(redactText(`event listener failed for ${event.type}: ${detail}`))
     }
   }
 
   emitRetained(event: AppEvent): void {
-    this.retained.set(event.type, event)
-    for (const listener of this.listeners) this.notify(listener, event)
+    const redacted = redactEvent(event)
+    this.retained.set(redacted.type, redacted)
+    for (const listener of this.listeners) this.notify(listener, redacted)
   }
 
   subscribe(listener: (event: AppEvent) => void, replayRetained = false): () => void {

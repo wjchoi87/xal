@@ -7,6 +7,7 @@ import { describeError } from "../../lib/error"
 import { compactPath } from "../../lib/path"
 import type { PermissionMode } from "../../permissions/types"
 import type { ThinkingEffort, UserInput } from "../../providers/types"
+import { protectSecretValue, redactText } from "../../secrets/redactor"
 import type { ElicitationQuestion } from "../../tools/types"
 import { AgentSummary } from "./components/agent-summary"
 import { AgentViewer } from "./components/agent-viewer"
@@ -66,7 +67,7 @@ export class Screen {
     private readonly history: MessageHistory,
     actions: ScreenActions,
   ) {
-    this.cwd = session.currentWorkingDirectory
+    this.cwd = redactText(session.currentWorkingDirectory)
     this.scrollback = new Scrollback(renderer, startRow, (rows) => this.reclaim(rows))
     this.view = column(renderer, { width: "100%", height: "100%", justifyContent: "flex-end" })
     this.agentSummary = new AgentSummary(renderer, () => {
@@ -181,7 +182,7 @@ export class Screen {
     thinking: ThinkingEffort | undefined,
     mode: PermissionMode,
   ): void {
-    this.cwd = cwd
+    this.cwd = redactText(cwd)
     this.setSessionTitle(title)
     this.statusBar.setModel(model)
     this.statusBar.setThinking(thinking)
@@ -196,25 +197,33 @@ export class Screen {
   }
 
   setSessionTitle(title: string | undefined): void {
-    this.sessionTitle = title
-    this.renderer.setTerminalTitle(sessionTerminalTitle(title, this.cwd))
+    this.sessionTitle = title === undefined ? undefined : redactText(title)
+    this.renderer.setTerminalTitle(sessionTerminalTitle(this.sessionTitle, this.cwd))
   }
 
   setWorkingDirectory(cwd: string): void {
-    this.cwd = cwd
-    this.renderer.setTerminalTitle(sessionTerminalTitle(this.sessionTitle, cwd))
+    this.cwd = redactText(cwd)
+    this.renderer.setTerminalTitle(sessionTerminalTitle(this.sessionTitle, this.cwd))
   }
 
   async select<T>(request: SelectRequest<T>): Promise<T | undefined> {
-    const chosen = this.picker.show(request.options, request.search)
+    const options = request.options.map((option) => ({
+      ...option,
+      label: redactText(option.label),
+      detail: redactText(option.detail),
+      ...(option.note === undefined ? {} : { note: redactText(option.note) }),
+    }))
+    const chosen = this.picker.show(options, request.search ? redactText(request.search) : undefined)
     this.syncFooter()
     const index = await chosen
-    return index === undefined ? undefined : request.options[index]?.value
+    return index === undefined ? undefined : options[index]?.value
   }
 
   async askSecret(question: string): Promise<string | undefined> {
     this.picker.hide()
-    return this.secret.show(question)
+    const value = await this.secret.show(redactText(question))
+    if (value !== undefined) protectSecretValue(value)
+    return value
   }
 
   searchHistory(): void {
