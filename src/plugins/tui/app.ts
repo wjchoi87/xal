@@ -9,7 +9,6 @@ import {
 } from "@opentui/core"
 import { createSession, resumeSession } from "../../agent/compose"
 import { appInfo } from "../../app-info"
-import { registerCommand } from "../../commands/registry"
 import type { EventService } from "../../events"
 import { describeError } from "../../lib/error"
 import { compactPath } from "../../lib/path"
@@ -18,6 +17,7 @@ import type { UiOptions } from "../../ui/registry"
 import { AgentEventController } from "./controllers/agent-events"
 import { AppEventController, InputQueue } from "./controllers/app-events"
 import { bindKeys } from "./controllers/keymap"
+import { setTuiCommandActions } from "./commands"
 import { COMPOSER_ROWS } from "./components/composer"
 import { STATUS_ROWS } from "./components/status-bar"
 import { cursorRow } from "./lib/cursor"
@@ -71,6 +71,16 @@ export async function startTui(events: EventService, options: UiOptions = {}): P
   process.on("exit", restoreTerminal)
   renderer.setTerminalTitle(`${appInfo.name} — ${compactPath(process.cwd())}`)
 
+  const quit = (): void => {
+    renderer.externalOutputMode = "passthrough"
+    renderer.screenMode = "main-screen"
+    renderer.destroy()
+  }
+  const resetCommands = setTuiCommandActions({
+    terminal: () => describeTerminal(renderer.capabilities),
+    quit,
+  })
+
   const input = new InputQueue((submission) => session.send(submission))
   const screen = new Screen(renderer, session, startRow, history, {
     submit: (submission) => input.submit(submission),
@@ -123,31 +133,10 @@ export async function startTui(events: EventService, options: UiOptions = {}): P
     }, RESIZE_DEBOUNCE_MS)
   })
 
-  const quit = (): void => {
-    renderer.externalOutputMode = "passthrough"
-    renderer.screenMode = "main-screen"
-    renderer.destroy()
-  }
-
-  registerCommand({
-    name: "terminal",
-    describe: "show detected terminal capabilities",
-    async run(_args, ctx) {
-      for (const line of describeTerminal(renderer.capabilities)) ctx.print(line)
-    },
-  })
-
-  registerCommand({
-    name: "quit",
-    describe: `exit ${appInfo.name}`,
-    async run() {
-      quit()
-    },
-  })
-
   bindKeys(renderer, { session, screen, quit })
 
   screen.composer.focus()
   await destroyed
+  resetCommands()
   clearTimeout(replayTimer)
 }

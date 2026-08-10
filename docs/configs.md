@@ -46,6 +46,8 @@ For example, this loads an existing local plugin:
 
 The referenced directory must contain a `plugin.ts` whose default export has a `name`, a synchronous `register` function, and optionally an asynchronous `bootstrap` function. Relative plugin paths are not resolved from the project directory, even when they are declared in project configuration.
 
+Plugins can contribute slash commands with `ctx.registerCommand`. Commands known synchronously belong in `register`; commands discovered from files or services may be added during `bootstrap`, before interactive input is released.
+
 ### Thinking
 
 Thinking preferences use this shape:
@@ -64,6 +66,34 @@ Thinking preferences use this shape:
 ```
 
 Supported effort values are `none`, `low`, `medium`, `high`, `xhigh`, and `max`. Each provider and model may support only a subset. An unavailable saved effort is ignored in favor of that model's default.
+
+## Prompt commands
+
+Tack discovers reusable Markdown prompt commands from two directories:
+
+| Scope   | Path                             | Priority |
+| ------- | -------------------------------- | -------- |
+| User    | `$TACK_HOME/commands/*.md`       | Lower    |
+| Project | `<git-root>/.tack/commands/*.md` | Higher   |
+
+When `TACK_HOME` is unset, the user directory is `~/.tack/commands`. A project command replaces a user command with the same filename. Command filenames become slash-command names and must use lower-case letters, numbers, hyphens, or underscores. Prompt commands cannot replace built-in or plugin-registered commands.
+
+Each file contains the prompt sent to the active session. Optional frontmatter supplies its command-palette description and argument hint:
+
+```md
+---
+description: Review the current changes
+argument-hint: <base-branch> [focus]
+---
+
+Review the current changes against $1. Pay particular attention to $2.
+
+Additional context: $ARGUMENTS
+```
+
+`$1`, `$2`, and later numbered placeholders expand to positional arguments. `$ARGUMENTS` expands to all arguments joined with spaces, and `$$` emits a literal dollar sign. Missing positional arguments expand to an empty string.
+
+After startup, type `/` in the TUI to see discovered commands in the command palette. Selecting one submits the expanded prompt through the same session path as a typed message.
 
 ## Built-in plugin configuration
 

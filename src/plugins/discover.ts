@@ -1,5 +1,6 @@
 import { registerPrompt } from "../agent/prompt"
 import { registerCli } from "../cli/registry"
+import { registerCommand } from "../commands/registry"
 import { agentHome } from "../config/paths"
 import type { Settings } from "../config/settings"
 import { events, type PluginFailure, type PluginStatus } from "../events"
@@ -30,6 +31,7 @@ function contextFor(plugin: Plugin, settings: Settings): PluginContext {
     registerTool,
     registerProvider,
     registerCli,
+    registerCommand,
     registerPrompt,
     registerPolicyRule,
     registerPermissionRules: contributeRules,
