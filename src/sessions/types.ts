@@ -30,4 +30,5 @@ export interface LoadedSession {
   meta: SessionMeta
   items: HistoryItem[]
   events: AgentEvent[]
+  title?: string
 }

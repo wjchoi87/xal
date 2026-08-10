@@ -8,7 +8,6 @@ import {
   type TerminalCapabilities,
 } from "@opentui/core"
 import { createSession, resumeSession } from "../../agent/compose"
-import { appInfo } from "../../app-info"
 import type { EventService } from "../../events"
 import { describeError } from "../../lib/error"
 import { compactPath } from "../../lib/path"
@@ -23,7 +22,7 @@ import { STATUS_ROWS } from "./components/status-bar"
 import { cursorRow } from "./lib/cursor"
 import { MessageHistory } from "./message-history"
 import { Screen } from "./screen"
-import { describeTerminal } from "./terminal"
+import { describeTerminal, sessionTerminalTitle } from "./terminal"
 import { COLORS } from "./theme/colors"
 
 const RESIZE_DEBOUNCE_MS = 60
@@ -69,7 +68,7 @@ export async function startTui(events: EventService, options: UiOptions = {}): P
     applyKeyboardProtocol(renderer, capabilities)
   })
   process.on("exit", restoreTerminal)
-  renderer.setTerminalTitle(`${appInfo.name} — ${compactPath(process.cwd())}`)
+  renderer.setTerminalTitle(sessionTerminalTitle())
 
   const quit = (): void => {
     renderer.externalOutputMode = "passthrough"

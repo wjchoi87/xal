@@ -27,8 +27,11 @@ export class AgentEventController {
         this.screen.taskList.set(event.tasks)
         break
       case "session_started":
-        this.screen.startSession(event.model, event.thinking, event.mode)
+        this.screen.startSession(event.title, event.model, event.thinking, event.mode)
         this.trackContextWindow()
+        break
+      case "session_title_changed":
+        this.screen.setSessionTitle(event.title)
         break
       case "state_changed":
         statusBar.setState(event.state)

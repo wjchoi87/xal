@@ -13,6 +13,16 @@ const clearCommand: Command = {
   },
 }
 
+const renameCommand: Command = {
+  name: "rename",
+  describe: "rename the current session",
+  async run(args, ctx) {
+    const title = ctx.session.setTitle(args.join(" "))
+    if (!title) throw new Error("usage: /rename <title>")
+    ctx.print(`session renamed to ${title}`)
+  },
+}
+
 const resumeCommand: Command = {
   name: "resume",
   describe: "reopen a saved session · /resume all searches every project",
@@ -43,5 +53,6 @@ const resumeCommand: Command = {
 
 export function registerSessionCommands(): void {
   registerCommand(clearCommand)
+  registerCommand(renameCommand)
   registerCommand(resumeCommand)
 }

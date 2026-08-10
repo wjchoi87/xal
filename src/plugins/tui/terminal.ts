@@ -1,10 +1,16 @@
 import type { TerminalCapabilities } from "@opentui/core"
+import { appInfo } from "../../app-info"
+import { compactPath } from "../../lib/path"
 
 const dumb = process.env.TERM?.toLowerCase() === "dumb"
 
 export const terminalPresentation = {
   colors: !dumb && process.env.NO_COLOR === undefined,
   unicode: !dumb,
+}
+
+export function sessionTerminalTitle(title?: string): string {
+  return `${appInfo.name} — ${title ?? compactPath(process.cwd())}`
 }
 
 function terminalIdentity(capabilities: TerminalCapabilities): string {

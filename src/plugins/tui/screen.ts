@@ -21,6 +21,7 @@ import { TaskList } from "./components/task-list"
 import { column } from "./lib/renderables"
 import type { MessageHistory } from "./message-history"
 import { Scrollback } from "./scrollback/scrollback"
+import { sessionTerminalTitle } from "./terminal"
 
 export interface ScreenActions extends PermissionPopoverActions, ElicitationPopoverActions {
   submit(input: UserInput): boolean
@@ -138,7 +139,13 @@ export class Screen {
     this.syncFooter()
   }
 
-  startSession(model: string, thinking: ThinkingEffort | undefined, mode: PermissionMode): void {
+  startSession(
+    title: string | undefined,
+    model: string,
+    thinking: ThinkingEffort | undefined,
+    mode: PermissionMode,
+  ): void {
+    this.setSessionTitle(title)
     this.statusBar.setModel(model)
     this.statusBar.setThinking(thinking)
     this.statusBar.setMode(mode)
@@ -146,6 +153,10 @@ export class Screen {
     this.taskList.set([])
     this.scrollback.clear()
     this.scrollback.append({ kind: "banner", model, cwd: compactPath(process.cwd()) })
+  }
+
+  setSessionTitle(title: string | undefined): void {
+    this.renderer.setTerminalTitle(sessionTerminalTitle(title))
   }
 
   async select<T>(request: SelectRequest<T>): Promise<T | undefined> {

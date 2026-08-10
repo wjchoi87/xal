@@ -16,6 +16,7 @@ export interface SessionStartedEvent {
   type: "session_started"
   id: string
   resumed: boolean
+  title?: string
   provider: string
   model: string
   thinking?: ThinkingEffort
@@ -25,6 +26,7 @@ export interface SessionStartedEvent {
 export type AgentEvent =
   | ToolEvent
   | SessionStartedEvent
+  | { type: "session_title_changed"; title: string }
   | { type: "state_changed"; state: AgentState }
   | { type: "mode_changed"; mode: PermissionMode }
   | { type: "model_changed"; provider: string; model: string }

@@ -11,6 +11,7 @@ import {
   type Usage,
 } from "../providers/types"
 import { parseTaskList } from "../tasks/types"
+import { normalizeSessionTitle } from "./title"
 import type { SessionMeta, SessionRecord } from "./types"
 
 export function isPersistable(event: AgentEvent): boolean {
@@ -41,6 +42,11 @@ function parseEvent(raw: unknown): AgentEvent | undefined {
   if (!isRecord(raw)) return undefined
 
   switch (asString(raw.type)) {
+    case "session_title_changed": {
+      const title = asString(raw.title)
+      if (!title || normalizeSessionTitle(title) !== title) return undefined
+      return { type: "session_title_changed", title }
+    }
     case "task_list_updated": {
       const tasks = parseTaskList(raw.tasks)
       if (!tasks) return undefined

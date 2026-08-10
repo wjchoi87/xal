@@ -6,14 +6,8 @@ import type { AgentEvent } from "../agent/events"
 import type { HistoryItem } from "../agent/history"
 import { projectSessionsDir, sessionsDir } from "../config/paths"
 import { parseRecord } from "./records"
+import { titleFromEvents, titleFromInput } from "./title"
 import type { LoadedSession, SessionMeta, SessionSummary } from "./types"
-
-const TITLE_WIDTH = 120
-
-function title(text: string): string {
-  const line = text.split("\n", 1)[0]?.trim() ?? ""
-  return line.length > TITLE_WIDTH ? `${line.slice(0, TITLE_WIDTH - 1)}…` : line
-}
 
 async function sessionFiles(dir: string): Promise<string[]> {
   try {
@@ -35,7 +29,8 @@ async function projectDirs(): Promise<string[]> {
 
 async function summarize(path: string): Promise<SessionSummary | undefined> {
   let meta: SessionMeta | undefined
-  let heading = ""
+  let generatedTitle: string | undefined
+  let recordedTitle: string | undefined
   let messages = 0
   const lines = createInterface({ input: createReadStream(path, { encoding: "utf8" }), crlfDelay: Infinity })
 
@@ -48,9 +43,11 @@ async function summarize(path: string): Promise<SessionSummary | undefined> {
         meta = record.meta
         continue
       }
-      if (record.type !== "event" || record.event.type !== "user_message") continue
+      if (record.type !== "event") continue
+      if (record.event.type === "session_title_changed") recordedTitle = record.event.title
+      if (record.event.type !== "user_message") continue
       messages++
-      if (!heading) heading = title(record.event.text) || (record.event.imageCount > 0 ? `[Image #1]` : "")
+      generatedTitle ??= titleFromInput(record.event.text, record.event.imageCount)
     }
   } catch {
     return undefined
@@ -62,7 +59,7 @@ async function summarize(path: string): Promise<SessionSummary | undefined> {
     id: meta.id,
     path,
     cwd: meta.cwd,
-    title: heading || "(empty prompt)",
+    title: recordedTitle ?? generatedTitle ?? "(empty prompt)",
     messages,
     updatedAt: Bun.file(path).lastModified,
   }
@@ -89,7 +86,7 @@ export async function loadSession(path: string): Promise<LoadedSession | undefin
     else events.push(record.event)
   }
 
-  return meta ? { meta, items, events } : undefined
+  return meta ? { meta, items, events, title: titleFromEvents(events) } : undefined
 }
 
 export async function listSessions(cwd?: string): Promise<SessionSummary[]> {

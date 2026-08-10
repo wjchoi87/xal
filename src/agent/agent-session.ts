@@ -13,6 +13,7 @@ import { ProviderError } from "../providers/errors"
 import { occupiedContext } from "../providers/types"
 import type { ProviderOutputItem, Provider, ThinkingEffort, ToolCallItem, UserInput, Usage } from "../providers/types"
 import { SessionRecorder } from "../sessions/recorder"
+import { normalizeSessionTitle, titleFromInput } from "../sessions/title"
 import type { LoadedSession, SessionMeta } from "../sessions/types"
 import { getTool, listTools } from "../tools/registry"
 import { boundToolOutput, TOOL_FAILED_PREFIX, TOOL_OUTPUT_UNSAVED_PREFIX, toolOutputDirectory } from "../tools/output"
@@ -116,6 +117,7 @@ function recordedContext(events: AgentEvent[]): number | undefined {
 
 export class AgentSession {
   private sessionId: string = crypto.randomUUID()
+  private title: string | undefined
   private startedAt = Date.now()
   private items: HistoryItem[] = []
   private contextTokens: number | undefined
@@ -178,6 +180,7 @@ export class AgentSession {
       type: "session_started",
       id: this.sessionId,
       resumed,
+      title: this.title,
       provider: this.provider.id,
       model: this.model,
       thinking: this.thinking,
@@ -211,6 +214,7 @@ export class AgentSession {
   reset(): boolean {
     if (this.state !== "idle") return false
     this.sessionId = crypto.randomUUID()
+    this.title = undefined
     this.outputDirectory = toolOutputDirectory(projectSessionsDir(process.cwd()), this.sessionId)
     this.startedAt = Date.now()
     this.items = []
@@ -226,6 +230,7 @@ export class AgentSession {
     if (this.state !== "idle") return false
     const { meta } = target.session
     this.sessionId = meta.id
+    this.title = target.session.title
     this.outputDirectory = toolOutputDirectory(dirname(target.path), this.sessionId)
     this.startedAt = meta.startedAt
     this.items = [...target.session.items]
@@ -267,6 +272,15 @@ export class AgentSession {
     this.emit({ type: "mode_changed", mode })
   }
 
+  setTitle(input: string): string | undefined {
+    const title = normalizeSessionTitle(input)
+    if (!title) return undefined
+    if (title === this.title) return title
+    this.title = title
+    this.emit({ type: "session_title_changed", title })
+    return title
+  }
+
   subscribe(listener: (event: AgentEvent) => void): () => void {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
@@ -289,6 +303,7 @@ export class AgentSession {
 
   private startTurn(inputs: UserInput[]): void {
     for (const input of inputs) {
+      this.ensureTitle(input)
       this.pushItem({ type: "user_message", ...input })
       this.emit({ type: "user_message", text: input.text, imageCount: input.images.length, sentAt: Date.now() })
     }
@@ -327,11 +342,18 @@ export class AgentSession {
   private drainQueue(): boolean {
     if (this.queued.length === 0) return false
     for (const input of this.queued.splice(0)) {
+      this.ensureTitle(input)
       this.pushItem({ type: "user_message", ...input })
       this.emit({ type: "user_message", text: input.text, imageCount: input.images.length, sentAt: Date.now() })
     }
     this.emit({ type: "queue_changed", entries: [] })
     return true
+  }
+
+  private ensureTitle(input: UserInput): void {
+    if (this.title) return
+    const title = titleFromInput(input.text, input.images.length)
+    if (title) this.setTitle(title)
   }
 
   private flushQueue(): void {
