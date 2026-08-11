@@ -1,7 +1,7 @@
 import { AgentSession } from "../../agent/agent-session"
 import type { AgentEvent } from "../../agent/events"
 import { runAgentTurn } from "../../agent/run"
-import { appendJobOutput, createJob, finishJob, stopJob } from "../../background/jobs"
+import { appendAgentTranscript, createAgentJob, finishAgentJob, setAgentActivity, stopJob } from "../../background/jobs"
 import { backgroundTasksChanged, registerBackgroundTask, type BackgroundTaskState } from "../../background/registry"
 import { createManagedWorktree } from "../../git/worktrees"
 import { describeError } from "../../lib/error"
@@ -61,7 +61,14 @@ function toolActivity(tool: string, title: string): string {
   return detail ? `${tool}: ${detail}` : tool
 }
 
-function activity(event: AgentEvent, child: AgentSession, state: ActivityState, record: (text: string) => void): void {
+function activity(
+  event: AgentEvent,
+  child: AgentSession,
+  state: ActivityState,
+  record: (text: string) => void,
+  updateActivity: (value: string) => void,
+): void {
+  const previousActivity = state.activity
   switch (event.type) {
     case "text_delta":
       state.streamedText = true
@@ -151,12 +158,13 @@ function activity(event: AgentEvent, child: AgentSession, state: ActivityState, 
     case "compacted":
       break
   }
+  if (state.activity !== previousActivity) updateActivity(state.activity)
 }
 
 export const subAgentTool: SessionTool = {
   name: "sub_agent",
   description:
-    "Spawn a fresh one-shot agent for a self-contained task as a background job and return its job id immediately. The agent sees nothing but the task text, works autonomously without asking questions, and its report is not shown to the user. Follow its progress and final report with job_output and stop it with job_kill. Write agents can use the shared workspace or a clean isolated Git worktree on their own branch.",
+    "Spawn a fresh one-shot agent for a self-contained task as a background job and return its job id immediately. The agent sees nothing but the task text, works autonomously without asking questions, and its internal transcript is shown only in the background-task viewer. Collect its final report with job_output and stop it with job_kill. Write agents can use the shared workspace or a clean isolated Git worktree on their own branch.",
   parameters: {
     type: "object",
     properties: {
@@ -189,7 +197,7 @@ export const subAgentTool: SessionTool = {
     additionalProperties: false,
   },
   prompt:
-    "Use sub_agent to delegate bounded, self-contained work that can run while you continue; do the work yourself when it is quick or when your very next step depends on its result. The agent sees only the task text, so state the goal, the relevant paths, whether to modify files or only investigate, how to verify the work, and exactly what the report must contain. Right-size each delegation with thinking: sub-agent time is dominated by how much it reasons and writes, so use lower effort for bounded tasks and reserve high effort for genuinely hard ones. Spawn independent delegations together, give shared write agents disjoint files, and use isolation:worktree when write work should not touch the current checkout — the result stays on its own branch until integrated or removed with worktree_remove. Never redo delegated work: continue non-overlapping tasks, then collect each report with job_output (pass wait instead of polling) before you rely on or summarize it.",
+    "Use sub_agent to delegate bounded, self-contained work that can run while you continue; do the work yourself when it is quick or when your very next step depends on its result. The agent sees only the task text, so state the goal, the relevant paths, whether to modify files or only investigate, how to verify the work, and exactly what the report must contain. Right-size each delegation with thinking: sub-agent time is dominated by how much it reasons and writes, so use lower effort for bounded tasks and reserve high effort for genuinely hard ones. Spawn independent delegations together, give shared write agents disjoint files, and use isolation:worktree when write work should not touch the current checkout — the result stays on its own branch until integrated or removed with worktree_remove. Never redo delegated work: continue non-overlapping tasks, then join each agent exactly once with job_output and a sufficient wait before you rely on or summarize its report. The background-task viewer shows progress without adding the transcript to your context.",
   sessionAware: true,
   available(ctx) {
     return ctx.kind === "primary"
@@ -231,7 +239,7 @@ export const subAgentTool: SessionTool = {
     })
     child.setMode(childMode(ctx.session.mode, access))
 
-    const job = createJob("agent", () => child.interrupt())
+    const job = createAgentJob("agent", () => child.interrupt())
     const startedAt = Date.now()
     let finishedAt: number | undefined
     let state: BackgroundTaskState = { running: true }
@@ -241,11 +249,7 @@ export const subAgentTool: SessionTool = {
       toolCalls: new Set(),
       updatedCalls: new Set(),
     }
-    const record = (text: string): void => appendJobOutput(job, text)
-    const failureDetail = (error: string): string =>
-      activityState.toolCalls.size > 0
-        ? `failed: ${error} — its partial progress is the output above; reuse it instead of redoing the work`
-        : `failed: ${error}`
+    const record = (text: string): void => appendAgentTranscript(job, text)
     if (worktree) {
       record(`Isolated worktree: ${compactPath(worktree.path)}\nBranch: ${worktree.branch}\n\n`)
     }
@@ -258,7 +262,7 @@ export const subAgentTool: SessionTool = {
       model: ctx.session.model,
       cwd: child.currentWorkingDirectory,
       state: () => state,
-      output: () => job.history,
+      output: () => job.transcript,
       snapshot: () => ({
         activity: activityState.activity,
         elapsedMs: (finishedAt ?? Date.now()) - startedAt,
@@ -268,19 +272,23 @@ export const subAgentTool: SessionTool = {
       stop: () => stopJob(job),
     })
 
-    void runAgentTurn(child, { text: task, images: [] }, (event) => activity(event, child, activityState, record))
+    void runAgentTurn(child, { text: task, images: [] }, (event) =>
+      activity(event, child, activityState, record, (value) => setAgentActivity(job, value)),
+    )
       .then((outcome) => {
         finishedAt = Date.now()
         if (outcome.status === "interrupted") {
           activityState.activity = "Interrupted"
           state = { running: false, ok: false, detail: "interrupted" }
-          finishJob(job, "interrupted")
+          setAgentActivity(job, activityState.activity)
+          finishAgentJob(job, { status: "interrupted" }, "interrupted")
           return
         }
         if (outcome.status === "failed") {
           activityState.activity = "Failed"
           state = { running: false, ok: false, detail: "failed" }
-          finishJob(job, failureDetail(outcome.error))
+          setAgentActivity(job, activityState.activity)
+          finishAgentJob(job, { status: "failed" }, `failed: ${outcome.error}`)
           return
         }
         const report =
@@ -288,32 +296,34 @@ export const subAgentTool: SessionTool = {
         if (!report) {
           activityState.activity = "Failed"
           state = { running: false, ok: false, detail: "no report" }
+          setAgentActivity(job, activityState.activity)
           record("\nSub-agent completed without a final report.\n")
-          finishJob(job, "completed without a final report")
+          finishAgentJob(job, { status: "failed" }, "completed without a final report")
           return
         }
         activityState.activity = "Report ready"
         state = { running: false, ok: true, detail: "reported" }
-        finishJob(
+        setAgentActivity(job, activityState.activity)
+        finishAgentJob(
           job,
-          worktree
-            ? `completed in ${worktree.branch} at ${compactPath(worktree.path)} — the report is above`
-            : "completed — the report is the streamed text above",
+          { status: "completed", report },
+          worktree ? `completed in ${worktree.branch} at ${compactPath(worktree.path)}` : "completed",
         )
       })
       .catch((error: unknown) => {
         finishedAt = Date.now()
         activityState.activity = "Failed"
         state = { running: false, ok: false, detail: "failed" }
+        setAgentActivity(job, activityState.activity)
         record(`\nSub-agent failed: ${describeError(error)}\n`)
-        finishJob(job, failureDetail(describeError(error)))
+        finishAgentJob(job, { status: "failed" }, `failed: ${describeError(error)}`)
       })
 
     const workspace = worktree
       ? ` in ${compactPath(worktree.path)} on branch ${worktree.branch}. The checkout remains after completion; integrate it or remove it with worktree_remove.`
       : "."
     return {
-      output: `Started sub-agent ${job.id} (${access}, ${isolation}) in the background${workspace} Read its progress and final report with job_output(${job.id}) — pass wait to block — and stop it with job_kill(${job.id}).`,
+      output: `Started sub-agent ${job.id} (${access}, ${isolation}) in the background${workspace} Join it once with job_output(${job.id}) and a sufficient wait to collect its final report, or stop it with job_kill(${job.id}).`,
     }
   },
 }

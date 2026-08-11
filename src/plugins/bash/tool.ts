@@ -3,13 +3,11 @@ import type { Tool } from "../../tools/types"
 import { expandSnapshotAliases, snapshotEnvironment, snapshotLaunch } from "./environment"
 import { startJob } from "./jobs"
 import { killTree, spawnCommand } from "./process"
-import { sandboxAvailable, sandboxLaunch } from "./sandbox"
+import { sandboxAvailable, sandboxLaunch, type SandboxAccess } from "./sandbox"
 import { splitCommand } from "./split"
 
 const DEFAULT_TIMEOUT_S = 120
 const MAX_TIMEOUT_S = 600
-const READ_ONLY_COMMAND =
-  /^(?:cat|echo|grep|head|ls|printf|pwd|rg|sleep|tail|wc)(?:\s|$)|^find(?!.*\s-(?:delete|exec|ok|fprint))(?:\s|$)|^git\s+(?!.*\s--output)(?:diff|log|merge-base|rev-parse|show|status)(?:\s|$)|^(?:bun|cargo|npm|pnpm|yarn)\s+(?:run\s+)?test(?:\s|$)|^sed\s+(?!.*(?:\s-i|--in-place))|^git\s+branch\s+--show-current(?:\s|$)/
 
 export function commandOf(args: Record<string, unknown>): string {
   return asString(args.command)?.trim() ?? ""
@@ -19,8 +17,15 @@ export function policyCommandOf(args: Record<string, unknown>): string {
   return expandSnapshotAliases(commandOf(args))
 }
 
+export function sandboxAccessOf(args: Record<string, unknown>): SandboxAccess | undefined {
+  if (!sandboxAvailable()) return undefined
+  const access = asString(args.sandbox)
+  if (access === "read" || access === "workspace") return access
+  return undefined
+}
+
 export function sandboxRequested(args: Record<string, unknown>): boolean {
-  return sandboxAvailable() && asBoolean(args.sandbox) === true
+  return sandboxAccessOf(args) !== undefined
 }
 
 export function backgroundRequested(args: Record<string, unknown>): boolean {
@@ -50,9 +55,10 @@ function parameters(): Record<string, unknown> {
   }
   if (sandboxAvailable()) {
     properties.sandbox = {
-      type: "boolean",
+      type: "string",
+      enum: ["read", "workspace"],
       description:
-        "True runs the command without waiting for the user's approval inside an OS sandbox that blocks network access and writes outside the workspace and temp directories",
+        'Use "read" to enforce no filesystem state changes, or "workspace" to allow writes only in the workspace and temporary directories. Both block network access and run without approval',
     }
   }
   return {
@@ -66,14 +72,14 @@ function parameters(): Record<string, unknown> {
 function description(): string {
   const base = `Execute a bash command in the user's current working directory. Returns combined stdout and stderr followed by the exit code. Commands run without a TTY and are killed after ${DEFAULT_TIMEOUT_S} seconds unless timeout says otherwise.`
   if (!sandboxAvailable()) return `${base} Each command requires the user's approval before it runs.`
-  return `${base} Commands with sandbox:true run immediately inside an OS sandbox; other commands require the user's approval before they run.`
+  return `${base} Sandboxed commands run immediately with OS-enforced filesystem and network restrictions; other commands require the user's approval before they run.`
 }
 
 function guidance(): string {
   const base =
     "Use bash for shell work: builds, tests, git. Use the grep and glob tools to search instead of rg, find, or ls, and read, write, and edit for file contents instead of cat, sed, echo, or heredocs. Quote paths that contain spaces. Issue independent commands as parallel calls; chain dependent commands with && so a failure stops the sequence. Prefer non-interactive flags; anything that waits for input hangs until the timeout kills it. Start long-lived processes like dev servers and watchers with background:true, follow them with job_output (pass wait to block until new output or exit instead of sleeping between polls), and stop them with job_kill; never background quick commands. Only commit, amend, or push with git when the user asks for it."
   if (!sandboxAvailable()) return base
-  return `${base} Prefer sandbox:true — it runs without approval but blocks network access and writes outside the workspace and temp directories. Use sandbox:false when a command needs network or writes elsewhere, and if a sandboxed command fails because of those limits, retry it with sandbox:false.`
+  return `${base} Use sandbox:"read" for inspection commands because the OS blocks filesystem state changes. Use sandbox:"workspace" for builds and commands that may write only in the workspace or temporary directories. Omit sandbox when the command needs network or writes elsewhere.`
 }
 
 export const bashTool: Tool = {
@@ -85,13 +91,11 @@ export const bashTool: Tool = {
     return asString(args.command) ?? ""
   },
   readOnly(args) {
-    if (backgroundRequested(args)) return false
-    const split = splitCommand(policyCommandOf(args))
-    if (!split || split.redirected) return false
-    return split.segments.every((segment) => READ_ONLY_COMMAND.test(segment))
+    return !backgroundRequested(args) && sandboxAccessOf(args) === "read"
   },
   undo(args) {
-    return backgroundRequested(args) ? { type: "invalidate" } : { type: "workspace" }
+    if (backgroundRequested(args)) return { type: "invalidate" }
+    return sandboxAccessOf(args) === "read" ? { type: "none" } : { type: "workspace" }
   },
   sandboxed(args) {
     return sandboxRequested(args)
@@ -108,15 +112,15 @@ export const bashTool: Tool = {
     const command = commandOf(args)
     if (!command) return { output: "(no command provided)" }
 
-    const sandboxed = sandboxRequested(args)
+    const sandbox = sandboxAccessOf(args)
     const environment = { ...snapshotEnvironment(), PWD: ctx.cwd }
     const shellLaunch = snapshotLaunch(command)
-    const launch = sandboxed ? sandboxLaunch(shellLaunch, ctx.cwd) : shellLaunch
+    const launch = sandbox ? sandboxLaunch(shellLaunch, ctx.cwd, sandbox) : shellLaunch
 
     if (backgroundRequested(args)) {
       const job = startJob(command, spawnCommand(launch, environment, ctx.cwd), ctx.cwd)
       return {
-        output: `Started background job ${job.id}${sandboxed ? " (sandboxed)" : ""}. Read its output with job_output and stop it with job_kill.`,
+        output: `Started background job ${job.id}${sandbox ? ` (${sandbox} sandbox)` : ""}. Read its output with job_output and stop it with job_kill.`,
       }
     }
 
@@ -150,10 +154,14 @@ export const bashTool: Tool = {
       if (timedOut) footer = `(timed out after ${timeoutSeconds}s and was killed)`
       else if (ctx.signal.aborted) footer = "(interrupted by user)"
       else if (exitCode === null) footer = "(terminated by signal)"
-      else if (!sandboxed) footer = `(exit code ${exitCode})`
-      else if (exitCode === 0) footer = "(exit code 0 · sandboxed)"
+      else if (!sandbox) footer = `(exit code ${exitCode})`
+      else if (exitCode === 0) footer = `(exit code 0 · ${sandbox} sandbox)`
       else
-        footer = `(exit code ${exitCode} · sandboxed — network and writes outside the workspace are blocked; retry with sandbox:false if the sandbox caused this)`
+        footer = `(${
+          sandbox === "read"
+            ? `exit code ${exitCode} · read sandbox — network and filesystem state changes are blocked`
+            : `exit code ${exitCode} · workspace sandbox — network and writes outside the workspace and temporary directories are blocked`
+        })`
       return { output: trimmed ? `${trimmed}\n${footer}` : footer }
     } finally {
       clearTimeout(timeout)

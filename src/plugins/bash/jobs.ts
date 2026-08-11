@@ -1,4 +1,10 @@
-import { appendJobOutput, createJob, finishJob, stopJob, type BackgroundJob } from "../../background/jobs"
+import {
+  appendProcessOutput,
+  createProcessJob,
+  finishProcessJob,
+  stopJob,
+  type BackgroundProcessJob,
+} from "../../background/jobs"
 import { registerBackgroundTask } from "../../background/registry"
 import { killTree, type CommandProcess } from "./process"
 
@@ -13,25 +19,25 @@ function registerExitHook(): void {
   })
 }
 
-export function startJob(command: string, proc: CommandProcess, cwd: string): BackgroundJob {
+export function startJob(command: string, proc: CommandProcess, cwd: string): BackgroundProcessJob {
   registerExitHook()
   runningProcs.add(proc)
   let exitCode: number | null = null
-  const job = createJob("bash", () => killTree(proc))
+  const job = createProcessJob("bash", () => killTree(proc))
   const collect = (chunk: Buffer): void => {
-    appendJobOutput(job, chunk.toString())
+    appendProcessOutput(job, chunk.toString())
   }
   proc.stdout.on("data", collect)
   proc.stderr.on("data", collect)
   proc.once("error", (error) => {
     runningProcs.delete(proc)
-    appendJobOutput(job, `${job.history ? "\n" : ""}failed to launch: ${error.message}`)
-    finishJob(job, "failed to launch")
+    appendProcessOutput(job, `${job.history ? "\n" : ""}failed to launch: ${error.message}`)
+    finishProcessJob(job, "failed to launch")
   })
   proc.once("close", (code) => {
     runningProcs.delete(proc)
     exitCode = code
-    finishJob(job, code === null ? "terminated by signal" : `exited with code ${code}`)
+    finishProcessJob(job, code === null ? "terminated by signal" : `exited with code ${code}`)
   })
   registerBackgroundTask({
     kind: "process",
