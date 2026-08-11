@@ -66,7 +66,7 @@ function parseQuestions(args: Record<string, unknown>): ElicitationQuestion[] {
 export const requestUserInputTool: InteractiveTool = {
   name: "request_user_input",
   description:
-    "Ask the user one to three structured questions when their decision is required. Each question offers two or three exclusive choices plus a free-form alternative.",
+    "Ask the user up to three structured questions and wait for the answers. Each question offers two or three exclusive choices; the interface adds a free-form alternative automatically.",
   parameters: {
     type: "object",
     properties: {
@@ -74,6 +74,7 @@ export const requestUserInputTool: InteractiveTool = {
         type: "array",
         minItems: 1,
         maxItems: MAX_QUESTIONS,
+        description: `Questions to show the user. Prefer one; never more than ${MAX_QUESTIONS}`,
         items: {
           type: "object",
           properties: {
@@ -81,27 +82,37 @@ export const requestUserInputTool: InteractiveTool = {
               type: "string",
               pattern: "^[a-z][a-z0-9_]*$",
               maxLength: MAX_LABEL_LENGTH,
-              description: "Stable identifier used to associate the answer with this question",
+              description: "Stable snake_case identifier used to associate the answer with this question",
             },
             header: {
               type: "string",
               maxLength: MAX_HEADER_LENGTH,
-              description: "Short label for the question",
+              description: `Short label shown for the question (${MAX_HEADER_LENGTH} characters or fewer)`,
             },
             question: {
               type: "string",
               maxLength: MAX_QUESTION_LENGTH,
-              description: "The decision the user needs to make",
+              description: "Single-sentence decision the user needs to make",
             },
             options: {
               type: "array",
               minItems: MIN_OPTIONS,
               maxItems: MAX_OPTIONS,
+              description:
+                'Two or three mutually exclusive choices. Put the recommended option first and end its label with "(Recommended)"; never include a catch-all option, since a free-form answer is offered automatically',
               items: {
                 type: "object",
                 properties: {
-                  label: { type: "string", maxLength: MAX_LABEL_LENGTH },
-                  description: { type: "string", maxLength: MAX_DESCRIPTION_LENGTH },
+                  label: {
+                    type: "string",
+                    maxLength: MAX_LABEL_LENGTH,
+                    description: "User-facing label of one to five words",
+                  },
+                  description: {
+                    type: "string",
+                    maxLength: MAX_DESCRIPTION_LENGTH,
+                    description: "One short sentence on the impact or tradeoff of choosing this option",
+                  },
                 },
                 required: ["label", "description"],
                 additionalProperties: false,
@@ -117,7 +128,7 @@ export const requestUserInputTool: InteractiveTool = {
     additionalProperties: false,
   },
   prompt:
-    "Use request_user_input only when a missing decision blocks progress. Ask related questions together, keep options distinct, and do not use it to authorize tool actions.",
+    "Use request_user_input only when a decision blocks progress and you cannot resolve it from the request, the code, or sensible defaults. Prefer a single question with distinct, concrete options, and ask related questions together rather than one at a time. Do not use it to ask permission for tool actions.",
   interactive: true,
   title(args) {
     const count = Array.isArray(args.questions) ? args.questions.length : 0

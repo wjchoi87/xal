@@ -78,6 +78,6 @@ export type AgentEvent =
     }
   | { type: "compacted"; summary: string; replaced: number; tokensBefore?: number }
   | { type: "turn_ended"; usage?: Usage; context?: Usage; output?: JsonObject }
-  | { type: "turn_failed"; message: string }
+  | { type: "turn_failed"; message: string; usage?: Usage; context?: Usage }
   | { type: "turn_interrupted" }
   | { type: "error"; message: string }

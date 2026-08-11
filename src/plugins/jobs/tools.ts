@@ -22,14 +22,14 @@ function unreadOutput(job: BackgroundJob): string {
 export const jobOutputTool: Tool = {
   name: "job_output",
   description:
-    "Read the output a background job (background bash command or sub-agent) has produced since the last read. Returns the new output followed by the job status. Pass wait to block until the job produces output or finishes instead of sleeping and polling.",
+    "Read the output a background job (background bash command or sub-agent) has produced since the last read, followed by the job status. Pass wait to block until the job produces output or finishes; never sleep in bash between polls. While a job runs, continue non-overlapping work instead of redoing what it was asked to do.",
   parameters: {
     type: "object",
     properties: {
       id: idProperty,
       wait: {
         type: "number",
-        description: `Maximum seconds to block until the job produces new output or finishes (default 0 returns immediately, max ${MAX_WAIT_S})`,
+        description: `Maximum seconds to block until the job produces new output or finishes. Defaults to 0, which returns immediately; maximum ${MAX_WAIT_S}`,
       },
     },
     required: ["id"],
@@ -52,7 +52,8 @@ export const jobOutputTool: Tool = {
 
 export const jobKillTool: Tool = {
   name: "job_kill",
-  description: "Stop a running background job (background bash command or sub-agent) and return any unread output.",
+  description:
+    "Stop a running background job (background bash command or sub-agent) and return any output not yet read. Stop jobs you no longer need instead of leaving them running.",
   parameters: {
     type: "object",
     properties: { id: idProperty },

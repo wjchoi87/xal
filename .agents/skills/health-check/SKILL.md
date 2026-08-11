@@ -20,6 +20,7 @@ One JSON object per line, ordered by time. Every line has `at` (epoch ms) and `t
 - `session_created` `{sessionId, kind, provider, model, cwd}` — `kind` is `primary` or `subagent`. Every sub-agent gets one.
 - `agent_event` `{sessionId, kind, event}` — one AgentEvent (see `src/agent/events.ts`): user_message, state_changed, tool_started, tool_finished, approval_requested, retry_scheduled, hook_finished, compacted, turn_ended, turn_failed, turn_interrupted, error, and more.
 - `first_delta` `{sessionId, kind, delta}` — the first streamed output of a stream round. Other streaming deltas are omitted; full text still arrives as assistant_message and reasoning_summary events.
+- `stream_round` `{sessionId, kind, usage}` — the provider-reported usage of one completed stream round. `totalInputTokens - cacheReadInputTokens` is the uncached prefill; a round whose uncached share jumps to roughly the whole context is a prompt-cache miss — correlate those with long first_delta waits and with overload errors.
 - `app_event` `{event}` — plugin registration and bootstrap results.
 - `job_created` / `job_finished` `{jobId, detail}` — background jobs (sub-agents, background bash).
 

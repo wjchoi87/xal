@@ -10,8 +10,7 @@ const MAX_LINE_CHARS = 2000
 
 export const readTool: Tool = {
   name: "read",
-  description:
-    "Read a text file with line numbers. Returns up to 2000 lines starting at offset; the footer states whether more remains. Paths are absolute or relative to the working directory.",
+  description: `Read a text file and return its content with each line prefixed by its line number. Returns up to ${DEFAULT_LIMIT} lines starting at offset and truncates lines longer than ${MAX_LINE_CHARS} characters; the footer states which offset continues the file when more remains. Fails on missing paths, directories, and binary files. Paths are absolute or relative to the working directory.`,
   parameters: {
     type: "object",
     properties: {
@@ -21,17 +20,18 @@ export const readTool: Tool = {
       },
       offset: {
         type: "number",
-        description: "1-based line number to start reading from",
+        description: "1-based line number to start reading from. Omit to start at the beginning",
       },
       limit: {
         type: "number",
-        description: "Maximum number of lines to return (default 2000)",
+        description: `Maximum number of lines to return. Defaults to ${DEFAULT_LIMIT}`,
       },
     },
     required: ["file_path"],
     additionalProperties: false,
   },
-  prompt: "Use read to view file contents; page through large files with offset and limit.",
+  prompt:
+    "Use read to view files instead of cat, head, tail, or sed in bash. Read several files in parallel calls when you already know which ones you need, and page through large files with offset and limit instead of tiny repeated slices.",
   title(args, ctx) {
     return displayPath(asString(args.file_path) ?? "", ctx.cwd)
   },

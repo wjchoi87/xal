@@ -12,7 +12,7 @@ function tasksFrom(args: Record<string, unknown>): TrackedTask[] {
 export const updateTasksTool: Tool = {
   name: "update_tasks",
   description:
-    "Replace the session task list with an ordered set of pending, in-progress, and completed steps. Send an empty list to clear it.",
+    "Replace the session task list with an ordered set of pending, in-progress, and completed steps. The list is shown to the user to track progress. Send an empty list to clear it.",
   parameters: {
     type: "object",
     properties: {
@@ -34,7 +34,7 @@ export const updateTasksTool: Tool = {
     additionalProperties: false,
   },
   prompt:
-    "Use update_tasks for work with several meaningful steps. Replace the whole list whenever progress changes, keep at most one step in progress, and skip it for short one-step work.",
+    "Use update_tasks for work with several distinct steps, when the user lists multiple requests, or when new instructions arrive mid-task; skip it for single-step or conversational work. Keep steps short and concrete. Mark a step in_progress before starting it — exactly one at a time — and completed right after it is actually done and verified, never in batches and never ahead of the work. Replace the whole list on every update and add follow-up steps as you discover them.",
   title(args) {
     const count = Array.isArray(args.tasks) ? args.tasks.length : 0
     if (count === 0) return "Clear task list"

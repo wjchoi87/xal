@@ -8,7 +8,7 @@ import { pathPermission } from "./permission"
 export const editTool: Tool = {
   name: "edit",
   description:
-    "Replace an exact string in an existing file. old_string must match the file text exactly and occur exactly once unless replace_all is true. Returns a diff of the change. Paths are absolute or relative to the working directory.",
+    "Replace an exact string in an existing file and return a diff of the change. old_string must match the file text exactly, including whitespace and indentation, and must occur exactly once unless replace_all is true; the call fails with a corrective hint otherwise. Paths are absolute or relative to the working directory.",
   parameters: {
     type: "object",
     properties: {
@@ -18,22 +18,23 @@ export const editTool: Tool = {
       },
       old_string: {
         type: "string",
-        description: "Exact text to replace, copied verbatim from the file including whitespace and indentation",
+        description:
+          "Exact text to replace, copied verbatim from the file including whitespace and indentation. Never include read's line-number prefixes",
       },
       new_string: {
         type: "string",
-        description: "Replacement text",
+        description: "Replacement text. Must differ from old_string",
       },
       replace_all: {
         type: "boolean",
-        description: "Replace every occurrence of old_string (default false)",
+        description: "True replaces every occurrence of old_string; false or omitted requires a unique match",
       },
     },
     required: ["file_path", "old_string", "new_string"],
     additionalProperties: false,
   },
   prompt:
-    "Use edit for targeted changes to existing files; use write only for new files or full rewrites. Read the file first and copy old_string verbatim — exact match including whitespace, never read's line-number prefixes. Add surrounding lines to old_string to make it unique, or set replace_all to change every occurrence.",
+    "Use edit for targeted changes to existing files; use write only for new files or full rewrites. Read the file first and copy old_string exactly as it appears after read's line-number prefix, never including the prefix itself. When old_string matches several places, add surrounding lines to make it unique, or set replace_all to change every occurrence — also the way to rename a symbol across a file.",
   title(args, ctx) {
     return displayPath(asString(args.file_path) ?? "", ctx.cwd)
   },

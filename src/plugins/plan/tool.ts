@@ -34,7 +34,7 @@ export const submitPlanTool: InteractiveTool = {
     additionalProperties: false,
   },
   prompt:
-    "Call submit_plan with the complete plan when it is ready. The tool displays the Markdown for review before asking for approval.",
+    "Call submit_plan once the plan is complete and open questions are resolved, not before. Make the plan implementation-ready: concrete steps, the files to change, and the risks. The tool displays the Markdown for review and asks the user to approve or request changes; when changes are requested, revise and submit again.",
   interactive: true,
   available(ctx) {
     return ctx.interactive && ctx.mode === "plan"

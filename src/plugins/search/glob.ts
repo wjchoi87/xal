@@ -7,7 +7,7 @@ const LIMIT = 100
 
 export const globTool: Tool = {
   name: "glob",
-  description: "List files matching a glob pattern, newest first. Respects .gitignore.",
+  description: `List files matching a glob pattern, most recently modified first. Respects .gitignore. Shows at most ${LIMIT} results; the footer says how many were left out.`,
   parameters: {
     type: "object",
     properties: {
@@ -17,14 +17,15 @@ export const globTool: Tool = {
       },
       path: {
         type: "string",
-        description: "Directory to search, absolute or relative to the working directory",
+        description:
+          "Directory to search, absolute or relative to the working directory. Omit to search the working directory",
       },
     },
     required: ["pattern"],
     additionalProperties: false,
   },
   prompt:
-    "Use glob to find files by name pattern instead of find or ls in bash. Patterns are gitignore-style globs like src/**/*.ts; results are newest first.",
+    "Use glob to find files by name instead of find or ls in bash. Patterns are gitignore-style globs like src/**/*.ts, and results come newest first so recently changed files surface at the top. Run several speculative patterns as parallel calls when exploring.",
   title(args, ctx) {
     const pattern = asString(args.pattern) ?? ""
     const path = asString(args.path)

@@ -2,6 +2,7 @@ import { appendFile, mkdir } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import type { AgentEvent } from "../agent/events"
 import type { SessionKind } from "../agent/types"
+import type { Usage } from "../providers/types"
 import { appInfo } from "../app-info"
 import { profilerDir } from "../config/paths"
 import { events, type AppEvent } from "../events"
@@ -13,6 +14,7 @@ type ProfileRecord =
   | { type: "session_created"; sessionId: string; kind: SessionKind; provider: string; model: string; cwd: string }
   | { type: "agent_event"; sessionId: string; kind: SessionKind; event: AgentEvent }
   | { type: "first_delta"; sessionId: string; kind: SessionKind; delta: AgentEvent["type"] }
+  | { type: "stream_round"; sessionId: string; kind: SessionKind; usage: Usage }
   | { type: "app_event"; event: AppEvent }
   | { type: "job_created"; jobId: string }
   | { type: "job_finished"; jobId: string; detail: string }
@@ -114,6 +116,11 @@ export function profileAgentEvent(sessionId: string, kind: SessionKind, event: A
   }
   if (event.type === "tool_updated") return
   record({ type: "agent_event", sessionId, kind, event })
+}
+
+export function profileStreamRound(sessionId: string, kind: SessionKind, usage: Usage): void {
+  if (!enabled) return
+  record({ type: "stream_round", sessionId, kind, usage })
 }
 
 export function profileJobCreated(jobId: string): void {

@@ -123,13 +123,13 @@ async function branchDiff(root: string, base: string, signal?: AbortSignal): Pro
 const reviewDiffTool: Tool = {
   name: "review_diff",
   description:
-    "Load the complete Git status and diff for a dedicated code review. Without a base, returns staged and unstaged working-tree diffs. With a base revision, returns all current changes since its merge base with HEAD.",
+    "Load the complete Git status and diff for a dedicated code review. Without a base, returns staged and unstaged working-tree diffs; with a base revision, returns all current changes since its merge base with HEAD. Untracked files are listed in the status but their contents are not part of the diff.",
   parameters: {
     type: "object",
     properties: {
       base: {
         type: "string",
-        description: "Optional base Git revision for a branch review",
+        description: "Base Git revision for a branch review. Omit to review the working tree",
       },
     },
     additionalProperties: false,

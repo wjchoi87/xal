@@ -17,7 +17,7 @@ import { rememberRule } from "../permissions/rules"
 import { evaluatePolicy } from "../permissions/service"
 import type { PermissionMode, PermissionScope } from "../permissions/types"
 import type { SessionPlan } from "../plans/types"
-import { profileAgentEvent, profileSessionCreated } from "../profiler/profiler"
+import { profileAgentEvent, profileSessionCreated, profileStreamRound } from "../profiler/profiler"
 import { contextWindow } from "../providers/catalog"
 import { prepareConversation } from "../providers/conversation"
 import { ProviderError } from "../providers/errors"
@@ -143,7 +143,7 @@ interface RedoEntry {
   branch: number
 }
 
-const MAX_PROVIDER_ATTEMPTS = 3
+const MAX_PROVIDER_ATTEMPTS = 6
 const MAX_COMPACTION_FAILURES = 2
 
 interface ApprovalResult {
@@ -226,7 +226,9 @@ function recordedContext(events: AgentEvent[]): number | undefined {
     if (event.type === "compacted" || event.type === "conversation_rewound" || event.type === "conversation_redone") {
       return undefined
     }
-    if (event.type === "turn_ended" && event.context) return occupiedContext(event.context)
+    if ((event.type === "turn_ended" || event.type === "turn_failed") && event.context) {
+      return occupiedContext(event.context)
+    }
   }
   return undefined
 }
@@ -531,15 +533,16 @@ export class AgentSession {
     this.promoteOnAbort = false
     this.setState("streaming")
     let errored = false
+    const usage: TurnUsage = {}
     void this.acceptInputs(inputs, controller.signal)
-      .then(() => this.runTurn(controller.signal, provider, model, thinking))
+      .then(() => this.runTurn(controller.signal, provider, model, thinking, usage))
       .catch((error) => {
         if (isAbortError(error) || controller.signal.aborted) {
           this.emit({ type: "turn_interrupted" })
           return
         }
         errored = true
-        this.emit({ type: "turn_failed", message: describeError(error) })
+        this.emit({ type: "turn_failed", message: describeError(error), usage: usage.turn, context: usage.context })
       })
       .finally(() => {
         this.turnActive = false
@@ -1094,8 +1097,8 @@ export class AgentSession {
     provider: Provider,
     model: string,
     thinking: ThinkingEffort | undefined,
+    usage: TurnUsage,
   ): Promise<void> {
-    const usage: TurnUsage = {}
     const toolLoops = new ToolLoopDetector()
 
     while (true) {
@@ -1340,6 +1343,7 @@ export class AgentSession {
           usage.context = event.usage
           usage.turn = addUsage(usage.turn, event.usage)
           this.contextTokens = occupiedContext(event.usage)
+          profileStreamRound(this.sessionId, this.kind, event.usage)
           break
         }
       }

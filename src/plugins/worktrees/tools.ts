@@ -47,7 +47,7 @@ export const worktreeEnterTool: SessionTool = {
     additionalProperties: false,
   },
   prompt:
-    "Use worktree_enter when risky or parallel work should be isolated from the user's checkout. Commit or stash current changes first. Finish with worktree_exit, choosing whether to keep the checkout or remove it.",
+    "Use worktree_enter when risky or parallel work should be isolated from the user's checkout; skip it for ordinary tasks. Commit or stash current changes first, and finish with worktree_exit, choosing whether to keep the checkout or remove it.",
   sessionAware: true,
   available(ctx) {
     return ctx.kind === "primary"
@@ -87,11 +87,11 @@ export const worktreeExitTool: SessionTool = {
       action: {
         type: "string",
         enum: ["keep", "remove"],
-        description: "Keep the checkout on disk or remove it",
+        description: "keep leaves the checkout on disk; remove deletes it",
       },
       force: {
         type: "boolean",
-        description: "Discard uncommitted and ignored files when removing the checkout (default false)",
+        description: "True discards uncommitted and ignored files when removing the checkout; false or omitted refuses",
       },
     },
     required: ["action"],
@@ -146,7 +146,7 @@ export const worktreeRemoveTool: SessionTool = {
       },
       force: {
         type: "boolean",
-        description: "Discard uncommitted and ignored files when removing the checkout (default false)",
+        description: "True discards uncommitted and ignored files when removing the checkout; false or omitted refuses",
       },
     },
     required: ["path"],

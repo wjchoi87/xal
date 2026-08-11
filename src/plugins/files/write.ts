@@ -18,14 +18,14 @@ export const writeTool: Tool = {
       },
       content: {
         type: "string",
-        description: "Full file content; replaces anything already in the file",
+        description: "Full file content as raw text; replaces anything already in the file",
       },
     },
     required: ["file_path", "content"],
     additionalProperties: false,
   },
   prompt:
-    "Use write to create or replace files with complete content. Read a file before overwriting it. Content is raw file text; never include read's line-number prefixes. Prefer edit for modifying parts of an existing file.",
+    "Use write for new files and complete rewrites; prefer edit for changing part of an existing file. Read an existing file before overwriting it, and pass raw file text without read's line-number prefixes. Do not create documentation or README files unless the user asks for them.",
   title(args, ctx) {
     return displayPath(asString(args.file_path) ?? "", ctx.cwd)
   },

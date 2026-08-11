@@ -5,12 +5,12 @@ import type { AgentSession } from "./agent-session"
 
 export type AgentRunOutcome =
   | { status: "completed"; response: string | JsonObject; usage?: Usage; context?: Usage }
-  | { status: "failed"; response: string | JsonObject; error: string }
+  | { status: "failed"; response: string | JsonObject; error: string; usage?: Usage; context?: Usage }
   | { status: "interrupted"; response: string | JsonObject }
 
 type AgentRunTerminal =
   | { status: "completed"; usage?: Usage; context?: Usage }
-  | { status: "failed"; error: string }
+  | { status: "failed"; error: string; usage?: Usage; context?: Usage }
   | { status: "interrupted" }
 
 export function runAgentTurn(
@@ -41,7 +41,7 @@ export function runAgentTurn(
           finish({ status: "completed", usage: event.usage, context: event.context })
           break
         case "turn_failed":
-          finish({ status: "failed", error: event.message })
+          finish({ status: "failed", error: event.message, usage: event.usage, context: event.context })
           break
         case "turn_interrupted":
           finish({ status: "interrupted" })

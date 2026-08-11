@@ -3,6 +3,7 @@ import type { ConnectContext } from "../../providers/types"
 import { loadCredential, saveCredential, type OAuthCredential } from "../../config/credentials"
 import { asString, isRecord } from "../../lib/json"
 import { protectSecretValue } from "../../secrets/redactor"
+import { clientIdentity } from "./identity"
 import { parseTokenResponse, type TokenResponse } from "./wire"
 
 export const PROVIDER_ID = "openai-chatgpt"
@@ -85,7 +86,7 @@ function buildAuthorizeUrl(challenge: string, state: string): string {
   url.searchParams.set("state", state)
   url.searchParams.set("id_token_add_organizations", "true")
   url.searchParams.set("codex_cli_simplified_flow", "true")
-  url.searchParams.set("originator", appInfo.name)
+  url.searchParams.set("originator", clientIdentity().name)
   return url.toString()
 }
 

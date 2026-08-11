@@ -7,14 +7,13 @@ const LIMIT = 250
 
 export const grepTool: Tool = {
   name: "grep",
-  description:
-    "Search file contents with a regular expression using ripgrep. Respects .gitignore. Returns matching file paths, or matching lines with file:line prefixes in content mode.",
+  description: `Search file contents with a regular expression using ripgrep. Respects .gitignore. Returns matching file paths, or matching lines with file and line numbers in content mode. Shows at most ${LIMIT} results; the footer says how many were left out.`,
   parameters: {
     type: "object",
     properties: {
       pattern: {
         type: "string",
-        description: "Regular expression to search for (ripgrep syntax)",
+        description: 'Regular expression to search for, in ripgrep syntax, e.g. "fn run" or "log.*error"',
       },
       path: {
         type: "string",
@@ -32,14 +31,14 @@ export const grepTool: Tool = {
       },
       case_insensitive: {
         type: "boolean",
-        description: "Case-insensitive matching (default false)",
+        description: "True matches case-insensitively; false or omitted matches exactly",
       },
     },
     required: ["pattern"],
     additionalProperties: false,
   },
   prompt:
-    'Use grep to search file contents with a ripgrep regex instead of running rg or grep in bash. Default mode lists matching files; use output_mode "content" to see matching lines with line numbers. Scope with path and glob to keep results small.',
+    'Use grep to search file contents instead of running rg or grep in bash. Start in the default files mode to find where something lives, then use output_mode "content" for the matching lines. Scope with path and glob to keep results small, and run independent searches as parallel calls.',
   title(args, ctx) {
     const pattern = asString(args.pattern) ?? ""
     const glob = asString(args.glob)

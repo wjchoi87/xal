@@ -198,7 +198,7 @@ function parseEvent(raw: unknown): AgentEvent | undefined {
     case "turn_failed": {
       const message = asString(raw.message)
       if (message === undefined) return undefined
-      return { type: "turn_failed", message }
+      return { type: "turn_failed", message, usage: parseUsage(raw.usage), context: parseUsage(raw.context) }
     }
     case "turn_interrupted":
       return { type: "turn_interrupted" }

@@ -183,6 +183,7 @@ export class AgentEventController {
         statusBar.setUsage(event.context)
         break
       case "turn_failed":
+        if (event.context) statusBar.setUsage(event.context)
         scrollback.append({ kind: "error", text: event.message })
         break
       case "error":

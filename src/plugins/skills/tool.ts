@@ -22,7 +22,7 @@ export async function renderSkill(skill: Skill): Promise<string> {
 export const skillTool: Tool = {
   name: "skill",
   description:
-    "Load a discovered skill's instructions, or read one supporting text file from its package. Call without path before using a skill.",
+    "Load a discovered skill's instructions and supporting-file list into the conversation, or read one supporting text file from its package. Call without path before using a skill.",
   parameters: {
     type: "object",
     properties: {
@@ -32,14 +32,14 @@ export const skillTool: Tool = {
       },
       path: {
         type: "string",
-        description: "Optional supporting file path relative to the skill directory",
+        description: "Supporting file path relative to the skill directory. Omit to load the skill's instructions",
       },
     },
     required: ["name"],
     additionalProperties: false,
   },
   prompt:
-    "Use skill when the user explicitly names an available skill or the task clearly matches one. Load its instructions before acting, then read only the supporting files those instructions require.",
+    "Use skill when the user names an available skill or the task clearly matches one from the catalog. Load its instructions before acting, follow them over your defaults, then read only the supporting files those instructions require.",
   title(args) {
     const name = asString(args.name) ?? ""
     const path = asString(args.path)

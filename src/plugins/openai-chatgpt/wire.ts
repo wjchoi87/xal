@@ -9,7 +9,13 @@ export type WireSseEvent =
   | { type: "reasoning_delta"; delta: string }
   | { type: "item_done"; item: JsonObject }
   | { type: "terminal"; usage?: Usage }
-  | { type: "failure"; message: string }
+  | { type: "failure"; message: string; retryable: boolean }
+
+const TRANSIENT_FAILURE = /overloaded|rate.?limit|server.?error|service.?unavailable|internal.?error|timeout|try again/i
+
+function failure(message: string, code?: string): WireSseEvent {
+  return { type: "failure", message, retryable: TRANSIENT_FAILURE.test(`${code ?? ""} ${message}`) }
+}
 
 export function parseSseEvent(raw: unknown): WireSseEvent | undefined {
   if (!isRecord(raw)) return undefined
@@ -33,7 +39,7 @@ export function parseSseEvent(raw: unknown): WireSseEvent | undefined {
       return { type: "reasoning_delta", delta }
     }
     case "response.output_item.done": {
-      if (!isJsonObject(raw.item)) return { type: "failure", message: "response item was not valid JSON" }
+      if (!isJsonObject(raw.item)) return failure("response item was not valid JSON")
       return { type: "item_done", item: raw.item }
     }
     case "response.completed":
@@ -55,11 +61,13 @@ export function parseSseEvent(raw: unknown): WireSseEvent | undefined {
     case "response.failed": {
       const error = isRecord(raw.response) ? raw.response.error : undefined
       const message = isRecord(error) ? asString(error.message) : undefined
-      return { type: "failure", message: message ?? "response failed" }
+      const code = isRecord(error) ? asString(error.code) : undefined
+      return failure(message ?? "response failed", code)
     }
     case "error": {
       const nested = isRecord(raw.error) ? asString(raw.error.message) : undefined
-      return { type: "failure", message: asString(raw.message) ?? nested ?? "stream error" }
+      const code = asString(raw.code) ?? (isRecord(raw.error) ? asString(raw.error.code) : undefined)
+      return failure(asString(raw.message) ?? nested ?? "stream error", code)
     }
     default:
       return undefined

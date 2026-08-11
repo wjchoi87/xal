@@ -1,5 +1,5 @@
-import { appInfo } from "../../app-info"
 import { providerFetch } from "../../providers/transport"
+import { clientIdentity } from "./identity"
 import { ensureAccessToken } from "./oauth"
 
 const CODEX_URL = "https://chatgpt.com/backend-api/codex"
@@ -9,12 +9,13 @@ interface ChatGptRequest extends Omit<RequestInit, "headers"> {
 }
 
 function headers(access: string, accountId: string, extra: Record<string, string>): Record<string, string> {
+  const identity = clientIdentity()
   return {
     authorization: `Bearer ${access}`,
     "chatgpt-account-id": accountId,
-    originator: appInfo.name,
+    originator: identity.name,
     accept: "application/json",
-    "user-agent": `${appInfo.name}/${appInfo.version}`,
+    "user-agent": identity.userAgent,
     ...extra,
   }
 }

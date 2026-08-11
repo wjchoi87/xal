@@ -89,7 +89,7 @@ export async function* streamResponse(request: StreamRequest): AsyncGenerator<St
           yield { type: "done", usage: event.usage }
           break
         case "failure":
-          throw new ProviderError(event.message, { retryable: false })
+          throw new ProviderError(event.message, { retryable: event.retryable })
       }
       if (terminal) break
     }

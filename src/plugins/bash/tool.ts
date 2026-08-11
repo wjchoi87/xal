@@ -9,7 +9,7 @@ import { splitCommand } from "./split"
 const DEFAULT_TIMEOUT_S = 120
 const MAX_TIMEOUT_S = 600
 const READ_ONLY_COMMAND =
-  /^(?:cat|find|grep|head|ls|pwd|rg|sleep|tail|wc)(?:\s|$)|^(?:git\s+(?:diff|log|show|status))(?:\s|$)|^(?:bun|cargo|npm|pnpm|yarn)\s+(?:run\s+)?test(?:\s|$)|^sed\s+(?!.*(?:\s-i|--in-place))|^git\s+branch\s+--show-current(?:\s|$)/
+  /^(?:cat|echo|grep|head|ls|printf|pwd|rg|sleep|tail|wc)(?:\s|$)|^find(?!.*\s-(?:delete|exec|ok|fprint))(?:\s|$)|^git\s+(?!.*\s--output)(?:diff|log|merge-base|rev-parse|show|status)(?:\s|$)|^(?:bun|cargo|npm|pnpm|yarn)\s+(?:run\s+)?test(?:\s|$)|^sed\s+(?!.*(?:\s-i|--in-place))|^git\s+branch\s+--show-current(?:\s|$)/
 
 export function commandOf(args: Record<string, unknown>): string {
   return asString(args.command)?.trim() ?? ""
@@ -40,19 +40,19 @@ function parameters(): Record<string, unknown> {
     },
     timeout: {
       type: "number",
-      description: `Timeout in seconds before the command is killed (default ${DEFAULT_TIMEOUT_S}, max ${MAX_TIMEOUT_S})`,
+      description: `Seconds before the command is killed. Defaults to ${DEFAULT_TIMEOUT_S}; maximum ${MAX_TIMEOUT_S}`,
     },
     background: {
       type: "boolean",
       description:
-        "Run the command as a background job and return its job id immediately instead of waiting. The timeout does not apply. Read new output with job_output and stop the job with job_kill.",
+        "True runs the command as a background job and returns its job id immediately; the timeout does not apply. Read new output with job_output and stop the job with job_kill",
     },
   }
   if (sandboxAvailable()) {
     properties.sandbox = {
       type: "boolean",
       description:
-        "Run inside an OS sandbox that blocks network access and writes outside the workspace and temp directories. Sandboxed commands run without waiting for the user's approval.",
+        "True runs the command without waiting for the user's approval inside an OS sandbox that blocks network access and writes outside the workspace and temp directories",
     }
   }
   return {
@@ -64,15 +64,14 @@ function parameters(): Record<string, unknown> {
 }
 
 function description(): string {
-  const base =
-    "Execute a bash command in the user's current working directory. Returns combined stdout and stderr followed by the exit code. Use it to run builds, tests, and shell operations; use grep and glob to search, and read, write, and edit for file contents."
+  const base = `Execute a bash command in the user's current working directory. Returns combined stdout and stderr followed by the exit code. Commands run without a TTY and are killed after ${DEFAULT_TIMEOUT_S} seconds unless timeout says otherwise.`
   if (!sandboxAvailable()) return `${base} Each command requires the user's approval before it runs.`
   return `${base} Commands with sandbox:true run immediately inside an OS sandbox; other commands require the user's approval before they run.`
 }
 
 function guidance(): string {
   const base =
-    "Use bash for shell work: builds, tests, git. Use the grep and glob tools to search instead of rg, find, or ls, and read, write, and edit for file contents instead of cat, sed, or heredocs. Prefer non-interactive commands; anything needing a TTY will hang. Start long-lived processes like dev servers and watchers with background:true, follow them with job_output (pass wait to block until new output or exit instead of sleeping between polls), and stop them with job_kill; never background quick commands."
+    "Use bash for shell work: builds, tests, git. Use the grep and glob tools to search instead of rg, find, or ls, and read, write, and edit for file contents instead of cat, sed, echo, or heredocs. Quote paths that contain spaces. Issue independent commands as parallel calls; chain dependent commands with && so a failure stops the sequence. Prefer non-interactive flags; anything that waits for input hangs until the timeout kills it. Start long-lived processes like dev servers and watchers with background:true, follow them with job_output (pass wait to block until new output or exit instead of sleeping between polls), and stop them with job_kill; never background quick commands. Only commit, amend, or push with git when the user asks for it."
   if (!sandboxAvailable()) return base
   return `${base} Prefer sandbox:true — it runs without approval but blocks network access and writes outside the workspace and temp directories. Use sandbox:false when a command needs network or writes elsewhere, and if a sandboxed command fails because of those limits, retry it with sandbox:false.`
 }

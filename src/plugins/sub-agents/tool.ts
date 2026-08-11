@@ -8,7 +8,7 @@ import { describeError } from "../../lib/error"
 import { asString } from "../../lib/json"
 import { compactPath } from "../../lib/path"
 import type { PermissionMode } from "../../permissions/types"
-import type { Usage } from "../../providers/types"
+import { isThinkingEffort, type ThinkingEffort, type Usage } from "../../providers/types"
 import { toolFailed } from "../../tools/output"
 import type { SessionTool } from "../../tools/types"
 
@@ -43,6 +43,12 @@ function isolationFrom(args: Record<string, unknown>): SubAgentIsolation {
   const isolation = asString(args.isolation) ?? "shared"
   if (isolation === "shared" || isolation === "worktree") return isolation
   throw new Error('isolation must be "shared" or "worktree"')
+}
+
+function thinkingFrom(args: Record<string, unknown>): ThinkingEffort | undefined {
+  if (args.thinking === undefined) return undefined
+  if (isThinkingEffort(args.thinking)) return args.thinking
+  throw new Error('thinking must be one of "none", "low", "medium", "high", "xhigh", or "max"')
 }
 
 function childMode(parent: PermissionMode, access: SubAgentAccess): PermissionMode {
@@ -95,6 +101,7 @@ function activity(event: AgentEvent, child: AgentSession, state: ActivityState, 
       break
     case "turn_failed":
       state.activity = "Failed"
+      state.usage = event.usage
       record(`\nSub-agent failed: ${event.message}\n`)
       break
     case "turn_interrupted":
@@ -149,7 +156,7 @@ function activity(event: AgentEvent, child: AgentSession, state: ActivityState, 
 export const subAgentTool: SessionTool = {
   name: "sub_agent",
   description:
-    "Spawn a fresh one-shot agent for a self-contained task as a background job and return its job id immediately. Follow its progress and final report with job_output and stop it with job_kill. Write agents can use the shared workspace or a clean isolated Git worktree on their own branch.",
+    "Spawn a fresh one-shot agent for a self-contained task as a background job and return its job id immediately. The agent sees nothing but the task text, works autonomously without asking questions, and its report is not shown to the user. Follow its progress and final report with job_output and stop it with job_kill. Write agents can use the shared workspace or a clean isolated Git worktree on their own branch.",
   parameters: {
     type: "object",
     properties: {
@@ -157,25 +164,32 @@ export const subAgentTool: SessionTool = {
         type: "string",
         minLength: 1,
         maxLength: MAX_TASK_LENGTH,
-        description: "Complete self-contained assignment for the sub-agent",
+        description:
+          "Complete self-contained assignment. The agent has no other context, so include the goal, relevant paths, constraints, how to verify the work, and what the final report must contain",
       },
       access: {
         type: "string",
         enum: ["read", "write"],
-        description: "Read-only investigation or permission to modify files",
+        description: "read runs a read-only investigation; write may modify files",
       },
       isolation: {
         type: "string",
         enum: ["shared", "worktree"],
         description:
-          "Shared uses the current workspace (default); worktree gives a write agent a clean checkout and branch",
+          "shared uses the current workspace (default); worktree gives a write agent a clean checkout and branch",
+      },
+      thinking: {
+        type: "string",
+        enum: ["none", "low", "medium", "high", "xhigh", "max"],
+        description:
+          "Reasoning effort for the sub-agent. Defaults to yours; lower effort finishes bounded, well-specified tasks much faster",
       },
     },
     required: ["task", "access"],
     additionalProperties: false,
   },
   prompt:
-    "Use sub_agent to delegate bounded work that benefits from a fresh context; it returns a job id immediately and runs in the background while you continue. Make each task self-contained. Spawn independent delegations together, then collect each report with job_output (pass wait instead of polling) before you rely on or summarize its work. Use isolation:worktree for independent write tasks when the current Git workspace is clean; the result stays on a separate branch and checkout until integrated or removed with worktree_remove. Shared write delegations edit your current workspace, so give them disjoint scopes.",
+    "Use sub_agent to delegate bounded, self-contained work that can run while you continue; do the work yourself when it is quick or when your very next step depends on its result. The agent sees only the task text, so state the goal, the relevant paths, whether to modify files or only investigate, how to verify the work, and exactly what the report must contain. Right-size each delegation with thinking: sub-agent time is dominated by how much it reasons and writes, so use lower effort for bounded tasks and reserve high effort for genuinely hard ones. Spawn independent delegations together, give shared write agents disjoint files, and use isolation:worktree when write work should not touch the current checkout — the result stays on its own branch until integrated or removed with worktree_remove. Never redo delegated work: continue non-overlapping tasks, then collect each report with job_output (pass wait instead of polling) before you rely on or summarize it.",
   sessionAware: true,
   available(ctx) {
     return ctx.kind === "primary"
@@ -210,7 +224,7 @@ export const subAgentTool: SessionTool = {
       provider: ctx.session.provider,
       model: ctx.session.model,
       modelInputModalities: ctx.session.modelInputModalities,
-      thinking: ctx.session.thinking,
+      thinking: thinkingFrom(args) ?? ctx.session.thinking,
       interactive: false,
       persist: false,
       ...(access === "write" && !worktree ? { workspaceUndo: ctx.session.workspaceUndo, trackUndoPrompts: false } : {}),
@@ -228,6 +242,10 @@ export const subAgentTool: SessionTool = {
       updatedCalls: new Set(),
     }
     const record = (text: string): void => appendJobOutput(job, text)
+    const failureDetail = (error: string): string =>
+      activityState.toolCalls.size > 0
+        ? `failed: ${error} — its partial progress is the output above; reuse it instead of redoing the work`
+        : `failed: ${error}`
     if (worktree) {
       record(`Isolated worktree: ${compactPath(worktree.path)}\nBranch: ${worktree.branch}\n\n`)
     }
@@ -262,7 +280,7 @@ export const subAgentTool: SessionTool = {
         if (outcome.status === "failed") {
           activityState.activity = "Failed"
           state = { running: false, ok: false, detail: "failed" }
-          finishJob(job, `failed: ${outcome.error}`)
+          finishJob(job, failureDetail(outcome.error))
           return
         }
         const report =
@@ -288,7 +306,7 @@ export const subAgentTool: SessionTool = {
         activityState.activity = "Failed"
         state = { running: false, ok: false, detail: "failed" }
         record(`\nSub-agent failed: ${describeError(error)}\n`)
-        finishJob(job, `failed: ${describeError(error)}`)
+        finishJob(job, failureDetail(describeError(error)))
       })
 
     const workspace = worktree
