@@ -1,5 +1,6 @@
 import type { AgentSession } from "../../../agent/agent-session"
 import type { AgentEvent } from "../../../agent/events"
+import { historyMoveNotice } from "../../../agent/history"
 import { describeError } from "../../../lib/error"
 import { compactPath } from "../../../lib/path"
 import { contextWindow } from "../../../providers/catalog"
@@ -67,6 +68,20 @@ export class AgentEventController {
         break
       case "user_message":
         scrollback.append({ kind: "user", text: event.text, imageCount: event.imageCount, sentAt: event.sentAt })
+        break
+      case "conversation_rewound":
+        scrollback.append({
+          kind: "info",
+          text: historyMoveNotice("undo", event.prompt, event.fileCount),
+        })
+        statusBar.resetUsage()
+        break
+      case "conversation_redone":
+        scrollback.append({
+          kind: "info",
+          text: historyMoveNotice("redo", event.prompt, event.fileCount),
+        })
+        statusBar.resetUsage()
         break
       case "tool_call_updated":
         break

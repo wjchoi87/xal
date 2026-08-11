@@ -47,6 +47,7 @@ import { expandSkillInvocation } from "../skills/invoke"
 import { getTool, listTools } from "../tools/registry"
 import { boundToolOutput, TOOL_FAILED_PREFIX, TOOL_OUTPUT_UNSAVED_PREFIX, toolOutputDirectory } from "../tools/output"
 import { isInteractiveTool, isSessionTool, MAX_ELICITATION_ANSWER_LENGTH } from "../tools/types"
+import { WorkspaceUndo, type CodeRedo } from "../tools/undo"
 import type {
   ElicitationAnswer,
   ElicitationRequest,
@@ -55,6 +56,7 @@ import type {
   ToolConcurrency,
   ToolEvent,
   ToolResult,
+  UndoAction,
 } from "../tools/types"
 import {
   COMPACTION_TRIGGER_RATIO,
@@ -65,7 +67,14 @@ import {
 } from "./compaction"
 import type { CompactionTrigger } from "./compaction"
 import type { AgentEvent, AgentState, DenialCause, QueuedEntry, SessionStartedEvent } from "./events"
-import { activeHistory, type HistoryItem } from "./history"
+import {
+  activeHistory,
+  rewindConversation,
+  type ConversationCheckpoint,
+  type ConversationState,
+  type HistoryItem,
+} from "./history"
+import { isMessageId } from "./message-id"
 import { OutputLoopDetector, ToolLoopDetector, type OutputLoop, type ToolLoopAction } from "./loop-detection"
 import { OutputContract, parseOutputSchema, type OutputSchema } from "./output-contract"
 import { composeSystemPrompt } from "./prompt"
@@ -81,6 +90,8 @@ export interface AgentSessionDeps {
   persist?: boolean
   interactive?: boolean
   outputSchema?: OutputSchema
+  workspaceUndo?: WorkspaceUndo
+  trackUndoPrompts?: boolean
 }
 
 export interface ResumeTarget {
@@ -97,6 +108,39 @@ export interface ResumeTarget {
 type StreamKind = "assistant" | "reasoning"
 
 export type CompactionOutcome = "compacted" | "nothing" | "busy" | "interrupted"
+
+export type AgentSessionState = AgentState | "moving_history"
+
+export interface UndoCheckpoint {
+  messageId: string
+  text: string
+  imageCount: number
+  removedMessages: number
+  paths: string[]
+  codeAvailable: boolean
+  codeUnavailable?: string
+}
+
+export type UndoOutcome =
+  | { status: "undone"; prompt: string; fileCount: number; input: UserInput }
+  | { status: "busy" }
+  | { status: "invalid" }
+  | { status: "stopped"; message: string }
+
+export type RedoOutcome =
+  | { status: "redone"; prompt: string; fileCount: number }
+  | { status: "busy" }
+  | { status: "nothing"; message?: string }
+  | { status: "stopped"; message: string }
+
+interface RedoEntry {
+  messageId: string
+  prompt: string
+  conversation: ConversationState
+  code: CodeRedo
+  fileCount: number
+  branch: number
+}
 
 const MAX_PROVIDER_ATTEMPTS = 3
 const MAX_COMPACTION_FAILURES = 2
@@ -138,6 +182,7 @@ interface PreparedToolCall {
   tool: RegisteredTool
   title: string
   readOnly: boolean
+  undo: UndoAction
 }
 
 interface ToolCallOutcome {
@@ -177,7 +222,9 @@ function addUsage(total: Usage | undefined, usage: Usage): Usage {
 function recordedContext(events: AgentEvent[]): number | undefined {
   for (let index = events.length - 1; index >= 0; index--) {
     const event = events[index]!
-    if (event.type === "compacted") return undefined
+    if (event.type === "compacted" || event.type === "conversation_rewound" || event.type === "conversation_redone") {
+      return undefined
+    }
     if (event.type === "turn_ended" && event.context) return occupiedContext(event.context)
   }
   return undefined
@@ -188,6 +235,9 @@ export class AgentSession {
   private title: string | undefined
   private startedAt = Date.now()
   private items: HistoryItem[] = []
+  private checkpoints: ConversationCheckpoint[] = []
+  private redos: RedoEntry[] = []
+  private redoInvalidated: string | undefined
   private contextTokens: number | undefined
   private compactionFailures = 0
   private readonly listeners = new Set<(event: AgentEvent) => void>()
@@ -195,13 +245,16 @@ export class AgentSession {
   private readonly interactive: boolean
   private readonly kind: SessionKind
   private readonly outputContract: OutputContract | undefined
+  private readonly trackUndoPrompts: boolean
   private outputDirectory: string
   private cwd: string
+  private workspaceUndo: WorkspaceUndo
   private provider: Provider
   private model: string
   private modelInputModalities: ModelInputModality[] | undefined
   private thinking: ThinkingEffort | undefined
   private state: AgentState = "idle"
+  private movingHistory = false
   private mode: PermissionMode = "build"
   private plan: SessionPlan | undefined
   private planHandoffActive = false
@@ -225,6 +278,8 @@ export class AgentSession {
   constructor(deps: AgentSessionDeps) {
     this.kind = deps.kind ?? "primary"
     this.cwd = resolve(deps.cwd ?? process.cwd())
+    this.workspaceUndo = deps.workspaceUndo ?? new WorkspaceUndo(this.cwd)
+    this.trackUndoPrompts = deps.trackUndoPrompts ?? true
     this.provider = deps.provider
     this.model = deps.model
     this.modelInputModalities = deps.modelInputModalities
@@ -244,8 +299,8 @@ export class AgentSession {
     return this.sessionId
   }
 
-  get currentState(): AgentState {
-    return this.state
+  get currentState(): AgentSessionState {
+    return this.movingHistory ? "moving_history" : this.state
   }
 
   get currentMode(): PermissionMode {
@@ -315,12 +370,16 @@ export class AgentSession {
   }
 
   reset(): boolean {
-    if (this.state !== "idle") return false
+    if (this.currentState !== "idle") return false
     this.sessionId = crypto.randomUUID()
     this.title = undefined
     this.outputDirectory = toolOutputDirectory(projectSessionsDir(this.cwd), this.sessionId)
     this.startedAt = Date.now()
     this.items = []
+    this.checkpoints = []
+    this.redos = []
+    this.redoInvalidated = undefined
+    this.workspaceUndo = new WorkspaceUndo(this.cwd)
     this.contextTokens = undefined
     this.compactionFailures = 0
     this.plan = undefined
@@ -332,7 +391,7 @@ export class AgentSession {
   }
 
   resume(target: ResumeTarget): boolean {
-    if (this.state !== "idle") return false
+    if (this.currentState !== "idle") return false
     const { meta } = target.session
     this.sessionId = meta.id
     this.title = target.session.title ? redactText(target.session.title) : undefined
@@ -340,6 +399,17 @@ export class AgentSession {
     this.cwd = resolve(target.cwd)
     this.startedAt = meta.startedAt
     this.items = target.session.items.map(redactHistoryItem)
+    this.checkpoints = target.session.checkpoints.map((checkpoint) => ({
+      messageId: checkpoint.messageId,
+      input: redactUserInput(checkpoint.input),
+      before: checkpoint.before.map(redactHistoryItem),
+    }))
+    this.redos = []
+    this.redoInvalidated = undefined
+    this.workspaceUndo = new WorkspaceUndo(this.cwd)
+    this.workspaceUndo.seed(
+      this.checkpoints.map((checkpoint) => ({ messageId: checkpoint.messageId, prompt: checkpoint.input.text })),
+    )
     this.contextTokens = recordedContext(target.session.events)
     this.compactionFailures = 0
     this.plan = undefined
@@ -375,7 +445,7 @@ export class AgentSession {
     thinking?: ThinkingEffort,
     inputModalities?: ModelInputModality[],
   ): boolean {
-    if (this.state !== "idle") return false
+    if (this.currentState !== "idle") return false
     if (this.provider === provider && this.model === model) {
       this.modelInputModalities = inputModalities
       return this.setThinking(thinking)
@@ -390,7 +460,7 @@ export class AgentSession {
   }
 
   setThinking(thinking?: ThinkingEffort): boolean {
-    if (this.state !== "idle") return false
+    if (this.currentState !== "idle") return false
     if (this.thinking === thinking) return true
     this.thinking = thinking
     this.emit({ type: "thinking_changed", thinking })
@@ -409,6 +479,11 @@ export class AgentSession {
     if (next === this.cwd) return
     const previous = this.cwd
     this.cwd = next
+    this.workspaceUndo = new WorkspaceUndo(next)
+    this.workspaceUndo.seed(
+      this.checkpoints.map((checkpoint) => ({ messageId: checkpoint.messageId, prompt: checkpoint.input.text })),
+    )
+    this.invalidateRedos("Redo is unavailable because the workspace changed.")
     this.emit({ type: "workspace_changed", cwd: next, previous })
   }
 
@@ -432,6 +507,7 @@ export class AgentSession {
       this.emit({ type: "error", message: `${this.model} does not support image input` })
       return false
     }
+    if (this.movingHistory) return false
     if (this.turnActive) {
       this.queued.push(redacted)
       this.emit({ type: "queue_changed", entries: this.queueEntries() })
@@ -506,7 +582,6 @@ export class AgentSession {
 
   private async acceptInput(input: UserInput, signal: AbortSignal): Promise<void> {
     this.ensureTitle(input)
-    this.emit({ type: "user_message", text: input.text, imageCount: input.images.length, sentAt: Date.now() })
     const expanded = redactText(expandSkillInvocation(input.text) ?? input.text)
     const outcome = await runPromptHooks(
       { text: expanded, imageCount: input.images.length },
@@ -516,7 +591,19 @@ export class AgentSession {
     if (outcome.type === "blocked") {
       throw new Error(`prompt rejected by hook ${outcome.hook}: ${redactText(outcome.reason)}`)
     }
-    this.pushItem(this.userMessage(input, redactText(outcome.text)))
+
+    const messageId = crypto.randomUUID()
+    this.invalidateRedos("Redo is unavailable because a new prompt created a divergent branch.")
+    if (this.trackUndoPrompts) this.workspaceUndo.markPrompt(messageId, input.text)
+    this.checkpoints.push({ messageId, input: redactUserInput(input), before: [...this.items] })
+    this.emit({
+      type: "user_message",
+      messageId,
+      text: input.text,
+      imageCount: input.images.length,
+      sentAt: Date.now(),
+    })
+    this.pushItem(this.userMessage(input, redactText(outcome.text), messageId))
   }
 
   private ensureTitle(input: UserInput): void {
@@ -525,9 +612,9 @@ export class AgentSession {
     if (title) this.setTitle(title)
   }
 
-  private userMessage(input: UserInput, modelText: string): UserMessageItem {
-    if (modelText === input.text) return { type: "user_message", ...input }
-    return { type: "user_message", ...input, modelText }
+  private userMessage(input: UserInput, modelText: string, messageId: string): UserMessageItem {
+    if (modelText === input.text) return { type: "user_message", ...input, messageId }
+    return { type: "user_message", ...input, messageId, modelText }
   }
 
   private flushQueue(): void {
@@ -537,8 +624,207 @@ export class AgentSession {
     this.emit({ type: "queue_flushed", inputs })
   }
 
+  private invalidateRedos(reason: string): void {
+    if (this.redos.length === 0) return
+    this.redos = []
+    this.redoInvalidated = reason
+  }
+
+  async undoCheckpoints(): Promise<UndoCheckpoint[]> {
+    const previews = new Map((await this.workspaceUndo.previews()).map((preview) => [preview.messageId, preview]))
+    return this.checkpoints.map((checkpoint, index) => {
+      const preview = previews.get(checkpoint.messageId)
+      return {
+        messageId: checkpoint.messageId,
+        text: checkpoint.input.text,
+        imageCount: checkpoint.input.images.length,
+        removedMessages: this.checkpoints.length - index,
+        paths: preview?.paths ?? [],
+        codeAvailable: preview?.codeAvailable ?? false,
+        ...(preview?.unavailable === undefined ? {} : { codeUnavailable: preview.unavailable }),
+      }
+    })
+  }
+
+  async undo(messageId: string): Promise<UndoOutcome> {
+    if (this.currentState !== "idle") return { status: "busy" }
+    if (!isMessageId(messageId)) return { status: "invalid" }
+    const checkpoint = this.checkpoints.find((candidate) => candidate.messageId === messageId)
+    if (!checkpoint) return { status: "invalid" }
+
+    this.movingHistory = true
+    try {
+      return await this.performUndo(checkpoint)
+    } finally {
+      this.movingHistory = false
+    }
+  }
+
+  private async performUndo(checkpoint: ConversationCheckpoint): Promise<UndoOutcome> {
+    let codeRewind: import("../tools/undo").CodeRewind
+    try {
+      codeRewind = await this.workspaceUndo.rewind(checkpoint.messageId)
+    } catch (error) {
+      return { status: "stopped", message: describeError(error) }
+    }
+
+    const rewound = rewindConversation({ items: this.items, checkpoints: this.checkpoints }, checkpoint.messageId)
+    if (!rewound) {
+      try {
+        await codeRewind.rollback()
+      } catch (error) {
+        return {
+          status: "stopped",
+          message: `the checkpoint changed and code rollback failed: ${describeError(error)}`,
+        }
+      }
+      return { status: "invalid" }
+    }
+    if (codeRewind.steps !== rewound.redos.length) {
+      try {
+        await codeRewind.rollback()
+      } catch (error) {
+        return {
+          status: "stopped",
+          message: `conversation and code history disagree; code rollback also failed: ${describeError(error)}`,
+        }
+      }
+      return { status: "stopped", message: "conversation and code history disagree" }
+    }
+
+    const fileCount = codeRewind.count
+    let recorded: AgentEvent
+    try {
+      recorded = await this.recordEvent({
+        type: "conversation_rewound",
+        messageId: checkpoint.messageId,
+        prompt: checkpoint.input.text,
+        removedMessages: rewound.removedMessages,
+        fileCount,
+      })
+    } catch (error) {
+      try {
+        await codeRewind.rollback()
+      } catch (rollbackError) {
+        return {
+          status: "stopped",
+          message: `the conversation could not be saved: ${describeError(error)}; code rollback also failed: ${describeError(rollbackError)}`,
+        }
+      }
+      return { status: "stopped", message: `the conversation could not be saved: ${describeError(error)}` }
+    }
+
+    const codeRedos = codeRewind.commit()
+    this.items = rewound.active.items
+    this.checkpoints = rewound.active.checkpoints
+    this.contextTokens = undefined
+    this.compactionFailures = 0
+    this.redoInvalidated = undefined
+    const branch = this.workspaceUndo.branch
+    this.redos.push(
+      ...rewound.redos
+        .map((conversation, index): RedoEntry => {
+          const code = codeRedos[index]
+          if (!code) throw new Error("conversation and code redo history disagree")
+          return {
+            messageId: conversation.messageId,
+            prompt: conversation.prompt,
+            conversation: conversation.state,
+            code,
+            fileCount: code.count,
+            branch,
+          }
+        })
+        .toReversed(),
+    )
+    this.notifyRedacted(recorded)
+    return {
+      status: "undone",
+      prompt: checkpoint.input.text,
+      fileCount,
+      input: rewound.input,
+    }
+  }
+
+  async redo(): Promise<RedoOutcome> {
+    if (this.currentState !== "idle") return { status: "busy" }
+    const entry = this.redos.at(-1)
+    if (!entry) {
+      return this.redoInvalidated ? { status: "nothing", message: this.redoInvalidated } : { status: "nothing" }
+    }
+    if (entry.branch !== this.workspaceUndo.branch) {
+      this.redos = []
+      this.redoInvalidated = "Redo is unavailable because a new agent change created a divergent branch."
+      return { status: "nothing", message: this.redoInvalidated }
+    }
+
+    this.movingHistory = true
+    try {
+      return await this.performRedo(entry)
+    } finally {
+      this.movingHistory = false
+    }
+  }
+
+  private async performRedo(entry: RedoEntry): Promise<RedoOutcome> {
+    let applied: import("../tools/undo").AppliedCodeRedo
+    try {
+      applied = await entry.code.apply()
+    } catch (error) {
+      return { status: "stopped", message: describeError(error) }
+    }
+
+    const restoredMessages = entry.conversation.checkpoints.length - this.checkpoints.length
+    if (restoredMessages < 1) {
+      try {
+        await applied.rollback()
+      } catch (error) {
+        return {
+          status: "stopped",
+          message: `the superseded conversation is unavailable; code rollback also failed: ${describeError(error)}`,
+        }
+      }
+      return { status: "stopped", message: "the superseded conversation is unavailable" }
+    }
+
+    let recorded: AgentEvent
+    try {
+      recorded = await this.recordEvent({
+        type: "conversation_redone",
+        messageId: entry.messageId,
+        prompt: entry.prompt,
+        restoredMessages,
+        fileCount: entry.fileCount,
+      })
+    } catch (error) {
+      try {
+        await applied.rollback()
+      } catch (rollbackError) {
+        return {
+          status: "stopped",
+          message: `the conversation could not be saved: ${describeError(error)}; code rollback also failed: ${describeError(rollbackError)}`,
+        }
+      }
+      return { status: "stopped", message: `the conversation could not be saved: ${describeError(error)}` }
+    }
+
+    this.items = entry.conversation.items
+    this.checkpoints = entry.conversation.checkpoints
+    this.contextTokens = undefined
+    this.compactionFailures = 0
+    applied.commit()
+    this.redos.pop()
+    this.redoInvalidated = undefined
+    this.notifyRedacted(recorded)
+    return {
+      status: "redone",
+      prompt: entry.prompt,
+      fileCount: entry.fileCount,
+    }
+  }
+
   async compact(instructions?: string): Promise<CompactionOutcome> {
-    if (this.state !== "idle") return "busy"
+    if (this.currentState !== "idle") return "busy"
     const controller = new AbortController()
     this.abortController = controller
     this.setState("compacting")
@@ -677,6 +963,12 @@ export class AgentSession {
     this.recorder?.event(redacted)
     this.notifyRedacted(redacted)
     if (event.type === "turn_ended") this.planHandoffActive = false
+  }
+
+  private async recordEvent(event: AgentEvent): Promise<AgentEvent> {
+    const redacted = redactAgentEvent(event)
+    await this.recorder?.eventAndWait(redacted)
+    return redacted
   }
 
   private notify(event: AgentEvent): void {
@@ -1256,11 +1548,12 @@ export class AgentSession {
       }
     }
 
-    return { type: "ready", prepared: { call, tool, title, readOnly } }
+    const undo: UndoAction = tool.undo?.(call.args, { cwd: this.cwd }) ?? { type: "none" }
+    return { type: "ready", prepared: { call, tool, title, readOnly, undo } }
   }
 
   private async executeToolCall(prepared: PreparedToolCall, signal: AbortSignal): Promise<ToolCallOutcome> {
-    const { call, tool, title, readOnly } = prepared
+    const { call, tool, title, readOnly, undo } = prepared
     if (signal.aborted) {
       return this.toolCallOutcome(call, title, readOnly, "Interrupted by user before execution.")
     }
@@ -1275,28 +1568,45 @@ export class AgentSession {
       if (redacted) this.emit({ type: "tool_updated", callId: call.callId, text: redacted })
     }
     try {
-      const result: ToolResult = isInteractiveTool(tool)
-        ? await tool.execute(call.args, {
-            session: { directory: this.outputDirectory, mode: this.mode },
-            publish: (event) => this.publishToolEvent(event),
-            requestInput: (request) => this.requestInput(call.callId, request, signal),
-          })
-        : isSessionTool(tool)
-          ? await tool.execute(call.args, {
-              session: {
-                kind: this.kind,
-                cwd: this.cwd,
-                provider: this.provider,
-                model: this.model,
-                modelInputModalities: this.modelInputModalities,
-                thinking: this.thinking,
-                mode: this.mode,
-                changeWorkspace: (cwd) => this.changeWorkspace(cwd),
-              },
-              signal,
-              update,
+      const execute = (): Promise<ToolResult> =>
+        isInteractiveTool(tool)
+          ? tool.execute(call.args, {
+              session: { directory: this.outputDirectory, mode: this.mode },
+              publish: (event) => this.publishToolEvent(event),
+              requestInput: (request) => this.requestInput(call.callId, request, signal),
             })
-          : await tool.execute(call.args, { cwd: this.cwd, signal, update })
+          : isSessionTool(tool)
+            ? tool.execute(call.args, {
+                session: {
+                  kind: this.kind,
+                  cwd: this.cwd,
+                  provider: this.provider,
+                  model: this.model,
+                  modelInputModalities: this.modelInputModalities,
+                  thinking: this.thinking,
+                  mode: this.mode,
+                  workspaceUndo: this.workspaceUndo,
+                  changeWorkspace: (cwd) => this.changeWorkspace(cwd),
+                },
+                signal,
+                update,
+              })
+            : tool.execute(call.args, { cwd: this.cwd, signal, update })
+      let result: ToolResult
+      switch (undo.type) {
+        case "none":
+          result = await execute()
+          break
+        case "paths":
+          result = await this.workspaceUndo.trackPaths(call.name, undo.paths, execute)
+          break
+        case "workspace":
+          result = await this.workspaceUndo.trackWorkspace(call.name, execute)
+          break
+        case "invalidate":
+          result = await this.workspaceUndo.trackInvalidation(execute)
+          break
+      }
       output = redactText(result.output)
       events = result.events ?? []
     } catch (error) {

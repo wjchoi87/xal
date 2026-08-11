@@ -29,6 +29,10 @@ export const writeTool: Tool = {
   title(args, ctx) {
     return displayPath(asString(args.file_path) ?? "", ctx.cwd)
   },
+  undo(args, ctx) {
+    const path = asString(args.file_path)
+    return path ? { type: "paths", paths: [resolveFilePath(path, ctx.cwd)] } : { type: "none" }
+  },
   permission(args, ctx) {
     return pathPermission("write", args, ctx.cwd)
   },

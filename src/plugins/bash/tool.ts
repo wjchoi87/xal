@@ -91,6 +91,9 @@ export const bashTool: Tool = {
     if (!split || split.redirected) return false
     return split.segments.every((segment) => READ_ONLY_COMMAND.test(segment))
   },
+  undo(args) {
+    return backgroundRequested(args) ? { type: "invalidate" } : { type: "workspace" }
+  },
   sandboxed(args) {
     return sandboxRequested(args)
   },

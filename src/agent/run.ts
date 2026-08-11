@@ -56,6 +56,8 @@ export function runAgentTurn(
         case "model_changed":
         case "thinking_changed":
         case "user_message":
+        case "conversation_rewound":
+        case "conversation_redone":
         case "tool_call_updated":
         case "hook_started":
         case "hook_finished":

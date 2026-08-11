@@ -1,4 +1,4 @@
-import type { ConversationItem, UserMessageItem } from "../providers/types"
+import type { ConversationItem, UserInput, UserMessageItem } from "../providers/types"
 
 export interface CompactionItem {
   type: "compaction"
@@ -9,6 +9,30 @@ export interface CompactionItem {
 }
 
 export type HistoryItem = ConversationItem | CompactionItem
+
+export interface ConversationCheckpoint {
+  messageId: string
+  input: UserInput
+  before: HistoryItem[]
+}
+
+export interface ConversationState {
+  items: HistoryItem[]
+  checkpoints: ConversationCheckpoint[]
+}
+
+export interface ConversationRewind {
+  active: ConversationState
+  redos: ConversationRedo[]
+  input: UserInput
+  removedMessages: number
+}
+
+export interface ConversationRedo {
+  messageId: string
+  prompt: string
+  state: ConversationState
+}
 
 const SUMMARY_PREAMBLE =
   "The earlier part of this conversation was summarized to free context. Treat the summary below as the authoritative record of everything that happened before the messages that follow."
@@ -36,4 +60,32 @@ export function activeHistory(items: HistoryItem[]): ConversationItem[] {
     active.push(item)
   }
   return active
+}
+
+export function rewindConversation(state: ConversationState, messageId: string): ConversationRewind | undefined {
+  const index = state.checkpoints.findIndex((checkpoint) => checkpoint.messageId === messageId)
+  if (index < 0) return undefined
+  const checkpoint = state.checkpoints[index]!
+  const removed = state.checkpoints.slice(index)
+  return {
+    active: {
+      items: [...checkpoint.before],
+      checkpoints: state.checkpoints.slice(0, index),
+    },
+    redos: removed.map((candidate, offset) => ({
+      messageId: candidate.messageId,
+      prompt: candidate.input.text,
+      state: {
+        items: [...(removed[offset + 1]?.before ?? state.items)],
+        checkpoints: state.checkpoints.slice(0, index + offset + 1),
+      },
+    })),
+    input: checkpoint.input,
+    removedMessages: removed.length,
+  }
+}
+
+export function historyMoveNotice(direction: "undo" | "redo", prompt: string, fileCount: number): string {
+  const action = direction === "undo" ? "Undid changes back to" : "Redid through"
+  return `${action} ${JSON.stringify(prompt)} (${fileCount} ${fileCount === 1 ? "file" : "files"}).`
 }

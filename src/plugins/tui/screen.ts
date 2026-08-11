@@ -226,17 +226,10 @@ export class Screen {
     return value
   }
 
-  searchHistory(): void {
-    const options = this.history.newestFirst().map((text, index) => ({
-      label: text.replace(/\s+/g, " ").trim(),
-      detail: index === 0 ? "latest" : `${index} ${index === 1 ? "prompt" : "prompts"} ago`,
-      value: text,
-    }))
-    void this.select({ options, search: "search prompt history" }).then((text) => {
-      if (text === undefined) return
-      this.composer.setValue(text)
-      this.syncFooter()
-    })
+  openHistory(): void {
+    this.palette.hide()
+    this.executeCommand("/history")
+    this.syncFooter()
   }
 
   settleAgentActivity(): void {
@@ -361,6 +354,7 @@ export class Screen {
       print: (text) => this.scrollback.append({ kind: "info", text }),
       busy: (label) => this.statusBar.setLoading(label),
       select: <T>(request: SelectRequest<T>) => this.select(request),
+      restore: (input) => this.composer.restore([input]),
       askSecret: (question) => this.askSecret(question),
     }
   }
@@ -368,11 +362,15 @@ export class Screen {
   private runCommand(line: string): void {
     this.palette.hide()
     this.composer.setValue("")
+    this.executeCommand(line)
+    this.syncFooter()
+  }
+
+  private executeCommand(line: string): void {
     runCommand(line, this.commandContext()).catch((error: unknown) => {
       this.statusBar.setLoading(undefined)
       this.scrollback.append({ kind: "error", text: describeError(error) })
     })
-    this.syncFooter()
   }
 
   private viewAgent(task: BackgroundAgentTask | undefined): void {

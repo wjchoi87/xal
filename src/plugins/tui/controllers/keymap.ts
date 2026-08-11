@@ -15,6 +15,7 @@ export interface KeymapDeps {
 export function bindKeys(renderer: CliRenderer, deps: KeymapDeps): void {
   const { session, screen, quit } = deps
   let lastInterrupt = 0
+  let lastEscape = 0
   let stopAgentsChord = 0
 
   function handleInterrupt(): void {
@@ -36,6 +37,7 @@ export function bindKeys(renderer: CliRenderer, deps: KeymapDeps): void {
   }
 
   renderer.keyInput.on("keypress", (key) => {
+    if (key.name !== "escape") lastEscape = 0
     if (key.ctrl && key.name === "x" && screen.tasks.hasRunningAgents) {
       key.preventDefault()
       stopAgentsChord = Date.now()
@@ -95,7 +97,8 @@ export function bindKeys(renderer: CliRenderer, deps: KeymapDeps): void {
     }
     if (key.ctrl && key.name === "r" && !screen.overlayVisible) {
       key.preventDefault()
-      screen.searchHistory()
+      lastEscape = 0
+      screen.openHistory()
       return
     }
     if (screen.permission.handleKey(key.name)) {
@@ -167,10 +170,29 @@ export function bindKeys(renderer: CliRenderer, deps: KeymapDeps): void {
     }
     if (key.name === "escape" && !screen.overlayVisible && screen.tasks.closeViewer()) {
       key.preventDefault()
+      lastEscape = 0
       screen.syncFooter()
       return
     }
-    if (key.name === "escape" && session.currentState !== "idle") session.interrupt("promote")
+    if (key.name === "escape" && !screen.overlayVisible && session.currentState === "idle") {
+      key.preventDefault()
+      if (key.repeated) {
+        lastEscape = 0
+        return
+      }
+      const now = Date.now()
+      if (now - lastEscape < 500) {
+        lastEscape = 0
+        screen.openHistory()
+        return
+      }
+      lastEscape = now
+      return
+    }
+    if (key.name === "escape" && session.currentState !== "idle") {
+      lastEscape = 0
+      session.interrupt("promote")
+    }
   })
 
   renderer.keyInput.on("paste", (event) => {

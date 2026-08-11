@@ -90,10 +90,6 @@ export class MessageHistory {
     this.draft = undefined
   }
 
-  newestFirst(): string[] {
-    return this.entries.toReversed()
-  }
-
   record(text: string): Promise<void> {
     if (!text) return Promise.resolve()
     const redacted = redactText(text)

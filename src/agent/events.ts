@@ -36,7 +36,21 @@ export type AgentEvent =
   | { type: "mode_changed"; mode: PermissionMode }
   | { type: "model_changed"; provider: string; model: string }
   | { type: "thinking_changed"; thinking?: ThinkingEffort }
-  | { type: "user_message"; text: string; imageCount: number; sentAt: number }
+  | { type: "user_message"; messageId?: string; text: string; imageCount: number; sentAt: number }
+  | {
+      type: "conversation_rewound"
+      messageId: string
+      prompt: string
+      removedMessages: number
+      fileCount: number
+    }
+  | {
+      type: "conversation_redone"
+      messageId: string
+      prompt: string
+      restoredMessages: number
+      fileCount: number
+    }
   | { type: "tool_call_updated"; callId: string; tool: string; args: JsonObject }
   | { type: "hook_started"; hook: string; event: HookEvent }
   | { type: "hook_finished"; hook: string; event: HookEvent; action: HookAction; elapsedMs: number }

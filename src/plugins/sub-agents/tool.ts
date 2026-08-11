@@ -130,6 +130,8 @@ function activity(event: AgentEvent, child: AgentSession, state: ActivityState, 
     case "model_changed":
     case "thinking_changed":
     case "user_message":
+    case "conversation_rewound":
+    case "conversation_redone":
     case "tool_call_updated":
     case "hook_started":
     case "queue_changed":
@@ -211,6 +213,7 @@ export const subAgentTool: SessionTool = {
       thinking: ctx.session.thinking,
       interactive: false,
       persist: false,
+      ...(access === "write" && !worktree ? { workspaceUndo: ctx.session.workspaceUndo, trackUndoPrompts: false } : {}),
     })
     child.setMode(childMode(ctx.session.mode, access))
 

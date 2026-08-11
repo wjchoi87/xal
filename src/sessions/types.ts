@@ -1,5 +1,5 @@
 import type { AgentEvent } from "../agent/events"
-import type { HistoryItem } from "../agent/history"
+import type { ConversationCheckpoint, HistoryItem } from "../agent/history"
 import type { PermissionMode } from "../permissions/types"
 import type { ThinkingEffort } from "../providers/types"
 
@@ -29,6 +29,7 @@ export interface SessionSummary {
 export interface LoadedSession {
   meta: SessionMeta
   items: HistoryItem[]
+  checkpoints: ConversationCheckpoint[]
   events: AgentEvent[]
   title?: string
 }

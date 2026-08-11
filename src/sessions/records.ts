@@ -1,5 +1,6 @@
 import type { AgentEvent, DenialCause } from "../agent/events"
 import type { CompactionItem, HistoryItem } from "../agent/history"
+import { isMessageId } from "../agent/message-id"
 import type { HookAction, HookEvent } from "../hooks/types"
 import { asBoolean, asNumber, asString, isJsonObject, isRecord } from "../lib/json"
 import { isPermissionMode } from "../permissions/types"
@@ -60,6 +61,28 @@ function parseThinking(value: unknown): ThinkingEffort | undefined {
   return isThinkingEffort(value) ? value : undefined
 }
 
+function parseConversationMove(
+  raw: Record<string, unknown>,
+): { messageId: string; prompt: string; fileCount: number } | undefined {
+  const prompt = asString(raw.prompt)
+  const fileCount = asNumber(raw.fileCount)
+  if (
+    !isMessageId(raw.messageId) ||
+    prompt === undefined ||
+    fileCount === undefined ||
+    !Number.isSafeInteger(fileCount) ||
+    fileCount < 0
+  ) {
+    return undefined
+  }
+  return { messageId: raw.messageId, prompt, fileCount }
+}
+
+function parseMessageIdentity(raw: Record<string, unknown>): { messageId?: string } | undefined {
+  if (raw.messageId === undefined) return {}
+  return isMessageId(raw.messageId) ? { messageId: raw.messageId } : undefined
+}
+
 function parseEvent(raw: unknown): AgentEvent | undefined {
   if (!isRecord(raw)) return undefined
 
@@ -86,13 +109,36 @@ function parseEvent(raw: unknown): AgentEvent | undefined {
     }
     case "user_message": {
       const text = asString(raw.text)
-      if (text === undefined) return undefined
+      const identity = parseMessageIdentity(raw)
+      if (text === undefined || !identity) return undefined
       return {
         type: "user_message",
+        ...identity,
         text,
         imageCount: asNumber(raw.imageCount) ?? 0,
         sentAt: asNumber(raw.sentAt) ?? 0,
       }
+    }
+    case "conversation_rewound": {
+      const movement = parseConversationMove(raw)
+      const removedMessages = asNumber(raw.removedMessages)
+      if (!movement || removedMessages === undefined || !Number.isSafeInteger(removedMessages) || removedMessages < 1) {
+        return undefined
+      }
+      return { type: "conversation_rewound", ...movement, removedMessages }
+    }
+    case "conversation_redone": {
+      const movement = parseConversationMove(raw)
+      const restoredMessages = asNumber(raw.restoredMessages)
+      if (
+        !movement ||
+        restoredMessages === undefined ||
+        !Number.isSafeInteger(restoredMessages) ||
+        restoredMessages < 1
+      ) {
+        return undefined
+      }
+      return { type: "conversation_redone", ...movement, restoredMessages }
     }
     case "hook_finished": {
       const hook = asString(raw.hook)
@@ -241,10 +287,11 @@ function parseConversationItem(raw: unknown): ConversationItem | undefined {
     case "user_message": {
       const text = asString(raw.text)
       const images = parseImages(raw.images)
-      if (text === undefined || !images) return undefined
-      if (raw.modelText === undefined) return { type: "user_message", text, images }
+      const identity = parseMessageIdentity(raw)
+      if (text === undefined || !images || !identity) return undefined
+      if (raw.modelText === undefined) return { type: "user_message", text, images, ...identity }
       const modelText = asString(raw.modelText)
-      return modelText === undefined ? undefined : { type: "user_message", text, images, modelText }
+      return modelText === undefined ? undefined : { type: "user_message", text, images, ...identity, modelText }
     }
     case "assistant_message": {
       const text = asString(raw.text)
@@ -280,10 +327,12 @@ function parseCompaction(raw: Record<string, unknown>): CompactionItem | undefin
   const summary = asString(raw.summary)
   const replaced = asNumber(raw.replaced)
   if (!summary || replaced === undefined || !Array.isArray(raw.retained)) return undefined
-  const retained = raw.retained.flatMap((entry) => {
+  const retained: ConversationItem[] = []
+  for (const entry of raw.retained) {
     const item = parseConversationItem(entry)
-    return item ? [item] : []
-  })
+    if (!item) return undefined
+    retained.push(item)
+  }
   return { type: "compaction", summary, replaced, tokensBefore: asNumber(raw.tokensBefore), retained }
 }
 
@@ -292,29 +341,31 @@ function parseItem(raw: unknown): HistoryItem | undefined {
   return parseConversationItem(raw)
 }
 
-export function parseRecord(line: string): SessionRecord | undefined {
+export function parseRecord(line: string): SessionRecord {
   let raw: unknown
   try {
     raw = JSON.parse(line)
   } catch {
-    return undefined
+    throw new Error("malformed session record")
   }
-  if (!isRecord(raw)) return undefined
+  if (!isRecord(raw)) throw new Error("malformed session record")
 
   switch (asString(raw.type)) {
     case "meta": {
       const meta = parseMeta(raw.meta)
-      return meta ? { type: "meta", meta } : undefined
+      if (meta) return { type: "meta", meta }
+      break
     }
     case "item": {
       const item = parseItem(raw.item)
-      return item ? { type: "item", item } : undefined
+      if (item) return { type: "item", item }
+      break
     }
     case "event": {
       const event = parseEvent(raw.event)
-      return event ? { type: "event", event } : undefined
+      if (event) return { type: "event", event }
+      break
     }
-    default:
-      return undefined
   }
+  throw new Error("malformed session record")
 }

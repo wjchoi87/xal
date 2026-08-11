@@ -37,6 +37,7 @@ export function redactConversationItem(item: ConversationItem): ConversationItem
       return {
         ...redactUserInput(item),
         type: "user_message",
+        ...(item.messageId === undefined ? {} : { messageId: item.messageId }),
         ...(item.modelText === undefined ? {} : { modelText: redactText(item.modelText) }),
       }
     case "assistant_message": {
@@ -208,5 +209,8 @@ export function redactAgentEvent(event: AgentEvent): AgentEvent {
     case "elicitation_resolved":
     case "turn_interrupted":
       return event
+    case "conversation_rewound":
+    case "conversation_redone":
+      return { ...event, prompt: redactText(event.prompt) }
   }
 }

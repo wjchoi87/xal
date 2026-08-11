@@ -4,7 +4,7 @@ import { COLORS } from "../theme/colors"
 import { muted, paint } from "../theme/styles"
 
 const WIDE = 80
-const KEY_WIDTH = 14
+const KEY_WIDTH = 18
 const SHORTCUTS = [
   { key: "/", description: "commands" },
   { key: "$", description: "skills" },
@@ -12,7 +12,7 @@ const SHORTCUTS = [
   { key: "Tab", description: "complete selection" },
   { key: "Ctrl+V", description: "paste image" },
   { key: "Ctrl+U", description: "clear input" },
-  { key: "Ctrl+R", description: "search history" },
+  { key: "Esc Esc / Ctrl+R", description: "jump history" },
   { key: "↑ / ↓", description: "browse history" },
   { key: "Shift+Tab", description: "change mode" },
   { key: "Ctrl+O", description: "toggle details" },

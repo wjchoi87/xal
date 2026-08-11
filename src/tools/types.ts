@@ -3,6 +3,7 @@ import type { PermissionMode } from "../permissions/types"
 import type { PlanUpdatedEvent } from "../plans/types"
 import type { ModelInputModality, Provider, ThinkingEffort, ToolDefinition } from "../providers/types"
 import type { TaskListUpdatedEvent } from "../tasks/types"
+import type { WorkspaceUndo } from "./undo"
 
 export const MAX_ELICITATION_ANSWER_LENGTH = 500
 
@@ -43,6 +44,9 @@ export interface ToolPermission {
 
 export type ToolConcurrency = "shared" | "exclusive"
 
+export type UndoAction =
+  { type: "none" } | { type: "paths"; paths: string[] } | { type: "workspace" } | { type: "invalidate" }
+
 export interface ToolAvailabilityContext {
   interactive: boolean
   kind: SessionKind
@@ -58,6 +62,7 @@ interface ToolContract extends ToolDefinition {
   available?(ctx: ToolAvailabilityContext): boolean
   title(args: Record<string, unknown>, ctx: ToolCallContext): string
   readOnly?(args: Record<string, unknown>, ctx: ToolCallContext): boolean
+  undo?(args: Record<string, unknown>, ctx: ToolCallContext): UndoAction
   sandboxed?(args: Record<string, unknown>, ctx: ToolCallContext): boolean
   concurrency?(args: Record<string, unknown>, ctx: ToolCallContext): ToolConcurrency
   permission?(args: Record<string, unknown>, ctx: ToolCallContext): ToolPermission
@@ -81,6 +86,7 @@ export interface SessionToolContext {
     modelInputModalities?: ModelInputModality[]
     thinking?: ThinkingEffort
     mode: PermissionMode
+    workspaceUndo: WorkspaceUndo
     changeWorkspace(cwd: string): void
   }
   signal: AbortSignal
