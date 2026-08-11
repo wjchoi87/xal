@@ -1,5 +1,6 @@
 import type { CliRenderer } from "@opentui/core"
 import type { AgentSession } from "../../../agent/agent-session"
+import { describeError } from "../../../lib/error"
 import { nextPermissionMode } from "../../../permissions/types"
 import type { Screen } from "../screen"
 
@@ -9,11 +10,12 @@ const STOP_AGENTS_WINDOW_MS = 2000
 export interface KeymapDeps {
   session: AgentSession
   screen: Screen
+  edit(): Promise<void>
   quit(): void
 }
 
 export function bindKeys(renderer: CliRenderer, deps: KeymapDeps): void {
-  const { session, screen, quit } = deps
+  const { session, screen, edit, quit } = deps
   let lastInterrupt = 0
   let lastEscape = 0
   let stopAgentsChord = 0
@@ -78,6 +80,13 @@ export function bindKeys(renderer: CliRenderer, deps: KeymapDeps): void {
       screen.statusBar.setNotice(`Thinking output ${visible ? "shown" : "hidden"}`)
       const timer = setTimeout(() => screen.statusBar.clearNotice(), 2_000)
       timer.unref()
+      return
+    }
+    if (key.ctrl && key.name === "g" && !key.repeated && !screen.overlayVisible) {
+      key.preventDefault()
+      void edit().catch((error: unknown) => {
+        screen.scrollback.append({ kind: "error", text: describeError(error) })
+      })
       return
     }
     if (key.ctrl && key.name === "v" && !key.repeated && !screen.overlayVisible) {

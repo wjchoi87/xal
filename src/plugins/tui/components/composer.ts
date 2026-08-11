@@ -40,6 +40,14 @@ interface PastedImage {
   image: ImageInput
 }
 
+function sameInput(left: UserInput, right: UserInput): boolean {
+  if (left.text !== right.text || left.images.length !== right.images.length) return false
+  return left.images.every((image, index) => {
+    const other = right.images[index]
+    return other !== undefined && image.mediaType === other.mediaType && image.data === other.data
+  })
+}
+
 function isPastedContent(value: unknown): value is PastedContent {
   return isRecord(value) && value.kind === "pasted-content" && asString(value.text) !== undefined
 }
@@ -154,6 +162,18 @@ export class Composer {
   setValue(text: string): void {
     this.history.reset()
     this.replaceInput({ text, images: [] })
+  }
+
+  draft(): UserInput {
+    return this.value()
+  }
+
+  replaceDraft(input: UserInput, expected: UserInput): void {
+    if (!sameInput(this.value(), expected)) {
+      throw new Error("composer changed while the external editor was open — edited text was not applied")
+    }
+    this.history.reset()
+    this.replaceInput(input)
   }
 
   completeSkill(query: SkillQuery, name: string, trailingSpace: boolean): void {

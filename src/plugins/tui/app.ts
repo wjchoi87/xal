@@ -19,6 +19,7 @@ import { bindKeys } from "./controllers/keymap"
 import { setTuiCommandActions } from "./commands"
 import { COMPOSER_ROWS } from "./components/composer"
 import { STATUS_ROWS } from "./components/status-bar"
+import { editInExternalEditor, externalEditorCommand } from "./external-editor"
 import { cursorRow } from "./lib/cursor"
 import { MessageHistory } from "./message-history"
 import { Screen } from "./screen"
@@ -37,6 +38,10 @@ function applyKeyboardProtocol(renderer: CliRenderer, capabilities: TerminalCapa
   renderer.disableKittyKeyboard()
 }
 
+function comparableEditorText(text: string): string {
+  return text.replace(/\r\n?/g, "\n").replace(/\n$/, "")
+}
+
 export async function startTui(events: EventService, options: UiOptions = {}): Promise<void> {
   const root = await findProjectRoot(process.cwd())
   const [{ session, model }, history] = await Promise.all([
@@ -50,6 +55,7 @@ export async function startTui(events: EventService, options: UiOptions = {}): P
     process.stdout.write(TERMINAL_RESET)
   }
 
+  const existingResizeListeners = new Set(process.listeners("SIGWINCH"))
   const renderer = await createCliRenderer({
     exitOnCtrlC: false,
     useMouse: false,
@@ -63,6 +69,9 @@ export async function startTui(events: EventService, options: UiOptions = {}): P
       process.stdout.write(TERMINAL_RESET, () => finishDestroy())
     },
   })
+  const rendererResizeListener = process
+    .listeners("SIGWINCH")
+    .find((listener) => !existingResizeListeners.has(listener))
   if (renderer.capabilities) applyKeyboardProtocol(renderer, renderer.capabilities)
   renderer.on(CliRenderEvents.CAPABILITIES, (capabilities: TerminalCapabilities) => {
     applyKeyboardProtocol(renderer, capabilities)
@@ -121,19 +130,77 @@ export async function startTui(events: EventService, options: UiOptions = {}): P
   let lastWidth = renderer.terminalWidth
   let lastHeight = renderer.terminalHeight
   let replayTimer: ReturnType<typeof setTimeout> | undefined
+  let replayPending = false
+  let editing = false
+  const replayLayout = (): void => {
+    screen.composer.reflow()
+    screen.syncFooter()
+    screen.scrollback.replay()
+  }
   renderer.on(CliRenderEvents.RESIZE, () => {
     if (renderer.terminalWidth === lastWidth && renderer.terminalHeight === lastHeight) return
     lastWidth = renderer.terminalWidth
     lastHeight = renderer.terminalHeight
+    if (editing) {
+      replayPending = true
+      return
+    }
     clearTimeout(replayTimer)
     replayTimer = setTimeout(() => {
-      screen.composer.reflow()
-      screen.syncFooter()
-      screen.scrollback.replay()
+      replayTimer = undefined
+      replayLayout()
     }, RESIZE_DEBOUNCE_MS)
   })
 
-  bindKeys(renderer, { session, screen, quit })
+  const edit = async (): Promise<void> => {
+    if (editing) return
+    if (session.currentState !== "idle") throw new Error("external editor is available when the agent is idle")
+    editing = true
+    if (replayTimer !== undefined) {
+      clearTimeout(replayTimer)
+      replayTimer = undefined
+      replayPending = true
+    }
+    try {
+      const command = externalEditorCommand()
+      const draft = screen.composer.draft()
+      const ignoreInterrupt = (): void => {}
+      let suspended = false
+      let text: string
+      process.on("SIGINT", ignoreInterrupt)
+      if (rendererResizeListener) process.off("SIGWINCH", rendererResizeListener)
+      try {
+        renderer.suspend()
+        suspended = true
+        text = await editInExternalEditor(command, draft.text)
+      } finally {
+        try {
+          if (suspended) {
+            renderer.resize(
+              process.stdout.columns || renderer.terminalWidth,
+              process.stdout.rows || renderer.terminalHeight,
+            )
+            renderer.resume()
+          }
+        } finally {
+          if (rendererResizeListener) process.on("SIGWINCH", rendererResizeListener)
+          process.off("SIGINT", ignoreInterrupt)
+        }
+      }
+      if (comparableEditorText(text) !== comparableEditorText(draft.text)) {
+        screen.composer.replaceDraft({ ...draft, text }, draft)
+      }
+      screen.syncFooter()
+    } finally {
+      editing = false
+      if (replayPending) {
+        replayPending = false
+        replayLayout()
+      }
+    }
+  }
+
+  bindKeys(renderer, { session, screen, edit, quit })
 
   screen.composer.focus()
   await destroyed

@@ -10,6 +10,7 @@ const SHORTCUTS = [
   { key: "$", description: "skills" },
   { key: "Shift+Enter", description: "new line" },
   { key: "Tab", description: "complete selection" },
+  { key: "Ctrl+G", description: "external editor" },
   { key: "Ctrl+V", description: "paste image" },
   { key: "Ctrl+U", description: "clear input" },
   { key: "Esc Esc / Ctrl+R", description: "jump history" },
