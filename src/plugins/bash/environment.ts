@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { basename } from "node:path"
-import { killTree, spawnCommand } from "./process"
+import { killProcessTree } from "../../lib/process"
+import { spawnCommand } from "./process"
 
 const MAX_SNAPSHOT_BYTES = 2_000_000
 const SNAPSHOT_TIMEOUT_MS = 10_000
@@ -43,7 +44,7 @@ async function captureOutput(shell: string, marker: string): Promise<string> {
       bytes += chunk.length
       if (bytes > MAX_SNAPSHOT_BYTES) {
         exceededLimit = true
-        killTree(proc)
+        killProcessTree(proc)
         return
       }
       target.push(chunk)
@@ -52,7 +53,7 @@ async function captureOutput(shell: string, marker: string): Promise<string> {
   proc.stderr.on("data", collect(stderr))
   const timeout = setTimeout(() => {
     timedOut = true
-    killTree(proc)
+    killProcessTree(proc)
   }, SNAPSHOT_TIMEOUT_MS)
 
   try {

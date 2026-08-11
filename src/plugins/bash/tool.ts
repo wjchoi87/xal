@@ -1,8 +1,9 @@
 import { asBoolean, asNumber, asString } from "../../lib/json"
+import { killProcessTree } from "../../lib/process"
 import type { Tool } from "../../tools/types"
 import { expandSnapshotAliases, snapshotEnvironment, snapshotLaunch } from "./environment"
 import { startJob } from "./jobs"
-import { killTree, spawnCommand } from "./process"
+import { spawnCommand } from "./process"
 import { sandboxAvailable, sandboxLaunch, type SandboxAccess } from "./sandbox"
 import { splitCommand } from "./split"
 
@@ -139,9 +140,9 @@ export const bashTool: Tool = {
     let timedOut = false
     const timeout = setTimeout(() => {
       timedOut = true
-      killTree(proc)
+      killProcessTree(proc)
     }, timeoutSeconds * 1000)
-    const onAbort = (): void => killTree(proc)
+    const onAbort = (): void => killProcessTree(proc)
     ctx.signal.addEventListener("abort", onAbort)
 
     try {

@@ -6,7 +6,8 @@ import {
   type BackgroundProcessJob,
 } from "../../background/jobs"
 import { registerBackgroundTask } from "../../background/registry"
-import { killTree, type CommandProcess } from "./process"
+import { killProcessTree } from "../../lib/process"
+import type { CommandProcess } from "./process"
 
 const runningProcs = new Set<CommandProcess>()
 let exitHookRegistered = false
@@ -15,7 +16,7 @@ function registerExitHook(): void {
   if (exitHookRegistered) return
   exitHookRegistered = true
   process.on("exit", () => {
-    for (const proc of runningProcs) killTree(proc)
+    for (const proc of runningProcs) killProcessTree(proc)
   })
 }
 
@@ -23,7 +24,7 @@ export function startJob(command: string, proc: CommandProcess, cwd: string): Ba
   registerExitHook()
   runningProcs.add(proc)
   let exitCode: number | null = null
-  const job = createProcessJob("bash", () => killTree(proc))
+  const job = createProcessJob("bash", () => killProcessTree(proc))
   const collect = (chunk: Buffer): void => {
     appendProcessOutput(job, chunk.toString())
   }

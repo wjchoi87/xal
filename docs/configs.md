@@ -176,6 +176,54 @@ A prompt beginning with `$skill-name` explicitly invokes that skill. Tack keeps 
 
 ## Built-in plugin configuration
 
+### `lsp`
+
+Tack includes lazy language-server recipes for common languages:
+
+| ID           | File suffixes                                                | Command                      | Installation                                                 |
+| ------------ | ------------------------------------------------------------ | ---------------------------- | ------------------------------------------------------------ |
+| `typescript` | `.ts`, `.tsx`, `.mts`, `.cts`, `.js`, `.jsx`, `.mjs`, `.cjs` | `typescript-language-server` | `npm install --global typescript-language-server typescript` |
+| `python`     | `.py`, `.pyi`                                                | `pyright-langserver`         | `npm install --global pyright`                               |
+| `rust`       | `.rs`                                                        | `rust-analyzer`              | `rustup component add rust-analyzer`                         |
+| `go`         | `.go`                                                        | `gopls`                      | `go install golang.org/x/tools/gopls@latest`                 |
+
+Tack checks for these commands on `PATH`, but never downloads or installs them. An installed recipe remains idle until the model queries a matching file. `/lsp` reports missing commands as unavailable with their installation guidance.
+
+Configure built-in overrides and custom servers under `pluginConfig.lsp.servers`. A built-in entry inherits every omitted recipe field, and `enabled: false` disables it. Custom server names must begin with a lower-case letter and contain only lower-case letters, numbers, hyphens, and underscores.
+
+```json
+{
+  "pluginConfig": {
+    "lsp": {
+      "servers": {
+        "typescript": {
+          "rootMarkers": ["tsconfig.json", "jsconfig.json", "package.json", ".git"],
+          "timeoutMs": 45000
+        },
+        "python": {
+          "enabled": false
+        },
+        "lua": {
+          "command": "lua-language-server",
+          "fileTypes": {
+            ".lua": "lua"
+          },
+          "rootMarkers": [".luarc.json", ".git"]
+        }
+      }
+    }
+  }
+}
+```
+
+An enabled custom server requires `command` and a non-empty `fileTypes` object mapping filename suffixes to LSP language IDs. Commands must be executable names resolved through `PATH` or absolute paths; relative executable paths are rejected because servers run from detected project roots. A suffix can belong to only one enabled server, so disable a built-in recipe before assigning its suffixes to a differently named replacement.
+
+`args` and `env` are optional, custom `rootMarkers` default to `[".git"]`, `timeoutMs` defaults to `30000`, and `enabled` defaults to `true`. Supplying `args`, `fileTypes`, or `rootMarkers` on a built-in replaces that recipe field. `initializationOptions` are passed during the LSP handshake; `settings` are sent with `workspace/didChangeConfiguration` after initialization. `${NAME}` references in the command, arguments, and environment values expand from Tack's environment, and secret-like environment values enter Tack's redaction set.
+
+The read-only `lsp` model tool supports definitions, references, hover information, document and workspace symbols, implementations, incoming and outgoing calls, and diagnostics. It starts one server lazily for each matching server and project root. Before every request, Tack reads the current file from disk and synchronizes changed content through the notifications supported by the server, so changes made by any tool or external editor are visible without coupling the LSP plugin to a file-editing plugin. The diagnostics operation uses pull diagnostics when supported and otherwise waits briefly for published diagnostics.
+
+For each file, Tack searches upward for the nearest configured root marker. If none is found, it uses the session working directory for files inside that workspace and the file's directory for external files. `/lsp` shows disabled, unavailable, idle, ready, and failed servers. `/lsp restart [server]` closes matching instances; the next semantic query starts them again. The model-facing tool is available when at least one enabled server command resolves. Language-server commands run as trusted local processes with the server root as their working directory, so only configure executables you trust. Tack closes every started server during shutdown.
+
 ### `mcp`
 
 MCP servers are configured under `pluginConfig.mcp.servers`. Server names must begin with a lower-case letter and contain only lower-case letters, numbers, hyphens, and underscores.
@@ -292,6 +340,19 @@ Every option is optional. A configuration using all currently supported built-in
           "transport": "stdio",
           "command": "node",
           "args": ["/absolute/path/to/server.js"]
+        }
+      }
+    },
+    "lsp": {
+      "servers": {
+        "typescript": {
+          "command": "typescript-language-server",
+          "args": ["--stdio"],
+          "fileTypes": {
+            ".ts": "typescript",
+            ".tsx": "typescriptreact"
+          },
+          "rootMarkers": ["tsconfig.json", "package.json", ".git"]
         }
       }
     },

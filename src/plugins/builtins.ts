@@ -14,6 +14,7 @@ import promptCommands from "./prompt-commands/plugin"
 import projectInstructions from "./project-instructions/plugin"
 import redaction from "./redaction/plugin"
 import jobs from "./jobs/plugin"
+import lsp from "./lsp/plugin"
 import mcp from "./mcp/plugin"
 import search from "./search/plugin"
 import skills from "./skills/plugin"
@@ -35,6 +36,7 @@ export const builtinPlugins: Plugin[] = [
   files,
   jobs,
   search,
+  lsp,
   mcp,
   skills,
   worktrees,

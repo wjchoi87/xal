@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess, type ChildProcessByStdio } from "node:child_process"
+import { spawn, type ChildProcessByStdio } from "node:child_process"
 import type { Readable } from "node:stream"
 
 export type CommandProcess = ChildProcessByStdio<null, Readable, Readable>
@@ -10,13 +10,4 @@ export function spawnCommand(launch: string[], environment: NodeJS.ProcessEnv, c
     stdio: ["ignore", "pipe", "pipe"],
     detached: true,
   })
-}
-
-export function killTree(proc: ChildProcess): void {
-  if (proc.pid === undefined || proc.exitCode !== null || proc.signalCode !== null) return
-  try {
-    process.kill(-proc.pid, "SIGKILL")
-  } catch {
-    proc.kill("SIGKILL")
-  }
 }
