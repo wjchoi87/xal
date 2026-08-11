@@ -1,4 +1,4 @@
-import { BorderChars, StyledText, TextAttributes, type RGBA, type TextChunk } from "@opentui/core"
+import { BorderChars, link, StyledText, TextAttributes, type RGBA, type TextChunk } from "@opentui/core"
 import { displayWidth, sliceToWidth, terminalGlyph } from "../lib/text"
 import { classifyDiff } from "../output/diff"
 import { lineColor } from "../output/render"
@@ -80,8 +80,9 @@ function styler(width: number, muted: boolean): Styler {
         chunks.push(chunk(span.text, span.code ? COLORS.code : color, attributes))
         continue
       }
-      chunks.push(chunk(span.text, COLORS.accent, attributes | TextAttributes.UNDERLINE))
-      if (span.link !== span.text) chunks.push(chunk(` (${span.link})`, COLORS.faint, attributes))
+      const terminalLink = link(span.link)
+      chunks.push(terminalLink(chunk(span.text, COLORS.accent, attributes | TextAttributes.UNDERLINE)))
+      if (span.link !== span.text) chunks.push(terminalLink(chunk(` (${span.link})`, COLORS.faint, attributes)))
     }
     return chunks
   }

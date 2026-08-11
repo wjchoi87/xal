@@ -15,6 +15,12 @@ interface InlineSpan {
   link: string | undefined
 }
 
+interface ParsedLink {
+  label: string
+  url: string
+  end: number
+}
+
 export interface ListItem {
   depth: number
   marker: string
@@ -37,6 +43,7 @@ const QUOTE = /^ {0,3}> ?/
 const BULLET = /^(\s*)[-*+]\s+(.*)$/
 const ORDERED = /^(\s*)(\d{1,9})[.)]\s+(.*)$/
 const OPENS_EMPHASIS = /[\s([{<"'\u2014\u2013]/
+const INLINE_LINK = /<([A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*)>|(?:https?|file):\/\/[^\s<>]+/g
 
 export function parseBlocks(source: string): MarkdownBlock[] {
   const lines = sanitize(source).split("\n")
@@ -140,7 +147,9 @@ export function parseInline(text: string): InlineSpan[] {
 
   const flush = (): void => {
     if (!buffer) return
-    spans.push({ text: buffer, bold, italic, strike, code: false, link: undefined })
+    for (const linked of linkify(buffer)) {
+      spans.push({ text: linked.text, bold, italic, strike, code: false, link: linked.link })
+    }
     buffer = ""
   }
 
@@ -263,10 +272,142 @@ function emphasisAt(text: string, index: number, active: Emphasis): string | und
   return marker
 }
 
-function parseLink(text: string, index: number): { label: string; url: string; end: number } | undefined {
+function parseLink(text: string, index: number): ParsedLink | undefined {
   const close = text.indexOf("]", index)
   if (close === -1 || text[close + 1] !== "(") return undefined
-  const end = text.indexOf(")", close + 2)
-  if (end === -1) return undefined
-  return { label: text.slice(index + 1, close), url: text.slice(close + 2, end).trim(), end: end + 1 }
+  let depth = 0
+  let quote: '"' | "'" | undefined
+  let angle = false
+  let cursor = close + 2
+  while (cursor < text.length) {
+    const char = text[cursor]!
+    if (char === "\\" && cursor + 1 < text.length) {
+      cursor += 2
+      continue
+    }
+    if (quote) {
+      if (char === quote) quote = undefined
+      cursor += 1
+      continue
+    }
+    if (angle) {
+      if (char === ">") angle = false
+      cursor += 1
+      continue
+    }
+    if (char === "<" && cursor === close + 2) {
+      angle = true
+      cursor += 1
+      continue
+    }
+    if ((char === '"' || char === "'") && /\s/.test(text[cursor - 1] ?? "")) {
+      quote = char
+      cursor += 1
+      continue
+    }
+    if (char === "(") {
+      depth += 1
+      cursor += 1
+      continue
+    }
+    if (char !== ")") {
+      cursor += 1
+      continue
+    }
+    if (depth > 0) {
+      depth -= 1
+      cursor += 1
+      continue
+    }
+    const url = parseLinkDestination(text.slice(close + 2, cursor))
+    if (url === undefined) return undefined
+    return {
+      label: unescapeMarkdown(text.slice(index + 1, close)),
+      url,
+      end: cursor + 1,
+    }
+  }
+}
+
+function parseLinkDestination(value: string): string | undefined {
+  const content = value.trim()
+  if (!content) return ""
+  if (content.startsWith("<")) {
+    const end = content.indexOf(">", 1)
+    if (end === -1 || !validLinkTitle(content.slice(end + 1).trim())) return undefined
+    return unescapeMarkdown(content.slice(1, end))
+  }
+
+  let depth = 0
+  let end = 0
+  while (end < content.length) {
+    const char = content[end]!
+    if (char === "\\" && end + 1 < content.length) {
+      end += 2
+      continue
+    }
+    if (/\s/.test(char) && depth === 0) break
+    if (char === "(") depth += 1
+    if (char === ")") depth -= 1
+    if (depth < 0) return undefined
+    end += 1
+  }
+  if (depth !== 0 || !validLinkTitle(content.slice(end).trim())) return undefined
+  return unescapeMarkdown(content.slice(0, end))
+}
+
+function validLinkTitle(value: string): boolean {
+  if (!value) return true
+  const close = value[0] === "(" ? ")" : value[0]
+  if (close !== ")" && close !== '"' && close !== "'") return false
+  return value.length >= 2 && value.endsWith(close)
+}
+
+function linkify(text: string): { text: string; link: string | undefined }[] {
+  const spans: { text: string; link: string | undefined }[] = []
+  let cursor = 0
+  for (const match of text.matchAll(INLINE_LINK)) {
+    if (match[1] === undefined && match.index > 0 && /[A-Za-z0-9_]/.test(text[match.index - 1]!)) continue
+    if (match.index > cursor) spans.push({ text: text.slice(cursor, match.index), link: undefined })
+    const url = match[1] ?? trimBareLink(match[0])
+    spans.push({ text: url, link: url })
+    cursor = match.index + (match[1] === undefined ? url.length : match[0].length)
+  }
+  if (cursor < text.length) spans.push({ text: text.slice(cursor), link: undefined })
+  return spans
+}
+
+function trimBareLink(value: string): string {
+  let end = value.length
+  while (end > 0) {
+    const char = value[end - 1]!
+    if (`.,;:!?"'\``.includes(char)) {
+      end -= 1
+      continue
+    }
+    const candidate = value.slice(0, end)
+    if (
+      (char === ")" && unmatchedClosing(candidate, "(", ")")) ||
+      (char === "]" && unmatchedClosing(candidate, "[", "]")) ||
+      (char === "}" && unmatchedClosing(candidate, "{", "}"))
+    ) {
+      end -= 1
+      continue
+    }
+    break
+  }
+  return value.slice(0, end)
+}
+
+function unmatchedClosing(value: string, open: string, close: string): boolean {
+  let balance = 0
+  for (const char of value) {
+    if (char === open) balance += 1
+    if (char === close) balance -= 1
+  }
+  return balance < 0
+}
+
+function unescapeMarkdown(value: string): string {
+  return value.replace(/\\([!-/:-@[-`{-~])/g, "$1")
 }
