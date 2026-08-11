@@ -7,6 +7,7 @@ import { loadCredentialSecrets } from "./config/credentials"
 import { loadSettings } from "./config/settings"
 import { describeError } from "./lib/error"
 import { bootstrapPlugins, registerPlugins } from "./plugins/discover"
+import { startProfiler, stopProfiler } from "./profiler/profiler"
 import { registerTrustClis } from "./project/cli"
 import { ensureWorkspaceTrust } from "./project/trust"
 import { registerProviderClis } from "./providers/cli"
@@ -49,6 +50,7 @@ function normalize(args: string[]): string[] {
 }
 
 async function main(input: string[]): Promise<void> {
+  startProfiler()
   const args = normalize(input)
   const trusted = await ensureWorkspaceTrust({
     print: args.length === 0 ? ctx.print : ctx.error,
@@ -92,6 +94,8 @@ try {
   console.error(redactText(describeError(error)))
   process.exitCode = 1
 }
+const profile = await stopProfiler()
+if (profile) console.error(`profile: ${profile}`)
 await Promise.all([
   new Promise<void>((resolve) => process.stdout.write("", () => resolve())),
   new Promise<void>((resolve) => process.stderr.write("", () => resolve())),

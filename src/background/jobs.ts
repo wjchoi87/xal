@@ -1,4 +1,5 @@
 import { setTimeout as sleep } from "node:timers/promises"
+import { profileJobCreated, profileJobFinished } from "../profiler/profiler"
 import { createRedactedStream, redactText, type RedactedStream } from "../secrets/redactor"
 import { backgroundTasksChanged, listBackgroundTasks, subscribeBackgroundTasks } from "./registry"
 
@@ -57,6 +58,7 @@ export function createJob(prefix: string, stop: () => void): BackgroundJob {
   completions.set(job, complete)
   redactors.set(job, createRedactedStream())
   jobs.set(job.id, job)
+  profileJobCreated(job.id)
   return job
 }
 
@@ -86,6 +88,7 @@ export function finishJob(job: BackgroundJob, detail: string): void {
   redactors.delete(job)
   job.done = true
   job.detail = redactText(detail)
+  profileJobFinished(job.id, job.detail)
   completions.get(job)?.()
   wake(job)
 }

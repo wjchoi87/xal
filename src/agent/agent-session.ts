@@ -17,6 +17,7 @@ import { rememberRule } from "../permissions/rules"
 import { evaluatePolicy } from "../permissions/service"
 import type { PermissionMode, PermissionScope } from "../permissions/types"
 import type { SessionPlan } from "../plans/types"
+import { profileAgentEvent, profileSessionCreated } from "../profiler/profiler"
 import { contextWindow } from "../providers/catalog"
 import { prepareConversation } from "../providers/conversation"
 import { ProviderError } from "../providers/errors"
@@ -293,6 +294,7 @@ export class AgentSession {
       this.recorder = new SessionRecorder((message) => this.emit({ type: "error", message }))
       this.recorder.start(this.meta(), this.cwd)
     }
+    profileSessionCreated(this.sessionId, this.kind, this.provider.id, this.model, this.cwd)
   }
 
   get id(): string {
@@ -960,6 +962,7 @@ export class AgentSession {
 
   private emit(event: AgentEvent): void {
     const redacted = redactAgentEvent(event)
+    profileAgentEvent(this.sessionId, this.kind, redacted)
     this.recorder?.event(redacted)
     this.notifyRedacted(redacted)
     if (event.type === "turn_ended") this.planHandoffActive = false
@@ -967,6 +970,7 @@ export class AgentSession {
 
   private async recordEvent(event: AgentEvent): Promise<AgentEvent> {
     const redacted = redactAgentEvent(event)
+    profileAgentEvent(this.sessionId, this.kind, redacted)
     await this.recorder?.eventAndWait(redacted)
     return redacted
   }
