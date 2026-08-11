@@ -6,7 +6,7 @@ import type { CliContext } from "./cli/types"
 import { loadCredentialSecrets } from "./config/credentials"
 import { loadSettings } from "./config/settings"
 import { describeError } from "./lib/error"
-import { bootstrapPlugins, registerPlugins } from "./plugins/discover"
+import { bootstrapPlugins, registerPlugins, shutdownPlugins } from "./plugins/discover"
 import { startProfiler, stopProfiler } from "./profiler/profiler"
 import { registerTrustClis } from "./project/cli"
 import { ensureWorkspaceTrust } from "./project/trust"
@@ -33,6 +33,8 @@ const ctx: CliContext = {
     return value
   },
 }
+
+let terminationRequested = false
 
 function registerCore(): void {
   registerProviderCommands()
@@ -61,6 +63,7 @@ async function main(input: string[]): Promise<void> {
   await loadCredentialSecrets()
   registerCore()
   const plugins = await registerPlugins(settings)
+  if (terminationRequested) return
 
   if (args.length === 0) {
     const uiId = settings.ui ?? "tui"
@@ -80,6 +83,7 @@ async function main(input: string[]): Promise<void> {
   }
 
   const bootstrapped = await bootstrapPlugins()
+  if (terminationRequested) return
   for (const failure of bootstrapped.failures) {
     if (failure.phase !== "bootstrap") continue
     ctx.error(`plugin bootstrap failed: ${failure.plugin}: ${failure.reason}`)
@@ -88,16 +92,45 @@ async function main(input: string[]): Promise<void> {
   await runCli(args, ctx)
 }
 
+let exitRun: Promise<never> | undefined
+
+function finish(): Promise<never> {
+  exitRun ??= (async () => {
+    const stopped = await shutdownPlugins()
+    for (const failure of stopped.failures) {
+      if (failure.phase !== "shutdown") continue
+      console.error(redactText(`plugin shutdown failed: ${failure.plugin}: ${failure.reason}`))
+      if (process.exitCode === undefined || process.exitCode === 0) process.exitCode = 1
+    }
+    const profile = await stopProfiler()
+    if (profile) console.error(`profile: ${profile}`)
+    await Promise.all([
+      new Promise<void>((resolve) => process.stdout.write("", () => resolve())),
+      new Promise<void>((resolve) => process.stderr.write("", () => resolve())),
+    ])
+    process.exit(process.exitCode ?? 0)
+  })()
+  return exitRun
+}
+
+function terminate(code: number): void {
+  terminationRequested = true
+  if (process.exitCode === undefined || process.exitCode === 0) process.exitCode = code
+  setTimeout(() => process.exit(code), 7_000).unref()
+  void finish()
+}
+
+process.once("SIGTERM", () => terminate(143))
+process.once("SIGHUP", () => terminate(129))
+process.on("SIGINT", () => {
+  if (process.listenerCount("SIGINT") > 1) return
+  terminate(130)
+})
+
 try {
   await main(process.argv.slice(2))
 } catch (error) {
   console.error(redactText(describeError(error)))
   process.exitCode = 1
 }
-const profile = await stopProfiler()
-if (profile) console.error(`profile: ${profile}`)
-await Promise.all([
-  new Promise<void>((resolve) => process.stdout.write("", () => resolve())),
-  new Promise<void>((resolve) => process.stderr.write("", () => resolve())),
-])
-process.exit(process.exitCode ?? 0)
+await finish()

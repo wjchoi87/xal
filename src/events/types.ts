@@ -1,6 +1,6 @@
 export interface PluginFailure {
   plugin: string
-  phase: "register" | "bootstrap"
+  phase: "register" | "bootstrap" | "shutdown"
   reason: string
 }
 

@@ -10,7 +10,7 @@ import { contributeRules } from "../permissions/rules"
 import { registerPolicyRule } from "../permissions/service"
 import { registerProvider } from "../providers/registry"
 import { replaceSecretValues } from "../secrets/redactor"
-import { registerTool } from "../tools/registry"
+import { registerTool, unregisterTool } from "../tools/registry"
 import { registerToolRenderer } from "../ui/extension"
 import { registerUi } from "../ui/registry"
 import { builtinPlugins } from "./builtins"
@@ -21,18 +21,22 @@ interface RegisteredPlugin {
   plugin: Plugin
   ctx: PluginContext
   pluginOrder: number
+  abort: AbortController
 }
 
 let status: PluginStatus = { total: 0, failures: [] }
 let registered: RegisteredPlugin[] = []
 let bootstrapRun: Promise<PluginStatus> | undefined
+let shutdownRun: Promise<PluginStatus> | undefined
 
-function contextFor(plugin: Plugin, settings: Settings, pluginOrder: number): PluginContext {
+function contextFor(plugin: Plugin, settings: Settings, pluginOrder: number, signal: AbortSignal): PluginContext {
   let hookOrder = 0
   return {
     config: settings.pluginConfig[plugin.name] ?? {},
     events,
+    signal,
     registerTool,
+    unregisterTool,
     registerProvider,
     registerCli,
     registerCommand,
@@ -47,15 +51,17 @@ function contextFor(plugin: Plugin, settings: Settings, pluginOrder: number): Pl
 }
 
 function registerPlugin(plugin: Plugin, settings: Settings, pluginOrder: number): RegisteredPlugin {
-  const ctx = contextFor(plugin, settings, pluginOrder)
+  const abort = new AbortController()
+  const ctx = contextFor(plugin, settings, pluginOrder, abort.signal)
   plugin.register(ctx)
-  return { plugin, ctx, pluginOrder }
+  return { plugin, ctx, pluginOrder, abort }
 }
 
 export async function registerPlugins(settings: Settings): Promise<PluginStatus> {
   const failures: PluginFailure[] = []
   registered = []
   bootstrapRun = undefined
+  shutdownRun = undefined
   clearHooks()
 
   for (const [pluginOrder, plugin] of builtinPlugins.entries()) {
@@ -102,4 +108,25 @@ async function runBootstrap(): Promise<PluginStatus> {
 export function bootstrapPlugins(): Promise<PluginStatus> {
   bootstrapRun ??= runBootstrap()
   return bootstrapRun
+}
+
+async function runShutdown(): Promise<PluginStatus> {
+  for (const entry of registered) entry.abort.abort()
+  await bootstrapRun
+  const entries = registered.filter((entry) => entry.plugin.shutdown).toReversed()
+  const failures: PluginFailure[] = []
+  for (const entry of entries) {
+    try {
+      await entry.plugin.shutdown?.(entry.ctx)
+    } catch (error) {
+      failures.push({ plugin: entry.plugin.name, phase: "shutdown", reason: describeError(error) })
+    }
+  }
+  status = { total: status.total, failures: [...status.failures, ...failures] }
+  return status
+}
+
+export function shutdownPlugins(): Promise<PluginStatus> {
+  shutdownRun ??= runShutdown()
+  return shutdownRun
 }

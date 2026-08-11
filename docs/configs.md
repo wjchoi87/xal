@@ -44,9 +44,11 @@ For example, this loads an existing local plugin:
 }
 ```
 
-The referenced directory must contain a `plugin.ts` whose default export has a `name`, a synchronous `register` function, and optionally an asynchronous `bootstrap` function. Relative plugin paths are not resolved from the project directory, even when they are declared in project configuration.
+The referenced directory must contain a `plugin.ts` whose default export has a `name`, a synchronous `register` function, and optionally asynchronous `bootstrap` and `shutdown` functions. Relative plugin paths are not resolved from the project directory, even when they are declared in project configuration.
 
 Plugins can contribute slash commands with `ctx.registerCommand`. Commands known synchronously belong in `register`; commands discovered from files or services may be added during `bootstrap`, before interactive input is released.
+
+When the UI or CLI exits, Tack aborts `ctx.signal` so in-progress `bootstrap` work can stop, waits for bootstrap to settle, and then runs `shutdown` in reverse plugin order. Plugins that own child processes or network connections close them there. A dynamically discovered tool can be removed with `ctx.unregisterTool(tool)` using the same tool object that was registered.
 
 ### Hooks
 
@@ -174,6 +176,48 @@ A prompt beginning with `$skill-name` explicitly invokes that skill. Tack keeps 
 
 ## Built-in plugin configuration
 
+### `mcp`
+
+MCP servers are configured under `pluginConfig.mcp.servers`. Server names must begin with a lower-case letter and contain only lower-case letters, numbers, hyphens, and underscores.
+
+```json
+{
+  "pluginConfig": {
+    "mcp": {
+      "servers": {
+        "local-tools": {
+          "transport": "stdio",
+          "command": "node",
+          "args": ["/absolute/path/to/server.js"],
+          "cwd": "/absolute/path/to/project",
+          "env": {
+            "SERVICE_TOKEN": "${SERVICE_TOKEN}"
+          },
+          "timeoutMs": 30000
+        },
+        "remote-tools": {
+          "transport": "http",
+          "url": "https://example.com/mcp",
+          "headers": {
+            "Authorization": "Bearer ${MCP_TOKEN}"
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+Each server supports `enabled` (default `true`) and `timeoutMs` (default `30000`). A stdio server requires `command`, accepts optional `args`, `cwd`, and `env`, and inherits the SDK's safe default process environment. Relative `cwd` values resolve from the directory where Tack starts. An HTTP server requires `url` and accepts optional `headers`; Tack tries Streamable HTTP first and falls back to legacy SSE at the same URL only when the initial Streamable HTTP request receives a 4xx response.
+
+If a higher-priority configuration changes an existing server's transport, fields inherited for the inactive transport are ignored. Unknown field names still fail configuration.
+
+`${NAME}` references in commands, arguments, working directories, environment values, URLs, and headers expand from Tack's environment. A missing variable makes the MCP configuration fail instead of starting with an incomplete value. Values in secret-like environment variables and headers are added to Tack's redaction set.
+
+Servers connect in parallel during plugin bootstrap. One unavailable server is reported as failed without hiding tools from healthy servers. Discovered tools use names such as `mcp__local-tools__count`, retain their remote input schemas, and pass through normal permission handling. Every remote MCP call is treated as an unsandboxed mutation and invalidates workspace redo history because server annotations are untrusted hints and the tool's effects are external or unknown. Reading a remote resource or resolving a remote prompt also requires approval; listing their already-cached catalogs remains read-only.
+
+Connected resource catalogs, resource templates, and prompts are exposed through `mcp_resources`, `mcp_read_resource`, `mcp_prompts`, and `mcp_get_prompt`. Server instructions join the system prompt. Binary resource and image or audio content is summarized with its media type and byte size because Tack's tool-result boundary is text-only. Tools that require the experimental MCP task protocol, or whose output schema uses an unsupported dialect, are skipped and reported in status; ordinary and task-optional tools remain available. Tool-list change notifications refresh registered tools, and `/mcp reconnect [server]` reconnects one server or all servers. Run `/mcp` to see transport, status, and capability counts.
+
 ### `permissions`
 
 ```json
@@ -241,6 +285,15 @@ Every option is optional. A configuration using all currently supported built-in
     },
     "project-instructions": {
       "maxBytes": 65536
+    },
+    "mcp": {
+      "servers": {
+        "local-tools": {
+          "transport": "stdio",
+          "command": "node",
+          "args": ["/absolute/path/to/server.js"]
+        }
+      }
     },
     "openai-chatgpt": {
       "contextWindow": 260000

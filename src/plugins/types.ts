@@ -13,12 +13,15 @@ export interface Plugin {
   name: string
   register(ctx: PluginContext): void
   bootstrap?(ctx: PluginContext): Promise<void>
+  shutdown?(ctx: PluginContext): Promise<void>
 }
 
 export interface PluginContext {
   config: Record<string, unknown>
   events: EventService
+  signal: AbortSignal
   registerTool(tool: RegisteredTool): void
+  unregisterTool(tool: RegisteredTool): void
   registerProvider(provider: Provider): void
   registerCli(cli: Cli, parent?: string): void
   registerCommand(command: Command): void

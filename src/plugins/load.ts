@@ -21,11 +21,15 @@ export async function importPlugin(spec: string, baseDir: string): Promise<Plugi
   const name = candidate.name
   const register = candidate.register
   const bootstrap = candidate.bootstrap
+  const shutdown = candidate.shutdown
   if (typeof name !== "string" || typeof register !== "function") {
     throw new Error("plugin must have a name and a register function")
   }
   if (bootstrap !== undefined && typeof bootstrap !== "function") {
     throw new Error("plugin bootstrap must be a function")
+  }
+  if (shutdown !== undefined && typeof shutdown !== "function") {
+    throw new Error("plugin shutdown must be a function")
   }
   const plugin: Plugin = {
     name,
@@ -39,6 +43,11 @@ export async function importPlugin(spec: string, baseDir: string): Promise<Plugi
   if (typeof bootstrap === "function") {
     plugin.bootstrap = async (ctx: PluginContext) => {
       await bootstrap.call(candidate, ctx)
+    }
+  }
+  if (typeof shutdown === "function") {
+    plugin.shutdown = async (ctx: PluginContext) => {
+      await shutdown.call(candidate, ctx)
     }
   }
   return plugin
