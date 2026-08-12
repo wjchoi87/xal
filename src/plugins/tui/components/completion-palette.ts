@@ -1,4 +1,10 @@
-import { StyledText, type BoxRenderable, type RenderContext, type TextRenderable } from "@opentui/core"
+import {
+  RenderableEvents,
+  StyledText,
+  type BoxRenderable,
+  type RenderContext,
+  type TextRenderable,
+} from "@opentui/core"
 import { listCommands } from "../../../commands/registry"
 import type { Command } from "../../../commands/types"
 import { redactText } from "../../../secrets/redactor"
@@ -6,6 +12,7 @@ import { skillQuery, type SkillQuery } from "../../../skills/references"
 import { listSkills } from "../../../skills/registry"
 import type { Skill } from "../../../skills/types"
 import { column, label, row } from "../lib/renderables"
+import { displayWidth, truncateToWidth } from "../lib/text"
 import { COLORS } from "../theme/colors"
 import { background, border, muted, paint } from "../theme/styles"
 
@@ -13,8 +20,18 @@ export const PALETTE_CHROME_ROWS = 3
 
 const MAX_ROWS = 6
 const NAME_WIDTH = 22
+const TICKER_INTERVAL_MS = 120
+const TICKER_PAUSE_FRAMES = 8
 
 type Completion = { kind: "command"; command: Command } | { kind: "skill"; skill: Skill }
+
+interface CompletionRow {
+  view: BoxRenderable
+  name: TextRenderable
+  description: TextRenderable
+  descriptionText: string
+  selected: boolean
+}
 
 interface CompletionPaletteActions {
   completeCommand(line: string): void
@@ -76,13 +93,14 @@ function completionText(entry: Completion): { name: string; description: string 
 export class CompletionPalette {
   readonly view: BoxRenderable
   private readonly options: BoxRenderable
-  private readonly rows: TextRenderable[] = []
+  private readonly rows: CompletionRow[] = []
   private entries: Completion[] = []
   private query: SkillQuery | undefined
-  private standaloneSkill = false
   private selected = 0
   private offset = 0
   private limit = MAX_ROWS
+  private tickerFrame = 0
+  private tickerTimer: ReturnType<typeof setInterval> | undefined
 
   get visible(): boolean {
     return this.view.visible
@@ -116,13 +134,26 @@ export class CompletionPalette {
     this.options = column(ctx, { flexGrow: 1, flexShrink: 1, minWidth: 1 })
 
     this.view.add(this.options)
-    this.view.add(label(ctx, { content: "↑↓ · Tab · Enter · Esc", flexShrink: 0, marginLeft: 1, color: COLORS.faint }))
 
     for (let index = 0; index < MAX_ROWS; index++) {
-      const line = label(ctx, { content: "" })
+      const option = row(ctx, { visible: false })
+      const name = label(ctx, { content: "", flexShrink: 0 })
+      const description = label(ctx, {
+        content: "",
+        flexGrow: 1,
+        flexShrink: 1,
+        flexBasis: 0,
+        minWidth: 1,
+        truncate: false,
+      })
+      option.add(name)
+      option.add(description)
+      const line = { view: option, name, description, descriptionText: "", selected: false }
+      description.on("line-info-change", () => this.renderDescription(line, false))
       this.rows.push(line)
-      this.options.add(line)
+      this.options.add(option)
     }
+    this.view.on(RenderableEvents.DESTROYED, () => this.stopTicker())
   }
 
   update(value: string, cursor: number, limit: number): void {
@@ -137,18 +168,20 @@ export class CompletionPalette {
     this.limit = Math.max(1, Math.min(MAX_ROWS, limit))
     this.entries = entries
     this.query = query
-    this.standaloneSkill = query?.start === 0 && query.end === value.length
     this.selected = 0
     this.offset = 0
+    this.stopTicker()
     this.renderOptions()
     this.view.height = this.rowCount + 2
     this.view.visible = true
+    this.startTicker()
     if (this.rowCount !== previous) this.onChange()
   }
 
   hide(): void {
     if (!this.view.visible) return
     this.view.visible = false
+    this.stopTicker()
     this.onChange()
   }
 
@@ -182,7 +215,9 @@ export class CompletionPalette {
     this.selected = (this.selected + delta + count) % count
     if (this.selected < this.offset) this.offset = this.selected
     if (this.selected >= this.offset + this.rowCount) this.offset = this.selected - this.rowCount + 1
+    this.stopTicker()
     this.renderOptions()
+    this.startTicker()
   }
 
   private complete(entry: Completion | undefined, trailingSpace: boolean): void {
@@ -204,10 +239,8 @@ export class CompletionPalette {
   private confirm(entry: Completion | undefined): boolean {
     if (!entry) return false
     if (entry.kind === "skill") {
-      const standalone = this.standaloneSkill
-      this.completeSkill(entry, !standalone)
-      this.hide()
-      return !standalone
+      this.complete(entry, true)
+      return true
     }
     this.hide()
     this.actions.runCommand(`/${entry.command.name}`)
@@ -218,17 +251,51 @@ export class CompletionPalette {
     this.rows.forEach((line, index) => {
       const entry = index < this.rowCount ? this.entries[this.offset + index] : undefined
       if (!entry) {
-        line.content = new StyledText([muted("")])
-        line.visible = false
+        line.view.visible = false
+        line.descriptionText = ""
+        line.selected = false
+        line.description.scrollX = 0
         return
       }
-      line.visible = true
+      line.view.visible = true
       const entryText = completionText(entry)
-      const text = entryText.name.padEnd(NAME_WIDTH) + entryText.description
       const position = this.offset + index
-      line.content = new StyledText([
-        position === this.selected ? paint(COLORS.accent, `❯ ${text}`) : muted(`  ${text}`),
-      ])
+      const name = `${position === this.selected ? "❯ " : "  "}${entryText.name}${" ".repeat(
+        Math.max(2, NAME_WIDTH - displayWidth(entryText.name)),
+      )}`
+      line.name.width = displayWidth(name)
+      line.name.content = new StyledText([position === this.selected ? paint(COLORS.accent, name) : muted(name)])
+      line.descriptionText = entryText.description
+      line.selected = position === this.selected
+      this.renderDescription(line, true)
+      line.description.scrollX = 0
     })
+  }
+
+  private renderDescription(line: CompletionRow, force: boolean): void {
+    const text = line.selected ? line.descriptionText : truncateToWidth(line.descriptionText, line.description.width)
+    if (!force && line.description.plainText === text) return
+    line.description.content = new StyledText([line.selected ? paint(COLORS.accent, text) : muted(text)])
+  }
+
+  private startTicker(): void {
+    if (this.tickerTimer) return
+    this.tickerTimer = setInterval(() => {
+      this.tickerFrame++
+      const line = this.rows[this.selected - this.offset]
+      if (!line?.view.visible) return
+      const width = line.description.maxScrollX
+      if (width === 0) return
+      const frame = this.tickerFrame % (width + TICKER_PAUSE_FRAMES * 2)
+      line.description.scrollX =
+        frame <= TICKER_PAUSE_FRAMES ? 0 : frame <= TICKER_PAUSE_FRAMES + width ? frame - TICKER_PAUSE_FRAMES : width
+    }, TICKER_INTERVAL_MS)
+  }
+
+  private stopTicker(): void {
+    if (this.tickerTimer) clearInterval(this.tickerTimer)
+    this.tickerTimer = undefined
+    this.tickerFrame = 0
+    for (const line of this.rows) line.description.scrollX = 0
   }
 }

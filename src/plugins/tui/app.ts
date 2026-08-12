@@ -3,6 +3,7 @@ import {
   CliRenderEvents,
   createCliRenderer,
   RenderableEvents,
+  RGBA,
   type CliRenderer,
   type KittyKeyboardOptions,
   type TerminalCapabilities,
@@ -25,7 +26,7 @@ import { editInExternalEditor, externalEditorCommand } from "./external-editor"
 import { cursorRow } from "./lib/cursor"
 import { MessageHistory } from "./message-history"
 import { Screen } from "./screen"
-import { describeTerminal, sessionTerminalTitle } from "./terminal"
+import { describeTerminal, sessionTerminalTitle, terminalBackground } from "./terminal"
 import { TerminalOutput } from "./terminal-output"
 import { COLORS } from "./theme/colors"
 
@@ -101,6 +102,20 @@ export async function startTui(events: EventService, config: TuiConfig, options:
       session.rejectElicitation(requestId)
     },
   })
+  const unsubscribeTerminalBackground = renderer.subscribeOsc((sequence) => {
+    const background = terminalBackground(sequence)
+    if (background) screen.scrollback.setTerminalBackground(background)
+  })
+  void renderer.getPalette({ size: 1, timeout: 300 }).then(
+    (palette) => {
+      if (renderer.isDestroyed) return
+      if (palette.defaultBackground) screen.scrollback.setTerminalBackground(RGBA.fromHex(palette.defaultBackground))
+    },
+    (error: unknown) => {
+      if (renderer.isDestroyed) return
+      screen.scrollback.append({ kind: "error", text: `terminal background detection failed: ${describeError(error)}` })
+    },
+  )
   const attentionController = new AttentionController(
     (sequence) => terminalOutput.write(sequence),
     (message) => {
@@ -149,6 +164,7 @@ export async function startTui(events: EventService, config: TuiConfig, options:
   }
 
   screen.view.on(RenderableEvents.DESTROYED, () => {
+    unsubscribeTerminalBackground()
     unsubscribeSession()
     unsubscribeAttention()
     stopAttention()

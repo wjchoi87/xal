@@ -35,6 +35,7 @@ export class StatusBar {
   private readonly meta: TextRenderable
   private readonly spinner = new Spinner()
   private state: AgentState = "idle"
+  private hint: string | undefined
   private loading: string | undefined
   private notice: string | undefined
   private contextTokens: number | undefined
@@ -115,6 +116,12 @@ export class StatusBar {
     this.render()
   }
 
+  setHint(hint: string | undefined): void {
+    if (this.hint === hint) return
+    this.hint = hint
+    this.render()
+  }
+
   setNotice(notice: string): void {
     this.notice = redactText(notice)
     this.toggleSpinner(false)
@@ -184,6 +191,7 @@ export class StatusBar {
   }
 
   private content(): StyledText {
+    if (this.hint) return new StyledText([muted(this.hint)])
     if (this.notice) return new StyledText([muted(this.notice)])
     if (this.loading) {
       return new StyledText([paint(COLORS.agent, this.spinner.glyph), muted(` ${this.loading}`)])

@@ -12,7 +12,6 @@ export interface ToolRenderer {
 export interface ThemeColors {
   foreground: RGBA
   background: RGBA
-  dim: RGBA
   faint: RGBA
   accent: RGBA
   agent: RGBA

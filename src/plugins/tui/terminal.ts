@@ -1,12 +1,29 @@
-import type { TerminalCapabilities } from "@opentui/core"
+import { RGBA, type TerminalCapabilities } from "@opentui/core"
 import { appInfo } from "../../app-info"
 import { compactPath } from "../../lib/path"
 
 const dumb = process.env.TERM?.toLowerCase() === "dumb"
+const OSC_BACKGROUND =
+  /\u001b]11;(?:(?:rgb:)([0-9a-fA-F]+)\/([0-9a-fA-F]+)\/([0-9a-fA-F]+)|#([0-9a-fA-F]{6}))(?:\u0007|\u001b\\)/
 
 export const terminalPresentation = {
   colors: !dumb && process.env.NO_COLOR === undefined,
   unicode: !dumb,
+}
+
+function colorComponent(value: string): number {
+  return Number.parseInt(value, 16) / (16 ** value.length - 1)
+}
+
+export function terminalBackground(sequence: string): RGBA | undefined {
+  const match = OSC_BACKGROUND.exec(sequence)
+  const hex = match?.[4]
+  if (hex) return RGBA.fromHex(`#${hex}`)
+  const red = match?.[1]
+  const green = match?.[2]
+  const blue = match?.[3]
+  if (!red || !green || !blue) return undefined
+  return RGBA.fromValues(colorComponent(red), colorComponent(green), colorComponent(blue))
 }
 
 export function sessionTerminalTitle(title?: string, cwd = process.cwd()): string {

@@ -1,4 +1,12 @@
-import { bold, t, TextAttributes, type Renderable, type RenderContext, type TextRenderable } from "@opentui/core"
+import {
+  bold,
+  t,
+  TextAttributes,
+  type Renderable,
+  type RenderContext,
+  type RGBA,
+  type TextRenderable,
+} from "@opentui/core"
 import type { DenialCause } from "../../../agent/events"
 import { appInfo } from "../../../app-info"
 import { parseBoundedToolOutput } from "../../../tools/output"
@@ -45,12 +53,18 @@ export function streamView(ctx: RenderContext, block: StreamBlock): StreamView {
   return { view: frame(ctx, text), text }
 }
 
-export function renderBlock(ctx: RenderContext, block: Block, expanded: boolean, previous?: Block): Renderable {
+export function renderBlock(
+  ctx: RenderContext,
+  block: Block,
+  expanded: boolean,
+  userBackground: RGBA,
+  previous?: Block,
+): Renderable {
   switch (block.kind) {
     case "banner":
       return frame(ctx, banner(ctx, block))
     case "user":
-      return frame(ctx, bubble(ctx, block))
+      return frame(ctx, bubble(ctx, block, userBackground))
     case "info":
       return frame(ctx, paragraph(ctx, { content: block.text, attributes: TextAttributes.DIM }))
     case "error":
@@ -95,14 +109,14 @@ function banner(ctx: RenderContext, block: BannerBlock): Renderable {
   return box
 }
 
-function bubble(ctx: RenderContext, block: UserBlock): Renderable {
-  const box = row(ctx, { alignItems: "flex-start", padding: 1, ...background(COLORS.dim) })
+function bubble(ctx: RenderContext, block: UserBlock, userBackground: RGBA): Renderable {
+  const box = row(ctx, { alignItems: "flex-start", padding: 1, ...background(userBackground) })
   const images = Array.from({ length: block.imageCount }, (_, index) => `[Image #${index + 1}]`).join(" ")
   box.add(
     paragraph(ctx, {
       content: highlightSkillReferences([block.text, images].filter(Boolean).join("\n")),
       flexGrow: 1,
-      background: COLORS.dim,
+      background: userBackground,
     }),
   )
   box.add(
@@ -111,7 +125,7 @@ function bubble(ctx: RenderContext, block: UserBlock): Renderable {
       flexShrink: 0,
       marginLeft: 2,
       attributes: TextAttributes.DIM,
-      background: COLORS.dim,
+      background: userBackground,
     }),
   )
   return box

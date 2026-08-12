@@ -305,6 +305,7 @@ export class Screen {
       }
     }
     if (overlaid) this.palette.hide()
+    this.statusBar.setHint(this.palette.visible ? "↑↓ · Tab · Enter · Esc" : undefined)
     const overlayRows = this.permission.visible
       ? this.permission.height
       : this.elicitation.visible
