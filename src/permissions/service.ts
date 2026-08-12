@@ -19,7 +19,7 @@ function underMode(decision: PolicyDecision, mode: PermissionMode): PolicyDecisi
   return mode === "yolo" && decision === "ask" ? "allow" : decision
 }
 
-export async function evaluatePolicy(request: PermissionRequest): Promise<PolicyDecision> {
+export async function evaluatePolicy(request: PermissionRequest, defaultDecision?: "allow"): Promise<PolicyDecision> {
   await loadRememberedRules(request.cwd)
 
   if (isDenied(request)) return "deny"
@@ -32,6 +32,7 @@ export async function evaluatePolicy(request: PermissionRequest): Promise<Policy
   if (matched) return underMode(matched, request.mode)
 
   if (request.readOnly || request.sandboxed) return "allow"
+  if (defaultDecision) return defaultDecision
   if (request.mode === "build") return "ask"
   if (request.mode === "plan") return "deny"
   return "allow"

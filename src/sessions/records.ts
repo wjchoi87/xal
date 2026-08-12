@@ -1,4 +1,4 @@
-import type { AgentEvent, DenialCause } from "../agent/events"
+import type { AgentEvent, DenialCause, DirectShellResult } from "../agent/events"
 import type { CompactionItem, HistoryItem } from "../agent/history"
 import { isMessageId } from "../agent/message-id"
 import type { HookAction, HookEvent } from "../hooks/types"
@@ -25,6 +25,35 @@ function parseDenial(value: unknown): DenialCause | undefined {
   const denial = asString(value)
   if (denial === "user" || denial === "policy" || denial === "plan" || denial === "hook") return denial
   return undefined
+}
+
+function parseDirectShell(raw: Record<string, unknown>): DirectShellResult | undefined {
+  const callId = asString(raw.callId)
+  const input = asString(raw.input)
+  const command = asString(raw.command)
+  const output = asString(raw.output)
+  const readOnly = asBoolean(raw.readOnly)
+  const denial = parseDenial(raw.denial)
+  if (
+    !isMessageId(raw.messageId) ||
+    !callId ||
+    input === undefined ||
+    command === undefined ||
+    output === undefined ||
+    readOnly === undefined ||
+    (raw.denial !== undefined && denial === undefined)
+  ) {
+    return undefined
+  }
+  return {
+    messageId: raw.messageId,
+    callId,
+    input,
+    command,
+    output,
+    readOnly,
+    ...(denial ? { denial } : {}),
+  }
 }
 
 function parseHookEvent(value: unknown): HookEvent | undefined {
@@ -179,6 +208,10 @@ function parseEvent(raw: unknown): AgentEvent | undefined {
         output,
         denial: parseDenial(raw.denial),
       }
+    }
+    case "shell_finished": {
+      const shell = parseDirectShell(raw)
+      return shell ? { type: "shell_finished", ...shell } : undefined
     }
     case "compacted": {
       const summary = asString(raw.summary)
@@ -337,6 +370,10 @@ function parseCompaction(raw: Record<string, unknown>): CompactionItem | undefin
 }
 
 function parseItem(raw: unknown): HistoryItem | undefined {
+  if (isRecord(raw) && asString(raw.type) === "direct_shell") {
+    const shell = parseDirectShell(raw)
+    return shell ? { type: "direct_shell", ...shell } : undefined
+  }
   if (isRecord(raw) && asString(raw.type) === "compaction") return parseCompaction(raw)
   return parseConversationItem(raw)
 }

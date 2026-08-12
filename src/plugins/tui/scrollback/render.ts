@@ -193,7 +193,9 @@ function tool(ctx: RenderContext, block: ToolBlock, expanded: boolean, grouped: 
   )
   box.add(head)
 
-  if (!(expanded || toolRenderer?.alwaysExpanded) || block.output.length === 0) return frame(ctx, box, marginTop)
+  if (!(expanded || block.expanded || toolRenderer?.alwaysExpanded) || block.output.length === 0) {
+    return frame(ctx, box, marginTop)
+  }
 
   const width = Math.max(1, ctx.width - GUTTER * 2 - 4)
   const coreOutput = bounded || coreFailed

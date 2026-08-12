@@ -2,7 +2,7 @@ import { prepareConversation } from "../providers/conversation"
 import type { ConversationItem, Provider, ProviderReplay, ThinkingEffort, UserMessageItem } from "../providers/types"
 import { redactStreamRequest } from "../secrets/data"
 import { redactText } from "../secrets/redactor"
-import { activeHistory, conversationOnly, type HistoryItem } from "./history"
+import { activeHistory, conversationOnly, directShellMessage, type HistoryItem } from "./history"
 
 export const COMPACTION_TRIGGER_RATIO = 0.85
 
@@ -56,6 +56,8 @@ function itemTokens(item: HistoryItem): number {
       return Math.max(textTokens(item.name) + textTokens(JSON.stringify(item.args)), replayTokens(item.replay))
     case "tool_result":
       return textTokens(item.output)
+    case "direct_shell":
+      return itemTokens(directShellMessage(item))
     case "compaction":
       return item.retained.reduce((total, retained) => total + itemTokens(retained), textTokens(item.summary))
   }
@@ -74,10 +76,15 @@ export interface CompactionSplit {
 function startsRound(items: HistoryItem[], index: number): boolean {
   const item = items[index]!
   if (item.type === "tool_result") return false
-  if (item.type === "user_message") return true
+  if (item.type === "user_message" || item.type === "direct_shell") return true
   const previous = items[index - 1]
   if (!previous) return true
-  return previous.type === "user_message" || previous.type === "tool_result" || previous.type === "compaction"
+  return (
+    previous.type === "user_message" ||
+    previous.type === "tool_result" ||
+    previous.type === "direct_shell" ||
+    previous.type === "compaction"
+  )
 }
 
 function tailStart(items: HistoryItem[], boundary: number): number {

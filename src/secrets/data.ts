@@ -80,6 +80,15 @@ export function redactProviderOutputItem(item: ProviderOutputItem): ProviderOutp
 }
 
 export function redactHistoryItem(item: HistoryItem): HistoryItem {
+  if (item.type === "direct_shell") {
+    return {
+      ...item,
+      callId: redactText(item.callId),
+      input: redactText(item.input),
+      command: redactText(item.command),
+      output: redactText(item.output),
+    }
+  }
   if (item.type !== "compaction") return redactConversationItem(item)
   return {
     ...item,
@@ -194,6 +203,14 @@ export function redactAgentEvent(event: AgentEvent): AgentEvent {
       return { ...event, questions: redactQuestions(event.questions) }
     case "tool_started":
       return { ...event, title: redactText(event.title) }
+    case "shell_finished":
+      return {
+        ...event,
+        callId: redactText(event.callId),
+        input: redactText(event.input),
+        command: redactText(event.command),
+        output: redactText(event.output),
+      }
     case "tool_finished":
       return { ...event, title: redactText(event.title), output: redactText(event.output) }
     case "compacted":

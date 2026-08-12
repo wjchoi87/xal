@@ -1,10 +1,9 @@
 import { asBoolean, asNumber, asString } from "../../lib/json"
-import { killProcessTree } from "../../lib/process"
 import type { Tool } from "../../tools/types"
-import { expandSnapshotAliases, snapshotEnvironment, snapshotLaunch } from "./environment"
 import { startJob } from "./jobs"
 import { spawnCommand } from "./process"
-import { sandboxAvailable, sandboxLaunch, type SandboxAccess } from "./sandbox"
+import { sandboxAvailable, type SandboxAccess } from "./sandbox"
+import { executeShellCommand, shellLaunch } from "./shell"
 import { splitCommand } from "./split"
 
 const DEFAULT_TIMEOUT_S = 120
@@ -12,10 +11,6 @@ const MAX_TIMEOUT_S = 600
 
 export function commandOf(args: Record<string, unknown>): string {
   return asString(args.command)?.trim() ?? ""
-}
-
-export function policyCommandOf(args: Record<string, unknown>): string {
-  return expandSnapshotAliases(commandOf(args))
 }
 
 export function sandboxAccessOf(args: Record<string, unknown>): SandboxAccess | undefined {
@@ -71,7 +66,7 @@ function parameters(): Record<string, unknown> {
 }
 
 function description(): string {
-  const base = `Execute a bash command in the user's current working directory. Returns combined stdout and stderr followed by the exit code. Commands run without a TTY and are killed after ${DEFAULT_TIMEOUT_S} seconds unless timeout says otherwise.`
+  const base = `Execute a command with the user's shell in a persistent session: cd, exported variables, and aliases or functions defined by earlier commands stay in effect for later ones. Returns combined stdout and stderr followed by the exit code. Commands run without a TTY and are killed after ${DEFAULT_TIMEOUT_S} seconds unless timeout says otherwise.`
   if (!sandboxAvailable()) return `${base} Each command requires the user's approval before it runs.`
   return `${base} Sandboxed commands run immediately with OS-enforced filesystem and network restrictions; other commands require the user's approval before they run.`
 }
@@ -102,54 +97,50 @@ export const bashTool: Tool = {
     return sandboxRequested(args)
   },
   permission(args) {
-    const command = policyCommandOf(args)
+    const command = commandOf(args)
     const split = splitCommand(command)
     if (!split || split.segments.length > 1) return { subject: command }
     const words = split.segments[0]!.split(/\s+/)
     if (words.length < 2) return { subject: command, suggestion: `bash(${command})` }
     return { subject: command, suggestion: `bash(${words[0]} ${words[1]}*)` }
   },
+  directPolicy(args) {
+    const split = splitCommand(commandOf(args))
+    return split && !split.redirected ? "allow" : "ask"
+  },
   async execute(args, ctx) {
     const command = commandOf(args)
     if (!command) return { output: "(no command provided)" }
 
     const sandbox = sandboxAccessOf(args)
-    const environment = { ...snapshotEnvironment(), PWD: ctx.cwd }
-    const shellLaunch = snapshotLaunch(command)
-    const launch = sandbox ? sandboxLaunch(shellLaunch, ctx.cwd, sandbox) : shellLaunch
 
     if (backgroundRequested(args)) {
-      const job = startJob(command, spawnCommand(launch, environment, ctx.cwd), ctx.cwd)
+      const launch = shellLaunch(["-c", command], ctx.cwd, sandbox)
+      const proc = spawnCommand(launch, { ...process.env, PWD: ctx.cwd }, ctx.cwd)
+      const job = startJob(command, proc, ctx.cwd)
       return {
         output: `Started background job ${job.id}${sandbox ? ` (${sandbox} sandbox)` : ""}. Read its output with job_output and stop it with job_kill.`,
       }
     }
 
     const timeoutSeconds = timeoutSecondsOf(args)
-    const proc = spawnCommand(launch, environment, ctx.cwd)
-
     let output = ""
-    const collect = (chunk: Buffer): void => {
-      const text = chunk.toString()
+    const execution = executeShellCommand(command, ctx.cwd, sandbox, (text) => {
       output += text
       ctx.update(text)
-    }
-    proc.stdout.on("data", collect)
-    proc.stderr.on("data", collect)
+    })
 
     let timedOut = false
     const timeout = setTimeout(() => {
       timedOut = true
-      killProcessTree(proc)
+      execution.kill()
     }, timeoutSeconds * 1000)
-    const onAbort = (): void => killProcessTree(proc)
+    const onAbort = (): void => execution.kill()
     ctx.signal.addEventListener("abort", onAbort)
+    if (ctx.signal.aborted) onAbort()
 
     try {
-      const exitCode = await new Promise<number | null>((resolve, reject) => {
-        proc.once("error", reject)
-        proc.once("close", (code) => resolve(code))
-      })
+      const exitCode = await execution.done
       const trimmed = output.trimEnd()
       let footer: string
       if (timedOut) footer = `(timed out after ${timeoutSeconds}s and was killed)`

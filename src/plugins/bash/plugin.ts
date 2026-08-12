@@ -1,9 +1,9 @@
 import { isDenied, matchRules } from "../../permissions/rules"
 import type { PermissionRequest, PolicyDecision } from "../../permissions/types"
 import type { Plugin } from "../types"
-import { initializeShellSnapshot, shellSnapshotPrompt } from "./environment"
+import { shellPrompt } from "./shell"
 import { splitCommand } from "./split"
-import { bashTool, policyCommandOf, sandboxRequested } from "./tool"
+import { bashTool, commandOf, sandboxRequested } from "./tool"
 
 const DANGEROUS = [
   "bash(rm *)",
@@ -41,12 +41,12 @@ const plugin: Plugin = {
   name: "bash",
   register(ctx) {
     ctx.registerTool(bashTool)
-    ctx.registerPrompt({ id: "environment", text: shellSnapshotPrompt })
+    ctx.registerPrompt({ id: "environment", text: shellPrompt })
     ctx.registerPermissionRules({ ask: DANGEROUS })
     ctx.registerPolicyRule({
       evaluate(request) {
         if (request.tool !== "bash" || sandboxRequested(request.args)) return undefined
-        const command = policyCommandOf(request.args)
+        const command = commandOf(request.args)
         if (!command) return undefined
         const split = splitCommand(command)
         if (!split) return "ask"
@@ -57,9 +57,6 @@ const plugin: Plugin = {
         return decisions.every((decision) => decision === "allow") ? "allow" : undefined
       },
     })
-  },
-  async bootstrap() {
-    await initializeShellSnapshot()
   },
 }
 

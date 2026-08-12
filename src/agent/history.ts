@@ -1,4 +1,5 @@
 import type { ConversationItem, UserInput, UserMessageItem } from "../providers/types"
+import type { DirectShellResult } from "./events"
 
 export interface CompactionItem {
   type: "compaction"
@@ -8,7 +9,11 @@ export interface CompactionItem {
   retained: ConversationItem[]
 }
 
-export type HistoryItem = ConversationItem | CompactionItem
+export interface DirectShellItem extends DirectShellResult {
+  type: "direct_shell"
+}
+
+export type HistoryItem = ConversationItem | CompactionItem | DirectShellItem
 
 export interface ConversationCheckpoint {
   messageId: string
@@ -45,13 +50,29 @@ export function summaryMessage(summary: string): UserMessageItem {
   }
 }
 
+export function directShellMessage(item: DirectShellItem): UserMessageItem {
+  return {
+    type: "user_message",
+    text: `The user ran this shell command themselves in the session:\n<shell-input>\n${item.command}\n</shell-input>\n<shell-output>\n${item.output}\n</shell-output>`,
+    images: [],
+  }
+}
+
 export function conversationOnly(items: HistoryItem[]): ConversationItem[] {
-  return items.flatMap((item) => (item.type === "compaction" ? [] : [item]))
+  return items.flatMap((item) => {
+    if (item.type === "compaction") return []
+    if (item.type === "direct_shell") return [directShellMessage(item)]
+    return [item]
+  })
 }
 
 export function activeHistory(items: HistoryItem[]): ConversationItem[] {
   const active: ConversationItem[] = []
   for (const item of items) {
+    if (item.type === "direct_shell") {
+      active.push(directShellMessage(item))
+      continue
+    }
     if (item.type === "compaction") {
       active.length = 0
       active.push(summaryMessage(item.summary), ...item.retained)

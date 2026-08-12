@@ -211,6 +211,16 @@ function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError"
 }
 
+function directShellCommand(input: UserInput): string | undefined {
+  if (input.images.length > 0) return undefined
+  const text = input.text.trimStart()
+  return text.startsWith("!") ? text.slice(1).trim() : undefined
+}
+
+function isDirectShellInput(input: UserInput): boolean {
+  return directShellCommand(input) !== undefined
+}
+
 function addUsage(total: Usage | undefined, usage: Usage): Usage {
   return {
     totalInputTokens: (total?.totalInputTokens ?? 0) + (usage.totalInputTokens ?? 0),
@@ -525,6 +535,10 @@ export class AgentSession {
       return true
     }
     if (this.state !== "idle") return false
+    if (isDirectShellInput(redacted)) {
+      this.startDirectShell(redacted)
+      return true
+    }
     this.startTurn([redacted])
     return true
   }
@@ -556,13 +570,61 @@ export class AgentSession {
         this.abortController = undefined
         this.setState("idle")
         if (!errored && controller.signal.aborted && this.promoteOnAbort && this.queued.length > 0) {
-          const promoted = this.queued.splice(0)
-          this.emit({ type: "queue_changed", entries: [] })
-          this.startTurn(promoted)
+          this.startNextQueued()
+          return
+        }
+        if (
+          !errored &&
+          !controller.signal.aborted &&
+          this.queued[0] !== undefined &&
+          isDirectShellInput(this.queued[0]) &&
+          this.startNextQueued()
+        ) {
           return
         }
         this.flushQueue()
       })
+  }
+
+  private startDirectShell(input: UserInput): void {
+    const controller = new AbortController()
+    this.abortController = controller
+    this.turnActive = true
+    this.promoteOnAbort = false
+    this.setState("running_tool")
+    let errored = false
+    void this.runDirectShell(input, controller.signal)
+      .catch((error) => {
+        if (isAbortError(error) || controller.signal.aborted) {
+          this.emit({ type: "turn_interrupted" })
+          return
+        }
+        errored = true
+        this.emit({ type: "turn_failed", message: describeError(error) })
+      })
+      .finally(() => {
+        this.turnActive = false
+        this.abortController = undefined
+        this.setState("idle")
+        if (!errored && (!controller.signal.aborted || this.promoteOnAbort) && this.startNextQueued()) return
+        this.flushQueue()
+      })
+  }
+
+  private startNextQueued(): boolean {
+    const first = this.queued[0]
+    if (!first) return false
+    if (isDirectShellInput(first)) {
+      this.queued.shift()
+      this.emit({ type: "queue_changed", entries: this.queueEntries() })
+      this.startDirectShell(first)
+      return true
+    }
+    const boundary = this.queued.findIndex(isDirectShellInput)
+    const inputs = this.queued.splice(0, boundary < 0 ? this.queued.length : boundary)
+    this.emit({ type: "queue_changed", entries: this.queueEntries() })
+    this.startTurn(inputs)
+    return true
   }
 
   private queueEntries(): QueuedEntry[] {
@@ -571,8 +633,10 @@ export class AgentSession {
 
   private async drainQueue(signal: AbortSignal): Promise<boolean> {
     if (this.queued.length === 0) return false
-    const inputs = this.queued.splice(0)
-    this.emit({ type: "queue_changed", entries: [] })
+    const boundary = this.queued.findIndex(isDirectShellInput)
+    if (boundary === 0) return false
+    const inputs = this.queued.splice(0, boundary < 0 ? this.queued.length : boundary)
+    this.emit({ type: "queue_changed", entries: this.queueEntries() })
     await this.acceptInputs(inputs, signal)
     return true
   }
@@ -616,6 +680,72 @@ export class AgentSession {
       sentAt: Date.now(),
     })
     this.pushItem(this.userMessage(input, redactText(outcome.text), messageId))
+  }
+
+  private async runDirectShell(input: UserInput, signal: AbortSignal): Promise<void> {
+    const command = directShellCommand(input)
+    if (command === undefined) throw new Error("direct shell received a regular prompt")
+    const messageId = crypto.randomUUID()
+    const requestedCall: ToolCallItem = {
+      type: "tool_call",
+      callId: `direct-shell-${crypto.randomUUID()}`,
+      name: "bash",
+      args: { command },
+    }
+
+    let outcome: ToolCallOutcome | undefined
+    let prepared: PreparedToolCall | undefined
+    if (!command) {
+      outcome = this.toolCallOutcome(requestedCall, "", false, `${TOOL_FAILED_PREFIX}shell command is empty`)
+    } else {
+      const entry = await this.applyBeforeToolHook(requestedCall, signal, false)
+      if (entry.type === "outcome") {
+        outcome = entry.outcome
+      } else {
+        const preparation = await this.prepareToolCall(entry.call, signal, true)
+        if (preparation.type === "outcome") outcome = preparation.outcome
+        else prepared = preparation.prepared
+      }
+    }
+
+    this.ensureTitle(input)
+    this.invalidateRedos("Redo is unavailable because a new prompt created a divergent branch.")
+    if (this.trackUndoPrompts) this.workspaceUndo.markPrompt(messageId, input.text)
+    this.checkpoints.push({ messageId, input, before: [...this.items] })
+    if (prepared) outcome = await this.executeToolCall(prepared, signal)
+    if (!outcome) throw new Error("direct shell did not produce an outcome")
+
+    const executed = outcome.call.args.command
+    const executedCommand = typeof executed === "string" ? executed.trim() : command
+
+    const finished: Extract<AgentEvent, { type: "shell_finished" }> = {
+      type: "shell_finished",
+      messageId,
+      callId: outcome.call.callId,
+      input: input.text,
+      command: executedCommand,
+      output: outcome.output,
+      readOnly: outcome.readOnly,
+      ...(outcome.denial ? { denial: outcome.denial } : {}),
+    }
+    this.emit(finished)
+    this.pushItem({
+      type: "direct_shell",
+      messageId: finished.messageId,
+      callId: finished.callId,
+      input: finished.input,
+      command: finished.command,
+      output: finished.output,
+      readOnly: finished.readOnly,
+      ...(finished.denial ? { denial: finished.denial } : {}),
+    })
+    for (const event of outcome.events) this.publishToolEvent(event)
+
+    if (signal.aborted) {
+      this.emit({ type: "turn_interrupted" })
+      return
+    }
+    await this.endTurn({}, outcome.output, signal)
   }
 
   private ensureTitle(input: UserInput): void {
@@ -1125,7 +1255,7 @@ export class AgentSession {
 
       const toolCalls = items.filter((item): item is ToolCallItem => item.type === "tool_call")
       if (toolCalls.length === 0) {
-        if (this.queued.length > 0) continue
+        if (this.queued.length > 0 && !isDirectShellInput(this.queued[0]!)) continue
         if (this.outputContract) {
           const correction = this.outputContract.missing()
           if (this.outputContract.exhausted) throw this.outputContract.failure()
@@ -1359,7 +1489,11 @@ export class AgentSession {
     if (rawReasoningTail) this.emit({ type: "reasoning_delta", text: rawReasoningTail })
   }
 
-  private async applyBeforeToolHook(original: ToolCallItem, signal: AbortSignal): Promise<ToolCallEntry> {
+  private async applyBeforeToolHook(
+    original: ToolCallItem,
+    signal: AbortSignal,
+    recordUpdate = true,
+  ): Promise<ToolCallEntry> {
     const outcome = await runBeforeToolHooks(
       { callId: original.callId, tool: original.name, args: original.args },
       this.hookContext(signal),
@@ -1369,7 +1503,7 @@ export class AgentSession {
     const call: ToolCallItem = outcome.modified
       ? { type: "tool_call", callId: original.callId, name: original.name, args }
       : original
-    if (outcome.modified) this.updateToolCall(call)
+    if (outcome.modified && recordUpdate) this.updateToolCall(call)
     if (outcome.type === "continue") return { type: "call", call }
     return {
       type: "outcome",
@@ -1500,7 +1634,7 @@ export class AgentSession {
     return loopError
   }
 
-  private async prepareToolCall(call: ToolCallItem, signal: AbortSignal): Promise<ToolCallPreparation> {
+  private async prepareToolCall(call: ToolCallItem, signal: AbortSignal, direct = false): Promise<ToolCallPreparation> {
     const tool = this.availableTool(call.name)
     const title = tool?.title(call.args, { cwd: this.cwd }) ?? JSON.stringify(call.args)
     const readOnly = tool?.readOnly?.(call.args, { cwd: this.cwd }) ?? false
@@ -1521,17 +1655,25 @@ export class AgentSession {
 
     const sandboxed = tool.sandboxed?.(call.args, { cwd: this.cwd }) ?? false
     const permission = tool.permission?.(call.args, { cwd: this.cwd })
-    const decision = await evaluatePolicy({
-      sessionKey: this.permissionSessionKey,
-      cwd: this.cwd,
-      tool: call.name,
-      title,
-      args: call.args,
-      subject: permission?.subject,
-      readOnly,
-      sandboxed,
-      mode: this.mode,
-    })
+    const directDecision = direct ? tool.directPolicy?.(call.args, { cwd: this.cwd }) : undefined
+    const evaluated = await evaluatePolicy(
+      {
+        sessionKey: this.permissionSessionKey,
+        cwd: this.cwd,
+        tool: call.name,
+        title,
+        args: call.args,
+        subject: permission?.subject,
+        readOnly,
+        sandboxed,
+        mode: this.mode,
+      },
+      directDecision === "allow" ? "allow" : undefined,
+    )
+    const decision =
+      directDecision === "ask" && this.mode === "build" && !readOnly && !sandboxed && evaluated === "allow"
+        ? "ask"
+        : evaluated
 
     if (decision === "deny") {
       const cause = this.mode === "plan" && !readOnly ? "plan" : "policy"

@@ -89,15 +89,20 @@ async function summarize(path: string): Promise<SessionSummary | undefined> {
         continue
       }
       if (record.type === "item") {
-        if (record.item.type !== "user_message") continue
-        if (!isMessageId(record.item.messageId)) continue
-        if (seenMessageIds.has(record.item.messageId)) return undefined
-        seenMessageIds.add(record.item.messageId)
-        prompts.set(record.item.messageId, record.item.text)
+        const message =
+          record.item.type === "user_message" && isMessageId(record.item.messageId)
+            ? { messageId: record.item.messageId, text: record.item.text, imageCount: record.item.images.length }
+            : record.item.type === "direct_shell"
+              ? { messageId: record.item.messageId, text: record.item.input, imageCount: 0 }
+              : undefined
+        if (!message) continue
+        if (seenMessageIds.has(message.messageId)) return undefined
+        seenMessageIds.add(message.messageId)
+        prompts.set(message.messageId, message.text)
         redos.length = 0
         hasConversation = true
-        messageIds.push(record.item.messageId)
-        generatedTitle ??= titleFromInput(record.item.text, record.item.images.length)
+        messageIds.push(message.messageId)
+        generatedTitle ??= titleFromInput(message.text, message.imageCount)
         continue
       }
       const event = record.event
@@ -174,6 +179,7 @@ export async function loadSession(path: string): Promise<LoadedSession | undefin
   const seenMessageIds = new Set<string>()
   const events: AgentEvent[] = []
   let pendingUserMessage: Extract<AgentEvent, { type: "user_message" }> | undefined
+  let pendingShell: Extract<AgentEvent, { type: "shell_finished" }> | undefined
 
   try {
     for (const line of complete.split("\n")) {
@@ -192,6 +198,23 @@ export async function loadSession(path: string): Promise<LoadedSession | undefin
         matchedUserMessage = true
       }
       pendingUserMessage = undefined
+      let matchedShell = false
+      if (
+        pendingShell !== undefined &&
+        record.type === "item" &&
+        record.item.type === "direct_shell" &&
+        pendingShell.messageId === record.item.messageId &&
+        pendingShell.callId === record.item.callId &&
+        pendingShell.input === record.item.input &&
+        pendingShell.command === record.item.command &&
+        pendingShell.output === record.item.output &&
+        pendingShell.readOnly === record.item.readOnly &&
+        pendingShell.denial === record.item.denial
+      ) {
+        events.push(pendingShell)
+        matchedShell = true
+      }
+      pendingShell = undefined
       if (record.type === "meta") {
         meta = record.meta
         continue
@@ -199,6 +222,18 @@ export async function loadSession(path: string): Promise<LoadedSession | undefin
       if (record.type === "item") {
         if (record.item.type === "compaction") {
           items = [record.item]
+          continue
+        }
+        if (record.item.type === "direct_shell") {
+          redos.length = 0
+          if (!matchedShell || seenMessageIds.has(record.item.messageId)) return undefined
+          seenMessageIds.add(record.item.messageId)
+          checkpoints.push({
+            messageId: record.item.messageId,
+            input: { text: record.item.input, images: [] },
+            before: [...items],
+          })
+          items.push(record.item)
           continue
         }
         if (record.item.type === "user_message") {
@@ -220,6 +255,10 @@ export async function loadSession(path: string): Promise<LoadedSession | undefin
       const event = record.event
       if (event.type === "user_message" && isMessageId(event.messageId)) {
         pendingUserMessage = event
+        continue
+      }
+      if (event.type === "shell_finished") {
+        pendingShell = event
         continue
       }
       if (event.type === "user_message") redos.length = 0

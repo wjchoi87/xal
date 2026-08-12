@@ -8,6 +8,7 @@ import {
   TextAttributes,
   type PasteEvent,
   type RenderContext,
+  type TextRenderable,
 } from "@opentui/core"
 import { appInfo } from "../../../app-info"
 import { describeError } from "../../../lib/error"
@@ -85,6 +86,7 @@ async function linuxClipboardImage(): Promise<Bun.Image | undefined> {
 export class Composer {
   readonly view: BoxRenderable
   private readonly input: TextareaRenderable
+  private readonly prompt: TextRenderable
   private readonly pastedContentType: number
   private readonly pastedImageType: number
   private readonly skillHighlightType: number
@@ -112,7 +114,8 @@ export class Composer {
       ...border(COLORS.border),
     })
 
-    this.view.add(label(ctx, { content: "❯", width: 2, attributes: TextAttributes.BOLD, color: COLORS.accent }))
+    this.prompt = label(ctx, { content: "❯", width: 2, attributes: TextAttributes.BOLD, color: COLORS.accent })
+    this.view.add(this.prompt)
     this.syntaxStyle = SyntaxStyle.create()
     this.imageStyleId = this.syntaxStyle.registerStyle("composer-image", { fg: resolveColor(COLORS.accent) })
     this.skillStyleId = this.syntaxStyle.registerStyle("composer-skill", {
@@ -120,7 +123,7 @@ export class Composer {
       bold: true,
     })
     this.input = new TextareaRenderable(ctx, {
-      placeholder: `Ask ${appInfo.name} anything · / commands · $ skills · ? help`,
+      placeholder: `Ask ${appInfo.name} anything · ! shell · / commands · $ skills · ? help`,
       height: 1,
       flexGrow: 1,
       flexShrink: 1,
@@ -256,6 +259,7 @@ export class Composer {
       typeId: this.pastedImageType,
       data: { kind: "pasted-image", number, image } satisfies PastedImage,
     })
+    this.change()
   }
 
   reflow(): void {
@@ -283,6 +287,13 @@ export class Composer {
   }
 
   private change(): void {
+    const shell =
+      this.input.extmarks.getAllForTypeId(this.pastedImageType).length === 0 &&
+      this.input.plainText.trimStart().startsWith("!")
+    const borderColor = resolveColor(shell ? COLORS.accent : COLORS.border)
+    this.prompt.content = shell ? "$" : "❯"
+    this.view.borderColor = borderColor
+    this.view.focusedBorderColor = borderColor
     this.syncSkillHighlights()
     this.reflow()
     this.notifyCompletion()

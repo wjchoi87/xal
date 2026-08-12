@@ -36,6 +36,9 @@ export function runAgentTurn(
         case "assistant_message":
           response = event.text
           break
+        case "shell_finished":
+          response = event.output
+          break
         case "turn_ended":
           if (event.output !== undefined) response = event.output
           finish({ status: "completed", usage: event.usage, context: event.context })

@@ -60,6 +60,7 @@ export interface ToolBlock {
   denial: DenialCause | undefined
   output: string
   elapsed: string | undefined
+  expanded: boolean
 }
 
 export type StreamBlock = TextBlock | ReasoningBlock

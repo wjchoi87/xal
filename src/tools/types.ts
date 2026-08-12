@@ -66,6 +66,7 @@ interface ToolContract extends ToolDefinition {
   sandboxed?(args: Record<string, unknown>, ctx: ToolCallContext): boolean
   concurrency?(args: Record<string, unknown>, ctx: ToolCallContext): ToolConcurrency
   permission?(args: Record<string, unknown>, ctx: ToolCallContext): ToolPermission
+  directPolicy?(args: Record<string, unknown>, ctx: ToolCallContext): "allow" | "ask" | undefined
 }
 
 export interface ToolExecutionContext extends ToolCallContext {

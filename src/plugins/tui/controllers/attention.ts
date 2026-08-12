@@ -83,6 +83,7 @@ export class AttentionController {
       case "elicitation_resolved":
       case "tool_started":
       case "tool_updated":
+      case "shell_finished":
       case "tool_finished":
       case "compacted":
       case "error":

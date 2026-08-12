@@ -156,6 +156,19 @@ export class AgentEventController {
       case "tool_updated":
         live.update(event.callId, event.text)
         break
+      case "shell_finished":
+        this.screen.dismissApproval()
+        scrollback.append({
+          kind: "tool",
+          tool: "bash",
+          title: event.command,
+          readOnly: event.readOnly,
+          denial: event.denial,
+          output: event.output,
+          elapsed: live.finish(event.callId),
+          expanded: true,
+        })
+        break
       case "tool_finished":
         this.screen.dismissApproval()
         this.screen.dismissElicitation()
@@ -167,6 +180,7 @@ export class AgentEventController {
           denial: event.denial,
           output: event.output,
           elapsed: live.finish(event.callId),
+          expanded: false,
         })
         break
       case "compacted":

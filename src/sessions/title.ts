@@ -31,6 +31,7 @@ export function titleFromEvents(events: AgentEvent[]): string | undefined {
   for (const event of events) {
     if (event.type === "session_title_changed") recorded = event.title
     if (event.type === "user_message" && !generated) generated = titleFromInput(event.text, event.imageCount)
+    if (event.type === "shell_finished" && !generated) generated = titleFromInput(event.input, 0)
   }
 
   return recorded ?? generated

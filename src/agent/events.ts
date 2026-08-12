@@ -27,6 +27,16 @@ export interface SessionStartedEvent {
   mode: PermissionMode
 }
 
+export interface DirectShellResult {
+  messageId: string
+  callId: string
+  input: string
+  command: string
+  output: string
+  readOnly: boolean
+  denial?: DenialCause
+}
+
 export type AgentEvent =
   | ToolEvent
   | SessionStartedEvent
@@ -68,6 +78,7 @@ export type AgentEvent =
   | { type: "elicitation_resolved"; callId: string }
   | { type: "tool_started"; callId: string; tool: string; title: string; readOnly: boolean }
   | { type: "tool_updated"; callId: string; text: string }
+  | ({ type: "shell_finished" } & DirectShellResult)
   | {
       type: "tool_finished"
       callId: string

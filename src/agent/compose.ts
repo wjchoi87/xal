@@ -110,6 +110,7 @@ function lastState(loaded: LoadedSession): {
       case "elicitation_resolved":
       case "tool_started":
       case "tool_updated":
+      case "shell_finished":
       case "tool_finished":
       case "task_list_updated":
       case "compacted":

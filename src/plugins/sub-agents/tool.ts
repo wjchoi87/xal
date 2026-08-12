@@ -97,6 +97,14 @@ function activity(
       record(`${failed ? "x" : "✓"} ${event.tool}\n`)
       break
     }
+    case "shell_finished": {
+      state.toolCalls.add(event.callId)
+      const failed = event.denial !== undefined || toolFailed(event.output)
+      state.activity = `${failed ? "Failed" : "Finished"} ${toolActivity("bash", event.command)}`
+      if (!state.updatedCalls.has(event.callId) && event.output) record(`${event.output}\n`)
+      record(`${failed ? "x" : "✓"} bash\n`)
+      break
+    }
     case "approval_requested":
       state.activity = `Denied approval for ${event.tool}`
       record(`\n${event.tool} requires unavailable approval and was denied.\n`)
