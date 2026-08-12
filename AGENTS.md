@@ -96,6 +96,7 @@ sequenceDiagram
 - Everything must have a consumer today; delete what nothing uses.
 - Leave every file you touch consistent with the rules and its neighbors.
 - Do not update AGENTS.md unless user specificly asks for.
+- Do not overtest, only critical paths need testing
 
 ## Linting & Formatting
 

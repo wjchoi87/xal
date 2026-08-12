@@ -235,6 +235,7 @@ function recordedContext(events: AgentEvent[]): number | undefined {
 
 export class AgentSession {
   private sessionId: string = crypto.randomUUID()
+  private permissionSessionKey = {}
   private title: string | undefined
   private startedAt = Date.now()
   private items: HistoryItem[] = []
@@ -376,6 +377,7 @@ export class AgentSession {
   reset(): boolean {
     if (this.currentState !== "idle") return false
     this.sessionId = crypto.randomUUID()
+    this.permissionSessionKey = {}
     this.title = undefined
     this.outputDirectory = toolOutputDirectory(projectSessionsDir(this.cwd), this.sessionId)
     this.startedAt = Date.now()
@@ -398,6 +400,7 @@ export class AgentSession {
     if (this.currentState !== "idle") return false
     const { meta } = target.session
     this.sessionId = meta.id
+    this.permissionSessionKey = {}
     this.title = target.session.title ? redactText(target.session.title) : undefined
     this.outputDirectory = toolOutputDirectory(dirname(target.path), this.sessionId)
     this.cwd = resolve(target.cwd)
@@ -896,7 +899,7 @@ export class AgentSession {
     if (!resolve) return
     this.pendingApproval = undefined
     if (result.pattern && result.scope && result.scope !== "once") {
-      rememberRule(result.pattern, result.scope).catch((error) => {
+      rememberRule(this.permissionSessionKey, this.cwd, result.pattern, result.scope).catch((error) => {
         this.emit({ type: "error", message: describeError(error) })
       })
     }
@@ -1515,6 +1518,8 @@ export class AgentSession {
     const sandboxed = tool.sandboxed?.(call.args, { cwd: this.cwd }) ?? false
     const permission = tool.permission?.(call.args, { cwd: this.cwd })
     const decision = await evaluatePolicy({
+      sessionKey: this.permissionSessionKey,
+      cwd: this.cwd,
       tool: call.name,
       title,
       args: call.args,

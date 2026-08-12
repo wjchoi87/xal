@@ -31,7 +31,7 @@ const plugin: Plugin = {
     })
   },
   async bootstrap() {
-    await loadRememberedRules()
+    await loadRememberedRules(process.cwd())
   },
 }
 

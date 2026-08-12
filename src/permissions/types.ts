@@ -5,6 +5,8 @@ export type PermissionScope = "once" | "session" | "always"
 export type PolicyDecision = "allow" | "deny" | "ask"
 
 export interface PermissionRequest {
+  sessionKey: object
+  cwd: string
   tool: string
   title: string
   args: Record<string, unknown>

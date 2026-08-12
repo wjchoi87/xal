@@ -6,13 +6,14 @@
   "private": true,
   "scripts": {
     "dev": "bun run --watch src/index.ts",
+    "test": "bun test --isolate",
     "release:local": "bun build --compile src/index.ts --outfile dist/tack && install -d \"$HOME/.local/bin\" && install -m 755 dist/tack \"$HOME/.local/bin/tack\"",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --check .",
     "format:fix": "prettier --write .",
-    "checks": "bun run typecheck && bun run lint && bun run format",
+    "checks": "bun run typecheck && bun run lint && bun run format && bun run test",
     "checks:fix": "bun run lint:fix && bun run format:fix && bun run checks"
   },
   "devDependencies": {

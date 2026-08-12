@@ -1,3 +1,4 @@
+import { resolve } from "node:path"
 import { loadProjectRules, saveProjectRule } from "./store"
 import type { PermissionRequest, PermissionRules, PermissionScope, PolicyDecision } from "./types"
 
@@ -14,13 +15,13 @@ const RULE = /^([^()]+?)(?:\((.*)\))?$/
 
 const defaults: Entry[] = []
 let config: Entry[] = []
-const project: Entry[] = []
-const session: Entry[] = []
+const project = new Map<string, Entry[]>()
+const session = new WeakMap<object, Map<string, Entry[]>>()
 let denies: Matcher[] = []
-let loaded: Promise<void> | undefined
+const loaded = new Map<string, Promise<void>>()
 
-function projectKey(): string {
-  return process.cwd()
+function projectKey(cwd: string): string {
+  return resolve(cwd)
 }
 
 function toRegExp(pattern: string): RegExp {
@@ -67,19 +68,41 @@ export function setUserRules(rules: PermissionRules): void {
   denies = toMatchers(rules.deny)
 }
 
-export async function loadRememberedRules(): Promise<void> {
-  loaded ??= loadProjectRules(projectKey()).then((patterns) => {
-    project.push(...toEntries(patterns, "allow"))
-  })
-  await loaded
+export async function loadRememberedRules(cwd: string): Promise<void> {
+  const key = projectKey(cwd)
+  const existing = loaded.get(key)
+  if (existing) {
+    await existing
+    return
+  }
+  const loading = loadProjectRules(key)
+    .then((patterns) => {
+      project.set(key, toEntries(patterns, "allow"))
+    })
+    .catch((error) => {
+      loaded.delete(key)
+      throw error
+    })
+  loaded.set(key, loading)
+  await loading
 }
 
-export function rememberRule(pattern: string, scope: PermissionScope): Promise<void> {
+export async function rememberRule(
+  sessionKey: object,
+  cwd: string,
+  pattern: string,
+  scope: PermissionScope,
+): Promise<void> {
   const entries = toEntries([pattern], "allow")
-  if (entries.length === 0) return Promise.resolve()
-  session.push(...entries)
-  if (scope !== "always") return Promise.resolve()
-  return saveProjectRule(projectKey(), pattern)
+  if (entries.length === 0 || scope === "once") return
+  const key = projectKey(cwd)
+  const workspaces = session.get(sessionKey) ?? new Map<string, Entry[]>()
+  workspaces.set(key, [...(workspaces.get(key) ?? []), ...entries])
+  session.set(sessionKey, workspaces)
+  if (scope !== "always") return
+  await saveProjectRule(key, pattern)
+  await loadRememberedRules(key)
+  project.set(key, [...(project.get(key) ?? []), ...entries])
 }
 
 export function isDenied(request: PermissionRequest): boolean {
@@ -87,7 +110,13 @@ export function isDenied(request: PermissionRequest): boolean {
 }
 
 export function matchRules(request: PermissionRequest): PolicyDecision | undefined {
-  const entries = [...defaults, ...config, ...project, ...session]
+  const key = projectKey(request.cwd)
+  const entries = [
+    ...defaults,
+    ...config,
+    ...(project.get(key) ?? []),
+    ...(session.get(request.sessionKey)?.get(key) ?? []),
+  ]
   for (let index = entries.length - 1; index >= 0; index--) {
     const entry = entries[index]!
     if (matches(entry, request)) return entry.decision

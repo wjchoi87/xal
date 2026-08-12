@@ -20,7 +20,7 @@ function underMode(decision: PolicyDecision, mode: PermissionMode): PolicyDecisi
 }
 
 export async function evaluatePolicy(request: PermissionRequest): Promise<PolicyDecision> {
-  await loadRememberedRules()
+  await loadRememberedRules(request.cwd)
 
   if (isDenied(request)) return "deny"
   if (request.mode === "plan" && !request.readOnly) return "deny"
