@@ -3,6 +3,7 @@ import type { Command } from "../../commands/types"
 import type { PluginContext } from "../types"
 
 interface TuiCommandActions {
+  config(): void
   terminal(): string[]
   quit(): void
 }
@@ -25,6 +26,15 @@ const terminalCommand: Command = {
   },
 }
 
+const configCommand: Command = {
+  name: "config",
+  describe: "configure persistent display preferences",
+  async run() {
+    if (!actions) throw new Error("tui is not running")
+    actions.config()
+  },
+}
+
 const quitCommand: Command = {
   name: "quit",
   describe: `exit ${appInfo.name}`,
@@ -35,6 +45,7 @@ const quitCommand: Command = {
 }
 
 export function registerTuiCommands(ctx: PluginContext): void {
+  ctx.registerCommand(configCommand)
   ctx.registerCommand(terminalCommand)
   ctx.registerCommand(quitCommand)
 }

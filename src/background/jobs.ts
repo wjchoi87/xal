@@ -1,7 +1,7 @@
 import { setTimeout as sleep } from "node:timers/promises"
 import { profileJobCreated, profileJobFinished } from "../profiler/profiler"
 import { createRedactedStream, redactText, type RedactedStream } from "../secrets/redactor"
-import { backgroundTasksChanged, listBackgroundTasks, subscribeBackgroundTasks } from "./registry"
+import { backgroundTasksChanged, listBackgroundTasks, removeBackgroundTask, subscribeBackgroundTasks } from "./registry"
 
 const MAX_PENDING_CHARS = 2_000_000
 const MAX_HISTORY_CHARS = 200_000
@@ -20,6 +20,7 @@ export interface BackgroundProcessJob extends BackgroundJobBase {
   pending: string
   dropped: boolean
   history: string
+  consumed: boolean
   waiters: Set<() => void>
 }
 
@@ -44,22 +45,13 @@ const redactors = new WeakMap<BackgroundJob, RedactedStream>()
 let nextId = 1
 let cleanupRegistered = false
 
-function collected(job: BackgroundJob): boolean {
-  switch (job.kind) {
-    case "process":
-      return !job.pending
-    case "agent":
-      return job.consumed
-  }
-}
-
 function registerCleanup(): void {
   if (cleanupRegistered) return
   cleanupRegistered = true
   subscribeBackgroundTasks(() => {
     const listed = new Set(listBackgroundTasks().map((task) => task.id))
     for (const [id, job] of jobs) {
-      if (!listed.has(id) && job.done && collected(job)) jobs.delete(id)
+      if (!listed.has(id) && job.done && job.consumed) jobs.delete(id)
     }
   })
 }
@@ -94,6 +86,7 @@ export function createProcessJob(prefix: string, stop: () => void): BackgroundPr
     pending: "",
     dropped: false,
     history: "",
+    consumed: false,
     waiters: new Set(),
   }
   registerJob(job, created.complete)
@@ -164,7 +157,7 @@ function completeJob(job: BackgroundJob, detail: string): void {
   profileJobFinished(job.id, job.detail)
   completions.delete(job)
   complete()
-  backgroundTasksChanged()
+  removeBackgroundTask(job.id)
 }
 
 export function finishProcessJob(job: BackgroundProcessJob, detail: string): void {
@@ -191,6 +184,7 @@ export function readProcessOutput(job: BackgroundProcessJob): { text: string; dr
   const { pending, dropped } = job
   job.pending = ""
   job.dropped = false
+  if (job.done) job.consumed = true
   backgroundTasksChanged()
   return { text: pending, dropped }
 }

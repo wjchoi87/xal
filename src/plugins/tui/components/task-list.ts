@@ -27,6 +27,7 @@ export class TaskList {
   readonly view: BoxRenderable
   private readonly progress: ReturnType<typeof label>
   private rows: BoxRenderable[] = []
+  private shown = true
 
   constructor(
     private readonly ctx: RenderContext,
@@ -41,7 +42,7 @@ export class TaskList {
   }
 
   get height(): number {
-    return this.rows.length === 0 ? 0 : this.rows.length + 2
+    return this.view.visible ? this.rows.length + 2 : 0
   }
 
   set(tasks: TrackedTask[]): void {
@@ -53,9 +54,20 @@ export class TaskList {
     for (const task of this.rows) this.view.add(task)
     const completed = tasks.filter((task) => task.status === "completed").length
     this.progress.content = `${completed}/${tasks.length} completed`
-    this.view.visible = tasks.length > 0
-    this.view.marginTop = tasks.length > 0 ? 1 : 0
+    this.syncVisibility()
     this.onChange()
+  }
+
+  toggleVisibility(): boolean {
+    this.shown = !this.shown
+    this.syncVisibility()
+    this.onChange()
+    return this.shown
+  }
+
+  private syncVisibility(): void {
+    this.view.visible = this.shown && this.rows.length > 0
+    this.view.marginTop = this.view.visible ? 1 : 0
   }
 
   private taskRow(task: TrackedTask): BoxRenderable {

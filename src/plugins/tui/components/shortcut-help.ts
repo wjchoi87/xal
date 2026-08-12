@@ -17,7 +17,7 @@ const SHORTCUTS = [
   { key: "↑ / ↓", description: "browse history" },
   { key: "Shift+Tab", description: "change mode" },
   { key: "Ctrl+O", description: "toggle details" },
-  { key: "Ctrl+T", description: "toggle thinking" },
+  { key: "Ctrl+T", description: "toggle todos" },
   { key: "Ctrl+C", description: "clear / interrupt / quit" },
 ]
 

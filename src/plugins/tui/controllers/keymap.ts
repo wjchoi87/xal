@@ -76,8 +76,8 @@ export function bindKeys(renderer: CliRenderer, deps: KeymapDeps): void {
     }
     if (key.ctrl && key.name === "t") {
       key.preventDefault()
-      const visible = screen.scrollback.toggleReasoning()
-      screen.statusBar.setNotice(`Thinking output ${visible ? "shown" : "hidden"}`)
+      const visible = screen.taskList.toggleVisibility()
+      screen.statusBar.setNotice(`Todos ${visible ? "shown" : "hidden"}`)
       const timer = setTimeout(() => screen.statusBar.clearNotice(), 2_000)
       timer.unref()
       return
@@ -108,6 +108,11 @@ export function bindKeys(renderer: CliRenderer, deps: KeymapDeps): void {
       key.preventDefault()
       lastEscape = 0
       screen.openHistory()
+      return
+    }
+    if (screen.config.handleKey(key.name)) {
+      key.preventDefault()
+      screen.syncFooter()
       return
     }
     if (screen.permission.handleKey(key.name)) {

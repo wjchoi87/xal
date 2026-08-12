@@ -19,6 +19,7 @@ import { bindKeys } from "./controllers/keymap"
 import { setTuiCommandActions } from "./commands"
 import { COMPOSER_ROWS } from "./components/composer"
 import { STATUS_ROWS } from "./components/status-bar"
+import type { TuiConfig } from "./config"
 import { editInExternalEditor, externalEditorCommand } from "./external-editor"
 import { cursorRow } from "./lib/cursor"
 import { MessageHistory } from "./message-history"
@@ -42,7 +43,7 @@ function comparableEditorText(text: string): string {
   return text.replace(/\r\n?/g, "\n").replace(/\n$/, "")
 }
 
-export async function startTui(events: EventService, options: UiOptions = {}): Promise<void> {
+export async function startTui(events: EventService, config: TuiConfig, options: UiOptions = {}): Promise<void> {
   const root = await findProjectRoot(process.cwd())
   const [{ session, model }, history] = await Promise.all([
     createSession({ persist: true, interactive: true }),
@@ -84,13 +85,8 @@ export async function startTui(events: EventService, options: UiOptions = {}): P
     renderer.screenMode = "main-screen"
     renderer.destroy()
   }
-  const resetCommands = setTuiCommandActions({
-    terminal: () => describeTerminal(renderer.capabilities),
-    quit,
-  })
-
   const input = new InputQueue((submission) => session.send(submission))
-  const screen = new Screen(renderer, session, startRow, history, {
+  const screen = new Screen(renderer, session, startRow, history, config, {
     submit: (submission) => input.submit(submission),
     approve: (scope, pattern) => session.approve(scope, pattern),
     deny: () => session.deny(),
@@ -103,6 +99,11 @@ export async function startTui(events: EventService, options: UiOptions = {}): P
     },
   })
   renderer.root.add(screen.view)
+  const resetCommands = setTuiCommandActions({
+    config: () => screen.openConfig(),
+    terminal: () => describeTerminal(renderer.capabilities),
+    quit,
+  })
 
   const agentEvents = new AgentEventController(screen, session)
   session.subscribe((event) => agentEvents.handle(event))

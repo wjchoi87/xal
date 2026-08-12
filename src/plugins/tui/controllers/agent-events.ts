@@ -177,12 +177,15 @@ export class AgentEventController {
         statusBar.resetUsage()
         break
       case "turn_interrupted":
+        statusBar.setTurnOutcome("interrupted")
         scrollback.append({ kind: "info", text: "Interrupted" })
         break
       case "turn_ended":
+        statusBar.setTurnOutcome("completed")
         statusBar.setUsage(event.context)
         break
       case "turn_failed":
+        statusBar.setTurnOutcome("failed")
         if (event.context) statusBar.setUsage(event.context)
         scrollback.append({ kind: "error", text: event.message })
         break

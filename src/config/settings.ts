@@ -33,7 +33,7 @@ export async function loadSettings(): Promise<Settings> {
 export async function saveSettings(patch: Partial<Settings>): Promise<void> {
   const path = userSettingsPath()
   const [user, project] = await Promise.all([readSettingsFile(path), readProjectSettings()])
-  const nextUser = { ...user, ...patch }
+  const nextUser = mergeSettings(user, { ...patch })
   const next = parseSettings(mergeSettings(nextUser, project))
   await writeSecureJson(path, nextUser)
   current = next

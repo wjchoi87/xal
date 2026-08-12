@@ -10,7 +10,7 @@ import type { AgentState } from "../../../agent/events"
 import type { PermissionMode } from "../../../permissions/types"
 import { occupiedContext, type ThinkingEffort, type Usage } from "../../../providers/types"
 import { redactText } from "../../../secrets/redactor"
-import { formatTokens } from "../lib/format"
+import { formatDuration, formatTokens } from "../lib/format"
 import { label, row } from "../lib/renderables"
 import { Spinner } from "../lib/spinner"
 import { COLORS } from "../theme/colors"
@@ -19,6 +19,7 @@ import { muted, paint } from "../theme/styles"
 export const STATUS_ROWS = 1
 
 const WIDE = 64
+type TurnOutcome = "completed" | "failed" | "interrupted"
 
 function modeColor(mode: PermissionMode): RGBA {
   if (mode === "plan") return COLORS.success
@@ -38,6 +39,9 @@ export class StatusBar {
   private notice: string | undefined
   private contextTokens: number | undefined
   private contextWindow: number | undefined
+  private turnStartedAt: number | undefined
+  private turnElapsed: string | undefined
+  private turnOutcome: TurnOutcome | undefined
   private model: string
 
   constructor(
@@ -88,6 +92,15 @@ export class StatusBar {
   }
 
   setState(state: AgentState): void {
+    if (this.state === "idle" && state !== "idle") {
+      this.turnStartedAt = Date.now()
+      this.turnElapsed = undefined
+      this.turnOutcome = undefined
+    }
+    if (this.state !== "idle" && state === "idle") {
+      this.turnElapsed = this.turnStartedAt === undefined ? undefined : formatDuration(Date.now() - this.turnStartedAt)
+      this.turnStartedAt = undefined
+    }
     this.state = state
     this.loading = undefined
     this.notice = undefined
@@ -126,6 +139,17 @@ export class StatusBar {
   resetUsage(): void {
     this.contextTokens = undefined
     this.renderMeta()
+  }
+
+  resetTurnElapsed(): void {
+    this.turnStartedAt = undefined
+    this.turnElapsed = undefined
+    this.turnOutcome = undefined
+    this.render()
+  }
+
+  setTurnOutcome(outcome: TurnOutcome): void {
+    this.turnOutcome = outcome
   }
 
   setUsage(context: Usage | undefined): void {
@@ -175,6 +199,15 @@ export class StatusBar {
       const activity =
         this.state === "compacting" ? "Compacting context" : this.state === "running_hook" ? "Running hooks" : "Working"
       return new StyledText([paint(COLORS.agent, this.spinner.glyph), muted(` ${activity}${hint}`)])
+    }
+    if (this.turnElapsed && this.turnOutcome === "completed") {
+      return new StyledText([paint(COLORS.success, "✓"), muted(` Finished in ${this.turnElapsed}`)])
+    }
+    if (this.turnElapsed && this.turnOutcome === "failed") {
+      return new StyledText([paint(COLORS.error, "x"), muted(` Failed after ${this.turnElapsed}`)])
+    }
+    if (this.turnElapsed && this.turnOutcome === "interrupted") {
+      return new StyledText([paint(COLORS.warning, "!"), muted(` Interrupted after ${this.turnElapsed}`)])
     }
     return new StyledText([muted("")])
   }

@@ -13,6 +13,7 @@ import { AgentSummary } from "./components/agent-summary"
 import { AgentViewer } from "./components/agent-viewer"
 import { BackgroundTasks } from "./components/background-tasks"
 import { Composer } from "./components/composer"
+import { ConfigPopover } from "./components/config-popover"
 import { CompletionPalette, PALETTE_CHROME_ROWS } from "./components/completion-palette"
 import { ElicitationPopover, type ElicitationPopoverActions } from "./components/elicitation-popover"
 import { LiveTools } from "./components/live-tools"
@@ -23,6 +24,7 @@ import { SecretInput } from "./components/secret-input"
 import { ShortcutHelp } from "./components/shortcut-help"
 import { StatusBar, STATUS_ROWS } from "./components/status-bar"
 import { TaskList } from "./components/task-list"
+import { saveTuiConfig, type TuiConfig } from "./config"
 import { column } from "./lib/renderables"
 import type { MessageHistory } from "./message-history"
 import { Scrollback } from "./scrollback/scrollback"
@@ -46,6 +48,7 @@ export class Screen {
   readonly elicitation: ElicitationPopover
   readonly secret: SecretInput
   readonly picker: Picker
+  readonly config: ConfigPopover
   readonly palette: CompletionPalette
   readonly composer: Composer
   readonly statusBar: StatusBar
@@ -65,10 +68,11 @@ export class Screen {
     private readonly session: AgentSession,
     startRow: number,
     private readonly history: MessageHistory,
+    preferences: TuiConfig,
     actions: ScreenActions,
   ) {
     this.cwd = redactText(session.currentWorkingDirectory)
-    this.scrollback = new Scrollback(renderer, startRow, (rows) => this.reclaim(rows))
+    this.scrollback = new Scrollback(renderer, startRow, (rows) => this.reclaim(rows), preferences)
     this.view = column(renderer, { width: "100%", height: "100%", justifyContent: "flex-end" })
     this.agentSummary = new AgentSummary(renderer, () => {
       if (this.agentSummary.height > 0) this.agentActivityDirty = true
@@ -82,6 +86,18 @@ export class Screen {
     this.elicitation = new ElicitationPopover(renderer, actions, () => this.syncFooter())
     this.secret = new SecretInput(renderer, () => this.syncFooter())
     this.picker = new Picker(renderer, () => this.syncFooter())
+    this.config = new ConfigPopover(renderer, preferences, {
+      change: async (config, key) => {
+        await saveTuiConfig(config)
+        if (key === "showOutputs") {
+          this.scrollback.setExpanded(config.showOutputs)
+          return
+        }
+        this.scrollback.setReasoningVisible(config.showThinking)
+      },
+      changed: () => this.syncFooter(),
+      error: (message) => this.scrollback.append({ kind: "error", text: message }),
+    })
     this.palette = new CompletionPalette(
       renderer,
       {
@@ -140,6 +156,7 @@ export class Screen {
     this.view.add(this.elicitation.view)
     this.view.add(this.secret.view)
     this.view.add(this.picker.view)
+    this.view.add(this.config.view)
     this.view.add(this.agentViewer.view)
     this.view.add(this.composer.view)
     this.view.add(this.shortcutHelp.view)
@@ -150,10 +167,17 @@ export class Screen {
   }
 
   get overlayVisible(): boolean {
-    return this.permission.visible || this.elicitation.visible || this.secret.visible || this.picker.visible
+    return (
+      this.permission.visible ||
+      this.elicitation.visible ||
+      this.secret.visible ||
+      this.picker.visible ||
+      this.config.visible
+    )
   }
 
   requestApproval(suggestion: string | undefined): void {
+    this.config.hide()
     this.picker.hide()
     this.permission.show(suggestion)
     this.syncFooter()
@@ -165,6 +189,7 @@ export class Screen {
   }
 
   requestElicitation(requestId: string, questions: ElicitationQuestion[]): void {
+    this.config.hide()
     this.picker.hide()
     this.elicitation.show(requestId, questions)
     this.syncFooter()
@@ -188,6 +213,7 @@ export class Screen {
     this.statusBar.setThinking(thinking)
     this.statusBar.setMode(mode)
     this.statusBar.resetUsage()
+    this.statusBar.resetTurnElapsed()
     this.taskList.set([])
     this.agentActivityDirty = false
     this.agentReplayPending = false
@@ -207,6 +233,7 @@ export class Screen {
   }
 
   async select<T>(request: SelectRequest<T>): Promise<T | undefined> {
+    this.config.hide()
     const options = request.options.map((option) => ({
       ...option,
       label: redactText(option.label),
@@ -220,6 +247,7 @@ export class Screen {
   }
 
   async askSecret(question: string): Promise<string | undefined> {
+    this.config.hide()
     this.picker.hide()
     const value = await this.secret.show(redactText(question))
     if (value !== undefined) protectSecretValue(value)
@@ -232,8 +260,14 @@ export class Screen {
     this.syncFooter()
   }
 
+  openConfig(): void {
+    this.picker.hide()
+    this.config.show()
+    this.syncFooter()
+  }
+
   settleAgentActivity(): void {
-    if (!this.agentActivityDirty || !this.tasks.hasAgents) return
+    if (!this.agentActivityDirty) return
     this.agentActivityDirty = false
     if (this.agentViewer.visible) {
       this.agentReplayPending = true
@@ -277,7 +311,9 @@ export class Screen {
         ? this.elicitation.height
         : this.secret.visible
           ? this.secret.height
-          : this.picker.height
+          : this.picker.visible
+            ? this.picker.height
+            : this.config.height
     if (this.agentViewer.visible) {
       this.palette.hide()
       this.reserved = 0

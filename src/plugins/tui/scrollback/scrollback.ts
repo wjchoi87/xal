@@ -1,5 +1,6 @@
 import type { CliRenderer, ScrollbackSurface, TextRenderable } from "@opentui/core"
 import { createRedactedStream, redactText, type RedactedStream } from "../../../secrets/redactor"
+import type { TuiConfig } from "../config"
 import type { Block, StreamBlock, StreamKind } from "./blocks"
 import { contentWidth, renderBlock, streamContent, streamView } from "./render"
 
@@ -42,8 +43,8 @@ function redactBlock(block: Block): Block {
 export class Scrollback {
   private readonly blocks: Block[] = []
   private stream: Stream | undefined
-  private expanded = false
-  private reasoningVisible = true
+  private expanded: boolean
+  private reasoningVisible: boolean
   private committed = 0
   private origin: number
 
@@ -51,8 +52,11 @@ export class Scrollback {
     private readonly renderer: CliRenderer,
     startRow: number,
     private readonly onCommit: (rows: number) => void,
+    config: TuiConfig,
   ) {
     this.origin = startRow
+    this.expanded = config.showOutputs
+    this.reasoningVisible = config.showThinking
   }
 
   get rows(): number {
@@ -97,14 +101,19 @@ export class Scrollback {
   }
 
   toggleExpanded(): void {
-    this.expanded = !this.expanded
+    this.setExpanded(!this.expanded)
+  }
+
+  setExpanded(expanded: boolean): void {
+    if (this.expanded === expanded) return
+    this.expanded = expanded
     this.replay()
   }
 
-  toggleReasoning(): boolean {
-    this.reasoningVisible = !this.reasoningVisible
+  setReasoningVisible(visible: boolean): void {
+    if (this.reasoningVisible === visible) return
+    this.reasoningVisible = visible
     this.replay()
-    return this.reasoningVisible
   }
 
   replay(): void {

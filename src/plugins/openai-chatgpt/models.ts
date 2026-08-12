@@ -3,7 +3,7 @@ import { appEnvVar } from "../../app-info"
 import { cacheDir } from "../../config/paths"
 import { readJsonFile, writeSecureJson } from "../../lib/fs"
 import { describeError } from "../../lib/error"
-import { asNumber, asString, asStringArray, isRecord } from "../../lib/json"
+import { asBoolean, asNumber, asString, asStringArray, isRecord } from "../../lib/json"
 import { errorDetail, httpError } from "../../providers/transport"
 import {
   isThinkingEffort,
@@ -17,14 +17,20 @@ import { chatGptFetch } from "./api"
 
 const MODEL_CATALOG_COMPATIBILITY_VERSION = "1.0.0"
 const DEFAULT_CONTEXT_WINDOW = 260_000
+const FAST_MODEL_SUFFIX = "-fast"
 
-const BUNDLED_MODELS: ModelInfo[] = [
+interface ChatGptModel extends ModelInfo {
+  supportsFast: boolean
+}
+
+const BUNDLED_MODELS: ChatGptModel[] = [
   {
     id: "gpt-5.6-luna",
     name: "GPT-5.6-Luna",
     contextWindow: 272_000,
     inputModalities: ["text", "image"],
     thinking: { options: ["low", "medium", "high", "xhigh", "max"], default: "medium" },
+    supportsFast: true,
   },
   {
     id: "gpt-5.6-sol",
@@ -32,6 +38,7 @@ const BUNDLED_MODELS: ModelInfo[] = [
     contextWindow: 272_000,
     inputModalities: ["text", "image"],
     thinking: { options: ["low", "medium", "high", "xhigh", "max"], default: "low" },
+    supportsFast: true,
   },
   {
     id: "gpt-5.6-terra",
@@ -39,6 +46,7 @@ const BUNDLED_MODELS: ModelInfo[] = [
     contextWindow: 272_000,
     inputModalities: ["text", "image"],
     thinking: { options: ["low", "medium", "high", "xhigh", "max"], default: "medium" },
+    supportsFast: true,
   },
   {
     id: "gpt-5.5",
@@ -46,6 +54,7 @@ const BUNDLED_MODELS: ModelInfo[] = [
     contextWindow: 272_000,
     inputModalities: ["text", "image"],
     thinking: { options: ["low", "medium", "high", "xhigh"], default: "medium" },
+    supportsFast: true,
   },
   {
     id: "gpt-5.4",
@@ -53,6 +62,7 @@ const BUNDLED_MODELS: ModelInfo[] = [
     contextWindow: 272_000,
     inputModalities: ["text", "image"],
     thinking: { options: ["low", "medium", "high", "xhigh"], default: "medium" },
+    supportsFast: true,
   },
   {
     id: "gpt-5.4-mini",
@@ -60,6 +70,7 @@ const BUNDLED_MODELS: ModelInfo[] = [
     contextWindow: 272_000,
     inputModalities: ["text", "image"],
     thinking: { options: ["low", "medium", "high", "xhigh"], default: "medium" },
+    supportsFast: false,
   },
   {
     id: "gpt-5.3-codex-spark",
@@ -67,6 +78,7 @@ const BUNDLED_MODELS: ModelInfo[] = [
     contextWindow: 128_000,
     inputModalities: ["text"],
     thinking: { options: ["low", "medium", "high", "xhigh"], default: "high" },
+    supportsFast: false,
   },
 ]
 
@@ -108,7 +120,13 @@ function positiveInteger(raw: unknown): number | undefined {
   return value !== undefined && Number.isInteger(value) && value > 0 ? value : undefined
 }
 
-function parseRuntimeModel(raw: unknown): { model: ModelInfo; priority: number } | undefined {
+function runtimeSupportsFast(raw: Record<string, unknown>): boolean {
+  if (asStringArray(raw.additional_speed_tiers).includes("fast")) return true
+  if (!Array.isArray(raw.service_tiers)) return false
+  return raw.service_tiers.some((entry) => isRecord(entry) && asString(entry.id) === "priority")
+}
+
+function parseRuntimeModel(raw: unknown): { model: ChatGptModel; priority: number } | undefined {
   if (!isRecord(raw)) throw new Error("ChatGPT models response contained an invalid model")
   if (raw.visibility !== "list") return undefined
   const id = asString(raw.slug)?.trim()
@@ -121,12 +139,13 @@ function parseRuntimeModel(raw: unknown): { model: ModelInfo; priority: number }
       contextWindow: positiveInteger(raw.context_window) ?? positiveInteger(raw.max_context_window),
       inputModalities: inputModalities(raw.input_modalities),
       thinking: runtimeThinking(raw.supported_reasoning_levels, raw.default_reasoning_level),
+      supportsFast: runtimeSupportsFast(raw),
     },
     priority: asNumber(raw.priority) ?? Number.MAX_SAFE_INTEGER,
   }
 }
 
-async function discoverModels(): Promise<ModelInfo[]> {
+async function discoverModels(): Promise<ChatGptModel[]> {
   const response = await chatGptFetch(`/models?client_version=${MODEL_CATALOG_COMPATIBILITY_VERSION}`, {
     signal: AbortSignal.timeout(5_000),
   })
@@ -153,25 +172,27 @@ function parseCachedThinking(raw: unknown): ThinkingOptions | undefined {
   return thinkingOptions(options, raw.default)
 }
 
-function parseCachedModel(raw: unknown): ModelInfo | undefined {
+function parseCachedModel(raw: unknown): ChatGptModel | undefined {
   if (!isRecord(raw)) return undefined
   const id = asString(raw.id)?.trim()
   const name = asString(raw.name)?.trim()
-  if (!id || !name) return undefined
+  const supportsFast = asBoolean(raw.supportsFast)
+  if (!id || !name || supportsFast === undefined) return undefined
   return {
     id,
     name,
     contextWindow: positiveInteger(raw.contextWindow),
     inputModalities: inputModalities(raw.inputModalities),
     thinking: parseCachedThinking(raw.thinking),
+    supportsFast,
   }
 }
 
-async function readCache(): Promise<ModelInfo[] | undefined> {
+async function readCache(): Promise<ChatGptModel[] | undefined> {
   const raw = await readJsonFile(cachePath())
   if (raw === undefined) return undefined
   if (!isRecord(raw) || !Array.isArray(raw.models)) throw new Error(`${cachePath()} is malformed — fix or delete it`)
-  const models: ModelInfo[] = []
+  const models: ChatGptModel[] = []
   for (const entry of raw.models) {
     const model = parseCachedModel(entry)
     if (!model) throw new Error(`${cachePath()} is malformed — fix or delete it`)
@@ -180,7 +201,7 @@ async function readCache(): Promise<ModelInfo[] | undefined> {
   return models.length > 0 ? models : undefined
 }
 
-function capped(models: ModelInfo[]): ModelInfo[] {
+function capped(models: ChatGptModel[]): ChatGptModel[] {
   return models.map((model) => ({
     ...model,
     contextWindow:
@@ -188,15 +209,21 @@ function capped(models: ModelInfo[]): ModelInfo[] {
   }))
 }
 
+function withFastVariants(models: ChatGptModel[]): ModelInfo[] {
+  return models.flatMap(({ supportsFast, ...model }) =>
+    supportsFast ? [model, { ...model, id: `${model.id}${FAST_MODEL_SUFFIX}`, name: `${model.name} - fast` }] : [model],
+  )
+}
+
 async function refreshModels(): Promise<ModelCatalog> {
   try {
     const models = await discoverModels()
     try {
       await writeSecureJson(cachePath(), { models })
-      return { models: capped(models), source: "runtime" }
+      return { models: withFastVariants(capped(models)), source: "runtime" }
     } catch (error) {
       return {
-        models: capped(models),
+        models: withFastVariants(capped(models)),
         source: "runtime",
         warning: `models were discovered, but the cache could not be updated: ${describeError(error)}`,
       }
@@ -206,20 +233,20 @@ async function refreshModels(): Promise<ModelCatalog> {
       const cached = await readCache()
       if (cached) {
         return {
-          models: capped(cached),
+          models: withFastVariants(capped(cached)),
           source: "cache",
           warning: `live discovery failed: ${describeError(discoveryError)} — using cached models`,
         }
       }
     } catch (cacheError) {
       return {
-        models: capped(BUNDLED_MODELS),
+        models: withFastVariants(capped(BUNDLED_MODELS)),
         source: "bundled",
         warning: `live discovery failed: ${describeError(discoveryError)}; cache failed: ${describeError(cacheError)} — using bundled models`,
       }
     }
     return {
-      models: capped(BUNDLED_MODELS),
+      models: withFastVariants(capped(BUNDLED_MODELS)),
       source: "bundled",
       warning: `live discovery failed: ${describeError(discoveryError)} — using bundled models`,
     }
@@ -230,7 +257,7 @@ export async function listModels(refresh: boolean): Promise<ModelCatalog> {
   if (refresh) return refreshModels()
   try {
     const cached = await readCache()
-    if (cached) return { models: capped(cached), source: "cache" }
+    if (cached) return { models: withFastVariants(capped(cached)), source: "cache" }
   } catch (cacheError) {
     const refreshed = await refreshModels()
     if (refreshed.warning) return refreshed
@@ -245,4 +272,9 @@ export async function listModels(refresh: boolean): Promise<ModelCatalog> {
 export async function defaultModel(): Promise<string> {
   const override = process.env[appEnvVar("MODEL")]?.trim()
   return override || BUNDLED_MODELS[0]!.id
+}
+
+export function resolveModel(model: string): { model: string; serviceTier?: "priority" } {
+  if (!model.endsWith(FAST_MODEL_SUFFIX)) return { model }
+  return { model: model.slice(0, -FAST_MODEL_SUFFIX.length), serviceTier: "priority" }
 }

@@ -3,6 +3,7 @@ import { ProviderError } from "../../providers/errors"
 import { errorDetail, httpError, sseEvents, streamError } from "../../providers/transport"
 import type { StreamEvent, StreamRequest } from "../../providers/types"
 import { chatGptFetch } from "./api"
+import { resolveModel } from "./models"
 import { PROVIDER_ID } from "./oauth"
 import { buildInput, parseOutputItem, parseSseEvent } from "./wire"
 
@@ -17,8 +18,10 @@ function buildHeaders(sessionId: string): Record<string, string> {
 }
 
 function buildBody(request: StreamRequest): string {
+  const resolved = resolveModel(request.model)
   return JSON.stringify({
-    model: request.model,
+    model: resolved.model,
+    ...(resolved.serviceTier ? { service_tier: resolved.serviceTier } : {}),
     store: false,
     stream: true,
     instructions: request.instructions,

@@ -123,10 +123,6 @@ export class BackgroundTasks {
     return this.rows.some((entry) => entry.kind === "task" && entry.task.kind === "agent" && entry.task.state().running)
   }
 
-  get hasAgents(): boolean {
-    return this.rows.some((entry) => entry.kind === "task" && entry.task.kind === "agent")
-  }
-
   focus(): void {
     if (this.rows.length === 0 || this.focusedFlag) return
     this.focusedFlag = true

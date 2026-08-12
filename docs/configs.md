@@ -11,7 +11,7 @@ Tack searches upward from the working directory for `.git`. When no Git root is 
 
 Both files are optional and must contain a JSON object when present. Objects merge recursively from user to project configuration. Arrays and scalar values are replaced by the project value. Project configuration currently applies to every option, including plugins and permission rules, so it must be treated as trusted code and policy.
 
-Commands that save model or thinking preferences write the user file. The effective configuration is then recomputed, and any project override remains active.
+Commands that save model, thinking, or TUI display preferences write the user file. The effective configuration is then recomputed, and any project override remains active.
 
 ## Options
 
@@ -176,6 +176,17 @@ A prompt beginning with `$skill-name` explicitly invokes that skill. Tack keeps 
 
 ## Built-in plugin configuration
 
+### `tui`
+
+Run `/config` in the TUI to change display preferences. Changes save immediately to the user configuration and apply to the current transcript. Both preferences default to `false`.
+
+| Option         | Type      | Default | Description                                       |
+| -------------- | --------- | ------- | ------------------------------------------------- |
+| `showOutputs`  | `boolean` | `false` | Expand tool outputs and other transcript details. |
+| `showThinking` | `boolean` | `false` | Include model reasoning in the transcript.        |
+
+`Ctrl+O` temporarily toggles transcript details for the current session without changing `showOutputs`.
+
 ### `lsp`
 
 Tack includes lazy language-server recipes for common languages:
@@ -323,6 +334,10 @@ Every option is optional. A configuration using all currently supported built-in
     }
   },
   "pluginConfig": {
+    "tui": {
+      "showOutputs": false,
+      "showThinking": false
+    },
     "permissions": {
       "allow": ["bash(git status*)"],
       "ask": ["bash(git push*)"],
