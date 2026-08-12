@@ -88,6 +88,7 @@ function lastState(loaded: LoadedSession): {
         break
       case "plan_updated":
       case "session_started":
+      case "session_replay_finished":
       case "session_title_changed":
       case "state_changed":
       case "user_message":

@@ -14,6 +14,7 @@ import { compactPath } from "../../lib/path"
 import { findProjectRoot } from "../../project/root"
 import type { UiOptions } from "../../ui/registry"
 import { AgentEventController } from "./controllers/agent-events"
+import { AttentionController } from "./controllers/attention"
 import { AppEventController, InputQueue } from "./controllers/app-events"
 import { bindKeys } from "./controllers/keymap"
 import { setTuiCommandActions } from "./commands"
@@ -25,6 +26,7 @@ import { cursorRow } from "./lib/cursor"
 import { MessageHistory } from "./message-history"
 import { Screen } from "./screen"
 import { describeTerminal, sessionTerminalTitle } from "./terminal"
+import { TerminalOutput } from "./terminal-output"
 import { COLORS } from "./theme/colors"
 
 const RESIZE_DEBOUNCE_MS = 60
@@ -52,7 +54,10 @@ export async function startTui(events: EventService, config: TuiConfig, options:
 
   const startRow = await cursorRow()
   const { promise: destroyed, resolve: finishDestroy } = Promise.withResolvers<void>()
+  const writeTerminal = process.stdout.write.bind(process.stdout)
+  let stopAttention = (): void => {}
   const restoreTerminal = (): void => {
+    stopAttention()
     process.stdout.write(TERMINAL_RESET)
   }
 
@@ -70,6 +75,9 @@ export async function startTui(events: EventService, config: TuiConfig, options:
       process.stdout.write(TERMINAL_RESET, () => finishDestroy())
     },
   })
+  const terminalOutput = new TerminalOutput(renderer, (sequence) => {
+    writeTerminal(sequence)
+  })
   const rendererResizeListener = process
     .listeners("SIGWINCH")
     .find((listener) => !existingResizeListeners.has(listener))
@@ -80,11 +88,6 @@ export async function startTui(events: EventService, config: TuiConfig, options:
   process.on("exit", restoreTerminal)
   renderer.setTerminalTitle(sessionTerminalTitle())
 
-  const quit = (): void => {
-    renderer.externalOutputMode = "passthrough"
-    renderer.screenMode = "main-screen"
-    renderer.destroy()
-  }
   const input = new InputQueue((submission) => session.send(submission))
   const screen = new Screen(renderer, session, startRow, history, config, {
     submit: (submission) => input.submit(submission),
@@ -98,6 +101,26 @@ export async function startTui(events: EventService, config: TuiConfig, options:
       session.rejectElicitation(requestId)
     },
   })
+  const attentionController = new AttentionController(
+    (sequence) => terminalOutput.write(sequence),
+    (message) => {
+      if (renderer.isRunning) {
+        screen.scrollback.append({ kind: "error", text: message })
+        return
+      }
+      process.stderr.write(`${message}\n`)
+    },
+  )
+  stopAttention = () => {
+    attentionController.destroy()
+    terminalOutput.destroy()
+  }
+  const quit = (): void => {
+    stopAttention()
+    renderer.externalOutputMode = "passthrough"
+    renderer.screenMode = "main-screen"
+    renderer.destroy()
+  }
   renderer.root.add(screen.view)
   const resetCommands = setTuiCommandActions({
     config: () => screen.openConfig(),
@@ -106,7 +129,8 @@ export async function startTui(events: EventService, config: TuiConfig, options:
   })
 
   const agentEvents = new AgentEventController(screen, session)
-  session.subscribe((event) => agentEvents.handle(event))
+  const unsubscribeSession = session.subscribe((event) => agentEvents.handle(event))
+  const unsubscribeAttention = session.subscribe((event) => attentionController.handle(event))
   agentEvents.trackContextWindow()
 
   if (options.resume) {
@@ -123,6 +147,12 @@ export async function startTui(events: EventService, config: TuiConfig, options:
   if (!(await session.currentProvider.isLoggedIn().catch(() => false))) {
     screen.scrollback.append({ kind: "info", text: "not connected — run /connect" })
   }
+
+  screen.view.on(RenderableEvents.DESTROYED, () => {
+    unsubscribeSession()
+    unsubscribeAttention()
+    stopAttention()
+  })
 
   const appEvents = new AppEventController(screen, input)
   const unsubscribe = events.subscribe((event) => appEvents.handle(event), true)

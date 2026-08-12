@@ -204,6 +204,7 @@ export function redactAgentEvent(event: AgentEvent): AgentEvent {
     case "error":
       return { ...event, message: redactText(event.message) }
     case "state_changed":
+    case "session_replay_finished":
     case "mode_changed":
     case "thinking_changed":
     case "elicitation_resolved":

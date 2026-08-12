@@ -30,6 +30,7 @@ export interface SessionStartedEvent {
 export type AgentEvent =
   | ToolEvent
   | SessionStartedEvent
+  | { type: "session_replay_finished" }
   | { type: "session_title_changed"; title: string }
   | { type: "workspace_changed"; cwd: string; previous: string }
   | { type: "state_changed"; state: AgentState }

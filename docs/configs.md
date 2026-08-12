@@ -185,6 +185,8 @@ Run `/config` in the TUI to change display preferences. Changes save immediately
 | `showOutputs`  | `boolean` | `false` | Expand tool outputs and other transcript details. |
 | `showThinking` | `boolean` | `false` | Include model reasoning in the transcript.        |
 
+The TUI always emits OSC 9;4 progress while Tack is working and an OSC 777 notification when a turn completes, fails, or is interrupted. Notifications include the trailing 200 characters of visible assistant output, are not gated by terminal focus, and use tmux passthrough automatically. OSC lifecycle signaling is built in and has no configuration.
+
 `Ctrl+O` temporarily toggles transcript details for the current session without changing `showOutputs`.
 
 ### `lsp`

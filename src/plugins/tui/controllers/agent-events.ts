@@ -47,6 +47,8 @@ export class AgentEventController {
         this.screen.startSession(event.title, event.cwd, event.model, event.thinking, event.mode)
         this.trackContextWindow()
         break
+      case "session_replay_finished":
+        break
       case "session_title_changed":
         this.screen.setSessionTitle(event.title)
         break
