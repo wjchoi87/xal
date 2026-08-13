@@ -185,6 +185,16 @@ export function redactAgentEvent(event: AgentEvent): AgentEvent {
       }
     case "queue_flushed":
       return { ...event, inputs: event.inputs.map(redactUserInput) }
+    case "background_results":
+      return {
+        ...event,
+        results: event.results.map((result) => ({
+          ...result,
+          id: redactText(result.id),
+          task: redactText(result.task),
+          output: redactText(result.output),
+        })),
+      }
     case "text_delta":
     case "reasoning_summary_delta":
     case "reasoning_delta":

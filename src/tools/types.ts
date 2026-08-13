@@ -80,6 +80,7 @@ export interface Tool extends ToolContract {
 
 export interface SessionToolContext {
   session: {
+    id: string
     kind: SessionKind
     cwd: string
     provider: Provider
@@ -89,6 +90,7 @@ export interface SessionToolContext {
     mode: PermissionMode
     workspaceUndo: WorkspaceUndo
     changeWorkspace(cwd: string): void
+    deliverAgentResult(id: string): void
   }
   signal: AbortSignal
   update(text: string): void

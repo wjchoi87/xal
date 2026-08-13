@@ -1,7 +1,7 @@
 import { registerBasePrompt } from "./agent/base-prompt"
 import { registerAgentClis } from "./agent/cli"
 import { registerAgentCommands } from "./agent/commands"
-import { registerSubAgents } from "./agent/sub-agent"
+import { registerTaskAgents } from "./agent/sub-agent"
 import { registerJobTools } from "./background/register"
 import { chooseOption } from "./cli/choose"
 import { runCli } from "./cli/run"
@@ -59,7 +59,7 @@ function registerCore(settings: Settings): void {
   registerBash()
   registerJobTools()
   registerWorktreeTools()
-  registerSubAgents()
+  registerTaskAgents()
   registerProviderCommands()
   registerProviderClis()
   registerAgentCommands()

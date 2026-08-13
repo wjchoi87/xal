@@ -99,6 +99,7 @@ function lastState(loaded: LoadedSession): {
       case "hook_finished":
       case "queue_changed":
       case "queue_flushed":
+      case "background_results":
       case "text_delta":
       case "reasoning_summary_delta":
       case "reasoning_delta":
@@ -160,7 +161,7 @@ export async function resumeSession(session: AgentSession, summary: SessionSumma
       mode: last.mode,
     })
   ) {
-    throw new Error("cannot resume while a turn is running")
+    throw new Error("cannot resume while a turn or task agent is active")
   }
   return notices
 }

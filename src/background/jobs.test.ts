@@ -26,7 +26,12 @@ function processJob(prefix: string): BackgroundProcessJob {
 }
 
 function agentJob(prefix: string): BackgroundAgentJob {
-  const job = createAgentJob(prefix, () => {})
+  const job = createAgentJob(prefix, {
+    ownerId: "background-jobs-test",
+    task: prefix,
+    stop: () => {},
+    send: () => true,
+  })
   agentJobs.add(job)
   return job
 }

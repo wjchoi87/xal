@@ -1,9 +1,13 @@
 import {
   collectAgentOutcome,
+  appendAgentTranscript,
   getJob,
   jobStatus,
+  listJobs,
   readProcessOutput,
+  setAgentActivity,
   stopJob,
+  suppressAgentOutcome,
   waitForAgentCompletion,
   waitForProcessOutput,
   type BackgroundAgentJob,
@@ -11,18 +15,21 @@ import {
   type BackgroundProcessJob,
 } from "./jobs"
 import { asNumber, asString } from "../lib/json"
-import type { Tool } from "../tools/types"
+import type { SessionTool } from "../tools/types"
 
 const MAX_WAIT_S = 600
+const MAX_MESSAGE_LENGTH = 20_000
 
-function jobOf(args: Record<string, unknown>): BackgroundJob {
+function jobOf(args: Record<string, unknown>, ownerId: string): BackgroundJob {
   const id = asString(args.id)?.trim() ?? ""
   const job = getJob(id)
-  if (!job) throw new Error(`no background job with id "${id}"`)
+  if (!job || (job.kind === "agent" && job.ownerId !== ownerId)) {
+    throw new Error(`no background job with id "${id}"`)
+  }
   return job
 }
 
-const idProperty = { type: "string", description: "Job id returned by bash background mode or sub_agent" }
+const idProperty = { type: "string", description: "Job id returned by bash background mode or task" }
 
 function waitSeconds(args: Record<string, unknown>): number {
   return Math.min(Math.max(asNumber(args.wait) ?? 0, 0), MAX_WAIT_S)
@@ -50,16 +57,48 @@ async function agentOutput(job: BackgroundAgentJob, wait: number, signal: AbortS
       return `${outcome.report}\n(${jobStatus(job)})`
     case "failed":
     case "interrupted":
+    case "timed_out":
       return `(${jobStatus(job)})`
     case "already_collected":
       return `(report already collected; ${jobStatus(job)})`
   }
 }
 
-export const jobOutputTool: Tool = {
+function duration(ms: number): string {
+  const seconds = Math.max(0, Math.floor(ms / 1_000))
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.floor(seconds / 60)
+  const remainder = seconds % 60
+  return remainder === 0 ? `${minutes}m` : `${minutes}m ${remainder}s`
+}
+
+function agentStatus(job: BackgroundAgentJob, now: number): string {
+  const state = job.done ? job.detail : job.phase
+  const elapsed = duration((job.finishedAt ?? now) - job.startedAt)
+  const activity = job.done ? "" : ` · activity: ${job.activity} · idle ${duration(now - job.lastActivityAt)}`
+  const deadline = job.done || job.deadlineAt === undefined ? "" : ` · deadline in ${duration(job.deadlineAt - now)}`
+  return `${job.id} [${state}] ${elapsed}${activity}${deadline}\n  ${job.task.split("\n", 1)[0]}`
+}
+
+function statusOutput(id: string | undefined, ownerId: string): string {
+  const selected = id
+    ? [jobOf({ id }, ownerId)]
+    : listJobs().filter((job) => job.kind === "process" || job.ownerId === ownerId)
+  if (selected.length === 0) return "No background jobs."
+  const now = Date.now()
+  return selected
+    .map((job) => {
+      if (job.kind === "agent") return agentStatus(job, now)
+      const state = jobStatus(job)
+      return `${job.id} [${state}] ${duration((job.finishedAt ?? now) - job.startedAt)}`
+    })
+    .join("\n")
+}
+
+export const jobOutputTool: SessionTool = {
   name: "job_output",
   description:
-    "Collect a background job. For a process, returns new output and waits for new output or exit. For a sub-agent, waits for completion and returns its final report exactly once without exposing its internal transcript. Pass wait to block instead of polling.",
+    "Collect a background job explicitly. For a process, returns new output and waits for new output or exit. Task-agent results normally deliver automatically; explicitly collecting one waits for completion, returns its report once, and suppresses duplicate automatic delivery.",
   parameters: {
     type: "object",
     properties: {
@@ -72,6 +111,7 @@ export const jobOutputTool: Tool = {
     required: ["id"],
     additionalProperties: false,
   },
+  sessionAware: true,
   title(args) {
     return `${asString(args.id) ?? ""} output`
   },
@@ -79,7 +119,7 @@ export const jobOutputTool: Tool = {
     return true
   },
   async execute(args, ctx) {
-    const job = jobOf(args)
+    const job = jobOf(args, ctx.session.id)
     const wait = waitSeconds(args)
     switch (job.kind) {
       case "process":
@@ -90,38 +130,111 @@ export const jobOutputTool: Tool = {
   },
 }
 
-export const jobKillTool: Tool = {
+export const jobKillTool: SessionTool = {
   name: "job_kill",
   description:
-    "Stop a running background process or sub-agent. Process output not yet collected is returned; sub-agent transcripts remain available only in the background-task viewer.",
+    "Stop a running background process or task agent. Process output not yet collected is returned; agent transcripts remain available in the background-task viewer.",
   parameters: {
     type: "object",
     properties: { id: idProperty },
     required: ["id"],
     additionalProperties: false,
   },
+  sessionAware: true,
   title(args) {
     return `kill ${asString(args.id) ?? ""}`
   },
   readOnly() {
     return true
   },
-  async execute(args) {
-    const job = jobOf(args)
+  async execute(args, ctx) {
+    const job = jobOf(args, ctx.session.id)
     const alreadyDone = job.done
     if (!alreadyDone) await stopJob(job)
+    const pendingCheck = job.kind === "agent" ? "check it with job_status" : "check it with job_output"
     const headline = alreadyDone
       ? `Job ${job.id} had already finished (${jobStatus(job)}).`
       : job.done
         ? `Job ${job.id} finished after stop was requested (${jobStatus(job)}).`
-        : `Requested stop for job ${job.id}, but it has not finished yet — check it with job_output.`
+        : `Requested stop for job ${job.id}, but it has not finished yet — ${pendingCheck}.`
     if (job.kind === "agent") {
-      const collection =
-        job.outcome?.status === "completed" && !job.consumed ? " Collect its report with job_output." : ""
-      if (job.done && job.outcome?.status !== "completed" && !job.consumed) collectAgentOutcome(job)
-      return { output: `${headline}${collection}` }
+      if (job.outcome?.status !== "completed" && !job.consumed) suppressAgentOutcome(job)
+      const delivery =
+        job.outcome?.status === "completed" && !job.consumed
+          ? " Its completed result will be delivered automatically."
+          : ""
+      return { output: `${headline}${delivery}` }
     }
     const unread = unreadProcessOutput(job)
     return { output: unread ? `${headline}\nUnread output:\n${unread}` : headline }
+  },
+}
+
+export const jobStatusTool: SessionTool = {
+  name: "job_status",
+  description:
+    "Inspect one background job or list every job without consuming output. Task-agent status includes queue state, current activity, idle time, elapsed time, and its remaining deadline after it starts.",
+  parameters: {
+    type: "object",
+    properties: { id: idProperty },
+    additionalProperties: false,
+  },
+  sessionAware: true,
+  title(args) {
+    const id = asString(args.id)?.trim()
+    return id ? `${id} status` : "background job status"
+  },
+  available(ctx) {
+    return ctx.kind === "primary"
+  },
+  readOnly() {
+    return true
+  },
+  async execute(args, ctx) {
+    return { output: statusOutput(asString(args.id)?.trim() || undefined, ctx.session.id) }
+  },
+}
+
+export const jobSendTool: SessionTool = {
+  name: "job_send",
+  description:
+    "Send additional context or a correction to a running task agent. The message is queued into its current turn and does not restart or extend its deadline.",
+  parameters: {
+    type: "object",
+    properties: {
+      id: idProperty,
+      message: {
+        type: "string",
+        minLength: 1,
+        maxLength: MAX_MESSAGE_LENGTH,
+        description: "Additional context or corrected direction for the task agent",
+      },
+    },
+    required: ["id", "message"],
+    additionalProperties: false,
+  },
+  sessionAware: true,
+  title(args) {
+    return `message ${asString(args.id) ?? ""}`
+  },
+  available(ctx) {
+    return ctx.kind === "primary"
+  },
+  readOnly() {
+    return true
+  },
+  async execute(args, ctx) {
+    const job = jobOf(args, ctx.session.id)
+    if (job.kind !== "agent") throw new Error(`${job.id} is not a task agent`)
+    if (job.done) throw new Error(`${job.id} has already finished (${jobStatus(job)})`)
+    const message = asString(args.message)?.trim()
+    if (!message) throw new Error("message is required")
+    if (message.length > MAX_MESSAGE_LENGTH) {
+      throw new Error(`message must be at most ${MAX_MESSAGE_LENGTH} characters`)
+    }
+    if (!job.send(message)) throw new Error(`${job.id} did not accept the message`)
+    appendAgentTranscript(job, `\n> Parent guidance\n${message}\n`)
+    setAgentActivity(job, "Parent guidance queued…")
+    return { output: `Queued guidance for ${job.id}.` }
   },
 }

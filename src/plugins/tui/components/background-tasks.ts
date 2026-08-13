@@ -324,16 +324,24 @@ export class BackgroundTasks {
     const state = entry.task.state()
     if (entry.task.kind === "agent") {
       const viewed = entry.task.id === this.viewedAgentId
-      const glyph = !state.running && !state.ok ? "x" : terminalGlyph(viewed ? "●" : "○", viewed ? "*" : "o")
-      const glyphColor = !state.running && !state.ok ? COLORS.error : viewed ? COLORS.foreground : COLORS.faint
+      const glyph = state.running ? terminalGlyph(viewed ? "●" : "○", viewed ? "*" : "o") : state.ok ? "✓" : "x"
+      const glyphColor = state.running
+        ? viewed
+          ? COLORS.foreground
+          : COLORS.faint
+        : state.ok
+          ? COLORS.success
+          : COLORS.error
       entry.glyph.content = new StyledText([paint(glyphColor, glyph)])
-      const name = redactText(entry.task.role)
+      const name = `${entry.task.id} · ${redactText(entry.task.role)} · ${firstLine(redactText(entry.task.title))}`
       entry.text.content = active
         ? new StyledText([paint(COLORS.accent, name)])
         : new StyledText([state.running || viewed ? paint(COLORS.foreground, name) : muted(name)])
       const snapshot = entry.task.snapshot()
       const tokens = snapshot.usage ? ` · ↓ ${formatTokens(occupiedContext(snapshot.usage))} tokens` : ""
-      entry.status.content = new StyledText([muted(`${formatDuration(snapshot.elapsedMs)}${tokens}`)])
+      entry.status.content = new StyledText([
+        muted(state.running ? `${formatDuration(snapshot.elapsedMs)}${tokens}` : redactText(state.detail)),
+      ])
       return
     }
     entry.glyph.content = state.running

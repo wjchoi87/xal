@@ -38,7 +38,7 @@ function styledLine(line: string): StyledText | string {
   if (line.startsWith("x ")) {
     return new StyledText([paint(COLORS.error, "x "), muted(line.slice(2))])
   }
-  if (line.includes("denied") || line.startsWith("Sub-agent failed")) {
+  if (line.includes("denied") || line.startsWith("Task agent failed")) {
     return new StyledText([paint(COLORS.error, line)])
   }
   return line
@@ -124,15 +124,19 @@ export class AgentViewer {
     const task = this.task
     if (!task) return
     const snapshot = task.snapshot()
+    const state = task.state()
     const width = Math.max(10, this.ctx.terminalWidth - HORIZONTAL_PADDING * 2)
     this.view.title = truncateToWidth(firstLine(redactText(task.title)), Math.max(10, Math.floor(width * 0.6)))
     this.role.content = new StyledText([
-      paint(task.state().running ? COLORS.agent : COLORS.foreground, task.state().running ? "● " : "○ "),
-      paint(COLORS.foreground, redactText(task.role)),
+      paint(
+        state.running ? COLORS.agent : state.ok ? COLORS.success : COLORS.error,
+        state.running ? "● " : state.ok ? "✓ " : "x ",
+      ),
+      paint(COLORS.foreground, redactText(`${task.id} · ${task.role}`)),
       muted(redactText(` · ${task.model} · ${compactPath(task.cwd)}`)),
     ])
     const tokens = snapshot.usage ? ` · ↓ ${formatTokens(occupiedContext(snapshot.usage))} tokens` : ""
-    this.metrics.content = `${formatDuration(snapshot.elapsedMs)}${tokens}`
+    this.metrics.content = state.running ? `${formatDuration(snapshot.elapsedMs)}${tokens}` : redactText(state.detail)
     const output = sanitize(redactText(task.output())).trimEnd()
     const wrapped = (output ? output.split("\n") : [redactText(snapshot.activity)]).flatMap((line) =>
       wrapLine(line, width),

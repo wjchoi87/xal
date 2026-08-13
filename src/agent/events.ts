@@ -15,6 +15,13 @@ export interface QueuedEntry {
   imageCount: number
 }
 
+export interface BackgroundResult {
+  id: string
+  task: string
+  status: "completed" | "failed" | "interrupted" | "timed_out"
+  output: string
+}
+
 export interface SessionStartedEvent {
   type: "session_started"
   id: string
@@ -67,6 +74,7 @@ export type AgentEvent =
   | { type: "hook_finished"; hook: string; event: HookEvent; action: HookAction; elapsedMs: number }
   | { type: "queue_changed"; entries: QueuedEntry[] }
   | { type: "queue_flushed"; inputs: UserInput[] }
+  | { type: "background_results"; results: BackgroundResult[] }
   | { type: "text_delta"; text: string }
   | { type: "reasoning_summary_delta"; text: string }
   | { type: "reasoning_delta"; text: string }
