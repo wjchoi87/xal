@@ -12,6 +12,7 @@ import { isInteractiveTool, isSessionTool } from "../tools/types"
 import type {
   ElicitationRequest,
   ElicitationResult,
+  ProcessExecution,
   RegisteredTool,
   ToolConcurrency,
   ToolEvent,
@@ -59,6 +60,7 @@ export interface ToolCallOutcome {
   readOnly: boolean
   requiresContinuation: boolean
   output: string
+  execution?: ProcessExecution
   events: ToolEvent[]
   denial?: DenialCause
 }
@@ -148,6 +150,7 @@ export class ToolCallRunner {
     output: string,
     denial?: DenialCause,
     events: ToolEvent[] = [],
+    execution?: ProcessExecution,
   ): ToolCallOutcome {
     const tool = this.host.availableTool(call.name)
     const requiresContinuation =
@@ -155,7 +158,16 @@ export class ToolCallRunner {
       output.startsWith(TOOL_FAILED_PREFIX) ||
       output.startsWith(TOOL_OUTPUT_UNSAVED_PREFIX) ||
       (tool?.requiresContinuation?.(call.args, { cwd: this.host.cwd() }) ?? true)
-    return { call, title, readOnly, requiresContinuation, output, events, ...(denial ? { denial } : {}) }
+    return {
+      call,
+      title,
+      readOnly,
+      requiresContinuation,
+      output,
+      events,
+      ...(execution ? { execution } : {}),
+      ...(denial ? { denial } : {}),
+    }
   }
 
   loopOutcome(call: ToolCallItem, action: Exclude<ToolLoopAction, "allow">): ToolCallOutcome {
@@ -343,6 +355,7 @@ export class ToolCallRunner {
     this.host.setState("running_tool")
     this.host.emit({ type: "tool_started", callId: call.callId, tool: call.name, title, readOnly })
     let output: string
+    let execution: ProcessExecution | undefined
     let events: ToolEvent[] = []
     let maxOutputBytes: number | undefined
     const updates = createRedactedStream()
@@ -400,6 +413,7 @@ export class ToolCallRunner {
           break
       }
       output = redactText(result.output)
+      execution = result.execution
       events = result.events ?? []
       if (result.turnEndEvents !== undefined) this.host.setTurnEndToolEvents(call.name, result.turnEndEvents)
       maxOutputBytes = result.maxOutputBytes
@@ -430,7 +444,7 @@ export class ToolCallRunner {
     } catch (error) {
       output = `${TOOL_OUTPUT_UNSAVED_PREFIX}${describeError(error)}. The operation may have changed state; inspect it before retrying.`
     }
-    return this.outcome(call, title, readOnly, output, undefined, events)
+    return this.outcome(call, title, readOnly, output, undefined, events, execution)
   }
 
   commit(outcome: ToolCallOutcome): void {
@@ -442,6 +456,7 @@ export class ToolCallRunner {
       title: outcome.title,
       readOnly: outcome.readOnly,
       output: outcome.output,
+      ...(outcome.execution ? { execution: outcome.execution } : {}),
       ...(outcome.denial ? { denial: outcome.denial } : {}),
     })
     for (const event of outcome.events) this.host.publishToolEvent(event)

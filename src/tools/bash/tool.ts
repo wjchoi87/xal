@@ -1,9 +1,9 @@
 import { stripVTControlCharacters } from "node:util"
 import { asBoolean, asNumber, asString } from "../../lib/json"
-import type { Tool } from "../types"
+import type { ProcessExecution, Tool } from "../types"
 import { startJob } from "./jobs"
 import { spawnCommand } from "./process"
-import { sandboxAvailable, type SandboxAccess } from "./sandbox"
+import { sandboxAvailable, sandboxProcessEnvironment, type SandboxAccess } from "./sandbox"
 import { executeShellCommand, shellLaunch } from "./shell"
 import { splitCommand } from "./split"
 
@@ -132,7 +132,8 @@ export const bashTool: Tool = {
 
     if (backgroundRequested(args)) {
       const launch = shellLaunch(["-c", command], ctx.cwd, sandbox)
-      const proc = spawnCommand(launch, { ...process.env, PWD: ctx.cwd }, ctx.cwd)
+      const environment = { ...process.env, PWD: ctx.cwd }
+      const proc = spawnCommand(launch, sandbox ? sandboxProcessEnvironment(environment) : environment, ctx.cwd)
       const job = startJob(command, proc, ctx.cwd, ctx.sessionId, ctx.directory)
       return {
         output: `Started background job ${job.id}${sandbox ? ` (${sandbox} sandbox)` : ""}. Its result is delivered automatically when it exits; read incremental output with job_output and stop it with job_kill.`,
@@ -156,21 +157,29 @@ export const bashTool: Tool = {
     if (ctx.signal.aborted) onAbort()
 
     try {
-      const exitCode = await execution.done
+      const termination = await execution.done
       const trimmed = normalizeCompletedOutput(output).trimEnd()
+      const sandboxed = sandbox ? { sandbox } : {}
+      let processExecution: ProcessExecution
       let footer: string
-      if (timedOut) footer = `(timed out after ${timeoutSeconds}s and was killed)`
-      else if (ctx.signal.aborted) footer = "(interrupted by user)"
-      else if (exitCode === null) footer = "(terminated by signal)"
-      else if (!sandbox) footer = `(exit code ${exitCode})`
-      else if (exitCode === 0) footer = `(exit code 0 · ${sandbox} sandbox)`
-      else
-        footer = `(${
-          sandbox === "read"
-            ? `exit code ${exitCode} · read sandbox — network and filesystem state changes are blocked`
-            : `exit code ${exitCode} · workspace sandbox — network and writes outside the workspace and temporary directories are blocked`
-        })`
-      return { output: trimmed ? `${trimmed}\n${footer}` : footer, maxOutputBytes: MAX_RESULT_BYTES }
+      if (timedOut) {
+        processExecution = { status: "timed_out", timeoutSeconds, ...sandboxed }
+        footer = `(timed out after ${timeoutSeconds}s and was killed)`
+      } else if (ctx.signal.aborted) {
+        processExecution = { status: "interrupted", ...sandboxed }
+        footer = "(interrupted by user)"
+      } else if (termination.status === "signaled") {
+        processExecution = { ...termination, ...sandboxed }
+        footer = "(terminated by signal)"
+      } else {
+        processExecution = { ...termination, ...sandboxed }
+        footer = `(exit code ${termination.exitCode}${sandbox ? ` · ${sandbox} sandbox` : ""})`
+      }
+      return {
+        output: trimmed ? `${trimmed}\n${footer}` : footer,
+        execution: processExecution,
+        maxOutputBytes: MAX_RESULT_BYTES,
+      }
     } finally {
       clearTimeout(timeout)
       ctx.signal.removeEventListener("abort", onAbort)

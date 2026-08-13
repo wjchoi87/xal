@@ -1,4 +1,5 @@
 import type { DenialCause } from "../../../agent/events"
+import type { ProcessExecution } from "../../../tools/types"
 
 export interface BannerBlock {
   kind: "banner"
@@ -59,6 +60,7 @@ export interface ToolBlock {
   readOnly: boolean
   denial: DenialCause | undefined
   output: string
+  execution: ProcessExecution | undefined
   elapsed: string | undefined
   expanded: boolean
 }

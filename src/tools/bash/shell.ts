@@ -3,7 +3,7 @@ import { statSync } from "node:fs"
 import { basename, isAbsolute } from "node:path"
 import { killProcessTree } from "../../lib/process"
 import { spawnCommand, spawnShellProcess, type ShellProcess } from "./process"
-import { sandboxLaunch, type SandboxAccess } from "./sandbox"
+import { sandboxLaunch, sandboxProcessEnvironment, type SandboxAccess } from "./sandbox"
 
 const SUPPORTED_SHELLS = new Set(["sh", "bash", "dash", "ksh", "mksh", "zsh"])
 
@@ -64,13 +64,15 @@ function shellQuote(value: string): string {
 }
 
 export interface ShellExecution {
-  done: Promise<number | null>
+  done: Promise<ShellTermination>
   kill(): void
 }
 
+export type ShellTermination = { status: "exited"; exitCode: number } | { status: "signaled"; signal?: string }
+
 interface ActiveRun {
   feed(text: string): void
-  close(code: number | null): void
+  close(code: number | null, signal: NodeJS.Signals | null): void
   fail(error: Error): void
 }
 
@@ -102,7 +104,7 @@ export function disposeShellSession(sessionId: string): void {
 }
 
 function spawnEntry(cwd: string, sandbox: SandboxAccess | undefined): ShellEntry {
-  const proc = spawnShellProcess(shellLaunch(["-s"], cwd, sandbox), { ...process.env, PWD: cwd }, cwd)
+  const proc = spawnShellProcess(shellLaunch(["-s"], cwd, sandbox), processEnvironment(cwd, sandbox), cwd)
   const entry: ShellEntry = { proc, workspace: cwd, dead: false, active: undefined }
   const feed = (chunk: Buffer): void => entry.active?.feed(chunk.toString())
   proc.stdout.on("data", feed)
@@ -115,14 +117,23 @@ function spawnEntry(cwd: string, sandbox: SandboxAccess | undefined): ShellEntry
     entry.dead = true
     entry.active?.fail(error)
   })
-  proc.once("close", (code) => {
+  proc.once("close", (code, signal) => {
     entry.dead = true
-    entry.active?.close(code)
+    entry.active?.close(code, signal)
   })
   return entry
 }
 
-function runPersistent(entry: ShellEntry, command: string, onOutput: (text: string) => void): Promise<number | null> {
+function processEnvironment(cwd: string, sandbox: SandboxAccess | undefined): NodeJS.ProcessEnv {
+  const environment = { ...process.env, PWD: cwd }
+  return sandbox ? sandboxProcessEnvironment(environment) : environment
+}
+
+function runPersistent(
+  entry: ShellEntry,
+  command: string,
+  onOutput: (text: string) => void,
+): Promise<ShellTermination> {
   return new Promise((resolve, reject) => {
     const marker = `__tack_${randomUUID()}__`
     const needle = `\n${marker}:`
@@ -154,11 +165,17 @@ function runPersistent(entry: ShellEntry, command: string, onOutput: (text: stri
         if (lineEnd < 0) return
         emit(found)
         const status = Number.parseInt(pending.slice(found + needle.length, lineEnd), 10)
-        settle(() => resolve(Number.isNaN(status) ? null : status))
+        settle(() => resolve(Number.isNaN(status) ? { status: "signaled" } : { status: "exited", exitCode: status }))
       },
-      close(code) {
+      close(code, signal) {
         emit(pending.length)
-        settle(() => resolve(code))
+        settle(() =>
+          resolve(
+            code === null
+              ? { status: "signaled", ...(signal === null ? {} : { signal }) }
+              : { status: "exited", exitCode: code },
+          ),
+        )
       },
       fail(error) {
         settle(() => reject(error))
@@ -176,13 +193,19 @@ function runIsolated(
   sandbox: SandboxAccess | undefined,
   onOutput: (text: string) => void,
 ): ShellExecution {
-  const proc = spawnCommand(shellLaunch(["-c", command], cwd, sandbox), { ...process.env, PWD: cwd }, cwd)
+  const proc = spawnCommand(shellLaunch(["-c", command], cwd, sandbox), processEnvironment(cwd, sandbox), cwd)
   const collect = (chunk: Buffer): void => onOutput(chunk.toString())
   proc.stdout.on("data", collect)
   proc.stderr.on("data", collect)
-  const done = new Promise<number | null>((resolve, reject) => {
+  const done = new Promise<ShellTermination>((resolve, reject) => {
     proc.once("error", reject)
-    proc.once("close", resolve)
+    proc.once("close", (code, signal) => {
+      resolve(
+        code === null
+          ? { status: "signaled", ...(signal === null ? {} : { signal }) }
+          : { status: "exited", exitCode: code },
+      )
+    })
   })
   return { done, kill: () => killProcessTree(proc) }
 }

@@ -2,8 +2,7 @@ import type { JsonObject } from "../lib/json"
 import type { HookAction, HookEvent } from "../hooks/types"
 import type { PermissionMode } from "../permissions/types"
 import type { ThinkingEffort, Usage, UserInput } from "../providers/types"
-import type { ElicitationQuestion } from "../tools/types"
-import type { ToolEvent } from "../tools/types"
+import type { ElicitationQuestion, ProcessExecution, ToolEvent } from "../tools/types"
 
 export type AgentState =
   "idle" | "streaming" | "awaiting_approval" | "awaiting_input" | "running_hook" | "running_tool" | "compacting"
@@ -100,7 +99,7 @@ export type AgentEvent =
   | { type: "elicitation_resolved"; callId: string }
   | { type: "tool_started"; callId: string; tool: string; title: string; readOnly: boolean }
   | { type: "tool_updated"; callId: string; text: string }
-  | ({ type: "shell_finished" } & DirectShellResult)
+  | ({ type: "shell_finished"; execution?: ProcessExecution } & DirectShellResult)
   | {
       type: "tool_finished"
       callId: string
@@ -108,6 +107,7 @@ export type AgentEvent =
       title: string
       readOnly: boolean
       output: string
+      execution?: ProcessExecution
       denial?: DenialCause
     }
   | { type: "compacted"; summary: string; replaced: number; tokensBefore?: number }

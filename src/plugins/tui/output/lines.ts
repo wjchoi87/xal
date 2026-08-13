@@ -9,9 +9,9 @@ export interface OutputLine {
   kind: OutputLineKind
 }
 
-const NOTICE = /^\((?:exit code \d+|interrupted by user|timed out after .+)\)$/
-const EXIT_CODE = /^\(exit code (\d+)\)$/
-const FAILURE_NOTICE = /^\((?:interrupted by user\)|timed out after )/
+const NOTICE = /^\((?:exit code \d+(?: · [^)]*)?|interrupted by user|timed out after .+|terminated by signal)\)$/
+const EXIT_CODE = /^\(exit code (\d+)(?: · [^)]*)?\)$/
+const FAILURE_NOTICE = /^\((?:interrupted by user|timed out after .+|terminated by signal)\)$/
 
 export function isNotice(text: string): boolean {
   return NOTICE.test(text.trim())

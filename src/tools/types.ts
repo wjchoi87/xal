@@ -7,8 +7,18 @@ import type { WorkspaceUndo } from "./undo"
 
 export const MAX_ELICITATION_ANSWER_LENGTH = 500
 
+export type ProcessSandbox = "read" | "workspace"
+
+export type ProcessExecution = (
+  | { status: "exited"; exitCode: number }
+  | { status: "signaled"; signal?: string }
+  | { status: "timed_out"; timeoutSeconds: number }
+  | { status: "interrupted" }
+) & { sandbox?: ProcessSandbox }
+
 export interface ToolResult {
   output: string
+  execution?: ProcessExecution
   events?: ToolEvent[]
   turnEndEvents?: ToolEvent[]
   maxOutputBytes?: number

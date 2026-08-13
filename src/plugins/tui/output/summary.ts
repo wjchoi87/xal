@@ -1,4 +1,5 @@
 import { parseBoundedToolOutput, toolFailed } from "../../../tools/output"
+import type { ProcessExecution } from "../../../tools/types"
 import { displayWidth } from "../lib/text"
 import { isNotice } from "./lines"
 
@@ -18,8 +19,9 @@ export function summarizeToolOutput(output: string): string {
   return `${lines.length} lines`
 }
 
-export function toolOutputFailed(output: string): boolean {
+export function toolOutputFailed(output: string, execution?: ProcessExecution): boolean {
   if (toolFailed(output)) return true
+  if (execution) return execution.status !== "exited" || execution.exitCode !== 0
   const exitCode = /\(exit code (\d+)(?: · [^)]*)?\)(?:\n\nFull output saved to: .+)?\s*$/.exec(output)
   if (exitCode && exitCode[1] !== "0") return true
   return /\(timed out after |\(interrupted by user\)|\(terminated by signal\)/.test(output)

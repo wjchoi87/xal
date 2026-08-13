@@ -728,6 +728,7 @@ export class AgentSession {
       command: executedCommand,
       output: outcome.output,
       readOnly: outcome.readOnly,
+      ...(outcome.execution ? { execution: outcome.execution } : {}),
       ...(outcome.denial ? { denial: outcome.denial } : {}),
     }
     this.emit(finished)

@@ -14,8 +14,10 @@ async function run(sessionId: string, command: string, cwd: string): Promise<str
   const execution = executeShellCommand(sessionId, command, cwd, undefined, (text) => {
     output += text
   })
-  const code = await execution.done
-  if (code !== 0) throw new Error(`command exited with ${code}: ${command}`)
+  const termination = await execution.done
+  if (termination.status !== "exited" || termination.exitCode !== 0) {
+    throw new Error(`command failed with ${JSON.stringify(termination)}: ${command}`)
+  }
   return output.trim()
 }
 

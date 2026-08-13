@@ -1,9 +1,10 @@
 import { existsSync, realpathSync } from "node:fs"
 import { tmpdir } from "node:os"
+import type { ProcessSandbox } from "../types"
 
 const available = process.platform === "darwin" && existsSync("/usr/bin/sandbox-exec")
 
-export type SandboxAccess = "read" | "workspace"
+export type SandboxAccess = ProcessSandbox
 
 export function sandboxAvailable(): boolean {
   return available
@@ -23,4 +24,15 @@ export function sandboxLaunch(launch: string[], workspace: string, access: Sandb
       : `(deny file-write* (require-not (require-any ${writable.join(" ")})))`
   const profile = ["(version 1)", "(allow default)", "(deny network*)", fileWrites].join("\n")
   return ["/usr/bin/sandbox-exec", "-p", profile, ...launch]
+}
+
+export function sandboxProcessEnvironment(environment: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const configured = Number(environment.GIT_CONFIG_COUNT)
+  const index = Number.isSafeInteger(configured) && configured >= 0 ? configured : 0
+  return {
+    ...environment,
+    GIT_CONFIG_COUNT: String(index + 1),
+    [`GIT_CONFIG_KEY_${index}`]: "core.fsmonitor",
+    [`GIT_CONFIG_VALUE_${index}`]: "false",
+  }
 }

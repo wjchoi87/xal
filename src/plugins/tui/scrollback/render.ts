@@ -168,7 +168,7 @@ const denialSummary: Record<DenialCause, string> = {
 function tool(ctx: RenderContext, block: ToolBlock, expanded: boolean, grouped: boolean): Renderable {
   const toolRenderer = getToolRenderer(block.tool)
   const bounded = parseBoundedToolOutput(block.output)
-  const coreFailed = toolOutputFailed(block.output)
+  const coreFailed = toolOutputFailed(block.output, block.execution)
   const failed = coreFailed || (toolRenderer?.failed?.(block.output) ?? false)
   const outcome: ToolOutcome = block.denial ? "denied" : failed ? "failure" : "success"
   const summary = block.denial

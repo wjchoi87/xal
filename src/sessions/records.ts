@@ -14,6 +14,7 @@ import {
   type Usage,
 } from "../providers/types"
 import { parseTaskList } from "../tasks/types"
+import type { ProcessExecution, ProcessSandbox } from "../tools/types"
 import { normalizeSessionTitle } from "./title"
 import type { SessionMeta, SessionRecord } from "./types"
 
@@ -24,6 +25,32 @@ export function isPersistable(event: AgentEvent): boolean {
 function parseDenial(value: unknown): DenialCause | undefined {
   const denial = asString(value)
   if (denial === "user" || denial === "policy" || denial === "plan" || denial === "hook") return denial
+  return undefined
+}
+
+function parseProcessExecution(value: unknown): ProcessExecution | undefined {
+  if (!isRecord(value)) return undefined
+  const status = asString(value.status)
+  const sandbox = asString(value.sandbox)
+  if (value.sandbox !== undefined && sandbox !== "read" && sandbox !== "workspace") return undefined
+  const processSandbox: ProcessSandbox | undefined = sandbox === "read" || sandbox === "workspace" ? sandbox : undefined
+  const sandboxed = processSandbox ? { sandbox: processSandbox } : {}
+  if (status === "exited") {
+    const exitCode = asNumber(value.exitCode)
+    return exitCode !== undefined && Number.isSafeInteger(exitCode) ? { status, exitCode, ...sandboxed } : undefined
+  }
+  if (status === "signaled") {
+    const signal = asString(value.signal)
+    if (value.signal !== undefined && !signal) return undefined
+    return { status, ...(signal === undefined ? {} : { signal }), ...sandboxed }
+  }
+  if (status === "timed_out") {
+    const timeoutSeconds = asNumber(value.timeoutSeconds)
+    return timeoutSeconds !== undefined && Number.isSafeInteger(timeoutSeconds) && timeoutSeconds > 0
+      ? { status, timeoutSeconds, ...sandboxed }
+      : undefined
+  }
+  if (status === "interrupted") return { status, ...sandboxed }
   return undefined
 }
 
@@ -241,7 +268,16 @@ function parseEvent(raw: unknown): AgentEvent | undefined {
       const tool = asString(raw.tool)
       const title = asString(raw.title)
       const output = asString(raw.output)
-      if (!callId || !tool || title === undefined || output === undefined) return undefined
+      const execution = parseProcessExecution(raw.execution)
+      if (
+        !callId ||
+        !tool ||
+        title === undefined ||
+        output === undefined ||
+        (raw.execution !== undefined && execution === undefined)
+      ) {
+        return undefined
+      }
       return {
         type: "tool_finished",
         callId,
@@ -249,12 +285,15 @@ function parseEvent(raw: unknown): AgentEvent | undefined {
         title,
         readOnly: asBoolean(raw.readOnly) ?? false,
         output,
+        ...(execution ? { execution } : {}),
         denial: parseDenial(raw.denial),
       }
     }
     case "shell_finished": {
       const shell = parseDirectShell(raw)
-      return shell ? { type: "shell_finished", ...shell } : undefined
+      const execution = parseProcessExecution(raw.execution)
+      if (!shell || (raw.execution !== undefined && execution === undefined)) return undefined
+      return { type: "shell_finished", ...shell, ...(execution ? { execution } : {}) }
     }
     case "compacted": {
       const summary = asString(raw.summary)

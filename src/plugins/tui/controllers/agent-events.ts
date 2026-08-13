@@ -175,6 +175,7 @@ export class AgentEventController {
           readOnly: event.readOnly,
           denial: event.denial,
           output: event.output,
+          execution: event.execution,
           elapsed: live.finish(event.callId),
           expanded: true,
         })
@@ -189,6 +190,7 @@ export class AgentEventController {
           readOnly: event.readOnly,
           denial: event.denial,
           output: event.output,
+          execution: event.execution,
           elapsed: live.finish(event.callId),
           expanded: false,
         })
