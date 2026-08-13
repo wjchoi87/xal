@@ -131,10 +131,6 @@ export class AgentEventController {
         break
       case "thinking_changed":
         statusBar.setThinking(event.thinking)
-        scrollback.append({
-          kind: "info",
-          text: `thinking: ${event.thinking === "none" ? "off" : (event.thinking ?? "not configurable")}`,
-        })
         break
       case "approval_requested":
         live.request(event.callId, event.tool, event.title, event.readOnly)

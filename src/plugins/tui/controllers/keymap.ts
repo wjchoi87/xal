@@ -1,5 +1,6 @@
-import type { CliRenderer } from "@opentui/core"
+import type { CliRenderer, KeyEvent } from "@opentui/core"
 import type { AgentSession } from "../../../agent/agent-session"
+import { saveThinking, thinkingOptions } from "../../../config/thinking"
 import { describeError } from "../../../lib/error"
 import { nextPermissionMode } from "../../../permissions/types"
 import type { Screen } from "../screen"
@@ -14,11 +15,40 @@ export interface KeymapDeps {
   quit(): void
 }
 
+async function stepThinking(session: AgentSession, direction: -1 | 1): Promise<string | undefined> {
+  if (session.currentState !== "idle") return "Cannot change thinking while a turn is running"
+
+  const provider = session.currentProvider
+  const model = session.currentModel
+  const available = await thinkingOptions(provider, model)
+  if (!available) return `${model} does not support configurable thinking`
+
+  const current = session.currentThinking ?? available.default
+  const currentIndex = available.options.indexOf(current)
+  const next = available.options[currentIndex + direction]
+  if (!next) {
+    const bound = direction < 0 ? "lowest" : "highest"
+    return `Thinking is already at the ${bound} level (${current === "none" ? "off" : current})`
+  }
+  if (!session.setThinking(next)) return "Cannot change thinking while a turn is running"
+  await saveThinking(provider, model, next)
+}
+
+function thinkingDirection(key: KeyEvent): -1 | 1 | undefined {
+  if (key.ctrl || key.shift || key.repeated) return undefined
+  if (key.meta && key.name === ",") return -1
+  if (key.meta && key.name === ".") return 1
+  if (key.raw === "\u001b,") return -1
+  if (key.raw === "\u001b.") return 1
+  return undefined
+}
+
 export function bindKeys(renderer: CliRenderer, deps: KeymapDeps): void {
   const { session, screen, edit, quit } = deps
   let lastInterrupt = 0
   let lastEscape = 0
   let stopAgentsChord = 0
+  let thinkingChange = Promise.resolve()
 
   function handleInterrupt(): void {
     if (session.currentState !== "idle") {
@@ -133,6 +163,19 @@ export function bindKeys(renderer: CliRenderer, deps: KeymapDeps): void {
     if (screen.picker.handleKey(key.name)) {
       key.preventDefault()
       screen.syncFooter()
+      return
+    }
+    const direction = thinkingDirection(key)
+    if (!screen.overlayVisible && direction) {
+      key.preventDefault()
+      thinkingChange = thinkingChange
+        .then(() => stepThinking(session, direction))
+        .then((message) => {
+          if (message) screen.scrollback.append({ kind: "info", text: message })
+        })
+        .catch((error: unknown) => {
+          screen.scrollback.append({ kind: "error", text: `thinking shortcut failed: ${describeError(error)}` })
+        })
       return
     }
     const unmodified = !key.ctrl && !key.meta && !key.shift
