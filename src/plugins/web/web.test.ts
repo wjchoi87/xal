@@ -1,9 +1,12 @@
 import { expect, test } from "bun:test"
+import type { ToolExecutionContext } from "../../tools/types"
 import { htmlToMarkdown, webfetchTool } from "./fetch"
 
-function context() {
+function context(): ToolExecutionContext {
   return {
     cwd: process.cwd(),
+    sessionId: "web-test",
+    sessionKind: "primary",
     signal: new AbortController().signal,
     update() {},
   }

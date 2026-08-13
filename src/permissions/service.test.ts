@@ -64,6 +64,16 @@ test("permission policy enforces mode, deny, configured, registered, and remembe
     expect(await evaluatePolicy(request("configured", { subject: "secret/path", mode: "trusting" }))).toBe("deny")
     expect(
       await evaluatePolicy(
+        request("configured", {
+          subject: "secret/path",
+          readOnly: true,
+          mode: "plan",
+          inheritedDenyMode: "trusting",
+        }),
+      ),
+    ).toBe("deny")
+    expect(
+      await evaluatePolicy(
         request("configured", { subject: "blocked/path", readOnly: true, sandboxed: true, mode: "yolo" }),
       ),
     ).toBe("deny")

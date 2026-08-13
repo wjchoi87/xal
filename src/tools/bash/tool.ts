@@ -131,9 +131,12 @@ export const bashTool: Tool = {
     const sandbox = sandboxAccessOf(args)
 
     if (backgroundRequested(args)) {
+      if (ctx.sessionKind === "subagent") {
+        throw new Error("background Bash is unavailable in task agents; run the command in the foreground")
+      }
       const launch = shellLaunch(["-c", command], ctx.cwd, sandbox)
       const proc = spawnCommand(launch, { ...process.env, PWD: ctx.cwd }, ctx.cwd)
-      const job = startJob(command, proc, ctx.cwd)
+      const job = startJob(command, proc, ctx.cwd, ctx.sessionId)
       return {
         output: `Started background job ${job.id}${sandbox ? ` (${sandbox} sandbox)` : ""}. Read its output with job_output and stop it with job_kill.`,
       }
@@ -141,7 +144,7 @@ export const bashTool: Tool = {
 
     const timeoutSeconds = timeoutSecondsOf(args)
     let output = ""
-    const execution = executeShellCommand(command, ctx.cwd, sandbox, (text) => {
+    const execution = executeShellCommand(ctx.sessionId, command, ctx.cwd, sandbox, (text) => {
       output += text
       ctx.update(text)
     })

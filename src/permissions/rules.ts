@@ -122,7 +122,8 @@ export async function rememberRule(
 }
 
 export function isDenied(request: PermissionRequest): boolean {
-  const scoped = modeDenies.get(request.mode) ?? []
+  const inherited = request.inheritedDenyMode ? (modeDenies.get(request.inheritedDenyMode) ?? []) : []
+  const scoped = [...(modeDenies.get(request.mode) ?? []), ...inherited]
   return [...denies, ...scoped].some((matcher) => matches(matcher, request))
 }
 

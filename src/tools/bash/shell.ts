@@ -81,15 +81,24 @@ interface ShellEntry {
   active: ActiveRun | undefined
 }
 
-const pool = new Map<string, ShellEntry>()
+const pools = new Map<string, Map<string, ShellEntry>>()
 let exitHookRegistered = false
 
 function registerExitHook(): void {
   if (exitHookRegistered) return
   exitHookRegistered = true
   process.on("exit", () => {
-    for (const entry of pool.values()) killProcessTree(entry.proc)
+    for (const pool of pools.values()) {
+      for (const entry of pool.values()) killProcessTree(entry.proc)
+    }
   })
+}
+
+export function disposeShellSession(sessionId: string): void {
+  const pool = pools.get(sessionId)
+  if (!pool) return
+  pools.delete(sessionId)
+  for (const entry of pool.values()) killProcessTree(entry.proc)
 }
 
 function spawnEntry(cwd: string, sandbox: SandboxAccess | undefined): ShellEntry {
@@ -179,12 +188,18 @@ function runIsolated(
 }
 
 export function executeShellCommand(
+  sessionId: string,
   command: string,
   cwd: string,
   sandbox: SandboxAccess | undefined,
   onOutput: (text: string) => void,
 ): ShellExecution {
   registerExitHook()
+  let pool = pools.get(sessionId)
+  if (!pool) {
+    pool = new Map()
+    pools.set(sessionId, pool)
+  }
   const key = sandbox ?? "plain"
   let entry = pool.get(key)
   if (entry?.dead) {

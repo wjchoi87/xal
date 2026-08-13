@@ -2,7 +2,7 @@ import { isAbsolute, relative, resolve } from "node:path"
 import { listBackgroundTasks } from "../background/registry"
 import { createManagedWorktree, managedWorktreeAt, removeManagedWorktree, unmanageWorktree } from "./worktrees"
 import { asBoolean, asString } from "../lib/json"
-import { compactPath } from "../lib/path"
+import { compactPath, resolveFilePath } from "../lib/path"
 import { contributeRules } from "../permissions/rules"
 import { registerTool } from "../tools/registry"
 import type { SessionTool } from "../tools/types"
@@ -172,7 +172,7 @@ export const worktreeRemoveTool: SessionTool = {
     if (ctx.session.kind !== "primary") throw new Error("worktree_remove is available only to primary sessions")
     const path = asString(args.path)?.trim()
     if (!path) throw new Error("path is required")
-    const worktree = await managedWorktreeAt(resolve(ctx.session.cwd, path), ctx.signal)
+    const worktree = await managedWorktreeAt(resolveFilePath(path, ctx.session.cwd), ctx.signal)
     if (!worktree) throw new Error(`${path} is not a managed Tack worktree`)
     if (managedPath(worktree.path, ctx.session.cwd)) {
       throw new Error("cannot remove the current session worktree; use worktree_exit")

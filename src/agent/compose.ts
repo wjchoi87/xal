@@ -161,7 +161,7 @@ export async function resumeSession(session: AgentSession, summary: SessionSumma
       mode: last.mode,
     })
   ) {
-    throw new Error("cannot resume while a turn or task agent is active")
+    throw new Error("cannot resume while a turn or background job is unsettled")
   }
   return notices
 }

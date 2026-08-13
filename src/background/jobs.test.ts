@@ -10,6 +10,7 @@ import {
   finishProcessJob,
   getJob,
   readProcessOutput,
+  stopJob,
   waitForAgentCompletion,
   waitForProcessOutput,
   type BackgroundAgentJob,
@@ -20,7 +21,7 @@ const processJobs = new Set<BackgroundProcessJob>()
 const agentJobs = new Set<BackgroundAgentJob>()
 
 function processJob(prefix: string): BackgroundProcessJob {
-  const job = createProcessJob(prefix, () => {})
+  const job = createProcessJob(prefix, "background-jobs-test", () => {})
   processJobs.add(job)
   return job
 }
@@ -156,4 +157,26 @@ test("collects a completed agent report exactly once", () => {
   expect(collectAgentOutcome(job)).toEqual({ status: "completed", report: "final report" })
   expect(collectAgentOutcome(job)).toEqual({ status: "already_collected" })
   expect(getJob(job.id)).toBeUndefined()
+})
+
+test("suppresses agent delivery before invoking a racing stop callback", async () => {
+  const holder: { job?: BackgroundAgentJob } = {}
+  const job = createAgentJob("test-agent-stop-race", {
+    ownerId: "background-jobs-test",
+    task: "finish while cancellation starts",
+    stop: () => {
+      const current = holder.job
+      if (!current) throw new Error("agent job was not initialized")
+      finishAgentJob(current, { status: "completed", report: "too late" }, "completed during stop")
+    },
+    send: () => true,
+  })
+  holder.job = job
+  agentJobs.add(job)
+
+  await stopJob(job)
+
+  expect(job.done).toBe(true)
+  expect(job.consumed).toBe(true)
+  expect(collectAgentOutcome(job)).toEqual({ status: "already_collected" })
 })

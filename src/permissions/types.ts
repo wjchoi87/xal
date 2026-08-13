@@ -14,6 +14,7 @@ export interface PermissionRequest {
   readOnly: boolean
   sandboxed: boolean
   mode: PermissionMode
+  inheritedDenyMode?: PermissionMode
 }
 
 export interface PolicyRule {

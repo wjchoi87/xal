@@ -7,7 +7,6 @@ import {
   readProcessOutput,
   setAgentActivity,
   stopJob,
-  suppressAgentOutcome,
   waitForAgentCompletion,
   waitForProcessOutput,
   type BackgroundAgentJob,
@@ -23,7 +22,7 @@ const MAX_MESSAGE_LENGTH = 20_000
 function jobOf(args: Record<string, unknown>, ownerId: string): BackgroundJob {
   const id = asString(args.id)?.trim() ?? ""
   const job = getJob(id)
-  if (!job || (job.kind === "agent" && job.ownerId !== ownerId)) {
+  if (!job || job.ownerId !== ownerId) {
     throw new Error(`no background job with id "${id}"`)
   }
   return job
@@ -52,16 +51,24 @@ async function agentOutput(job: BackgroundAgentJob, wait: number, signal: AbortS
   if (!job.done) return `(still running: ${job.activity})`
 
   const outcome = collectAgentOutcome(job)
+  const record = agentRecord(job)
   switch (outcome.status) {
     case "completed":
-      return `${outcome.report}\n(${jobStatus(job)})`
+      return `${outcome.report}\n(${jobStatus(job)})${record}`
     case "failed":
     case "interrupted":
     case "timed_out":
-      return `(${jobStatus(job)})`
+      return `(${jobStatus(job)})${record}`
     case "already_collected":
-      return `(report already collected; ${jobStatus(job)})`
+      return `(report already collected; ${jobStatus(job)})${record}`
   }
+}
+
+function agentRecord(job: BackgroundAgentJob): string {
+  if (!job.record) return ""
+  return job.record.status === "saved"
+    ? `\nTask record: ${job.record.path}`
+    : `\nTask record unavailable: ${job.record.message}`
 }
 
 function duration(ms: number): string {
@@ -81,9 +88,7 @@ function agentStatus(job: BackgroundAgentJob, now: number): string {
 }
 
 function statusOutput(id: string | undefined, ownerId: string): string {
-  const selected = id
-    ? [jobOf({ id }, ownerId)]
-    : listJobs().filter((job) => job.kind === "process" || job.ownerId === ownerId)
+  const selected = id ? [jobOf({ id }, ownerId)] : listJobs().filter((job) => job.ownerId === ownerId)
   if (selected.length === 0) return "No background jobs."
   const now = Date.now()
   return selected
@@ -158,7 +163,6 @@ export const jobKillTool: SessionTool = {
         ? `Job ${job.id} finished after stop was requested (${jobStatus(job)}).`
         : `Requested stop for job ${job.id}, but it has not finished yet — ${pendingCheck}.`
     if (job.kind === "agent") {
-      if (job.outcome?.status !== "completed" && !job.consumed) suppressAgentOutcome(job)
       const delivery =
         job.outcome?.status === "completed" && !job.consumed
           ? " Its completed result will be delivered automatically."

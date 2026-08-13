@@ -70,6 +70,8 @@ interface ToolContract extends ToolDefinition {
 }
 
 export interface ToolExecutionContext extends ToolCallContext {
+  sessionId: string
+  sessionKind: SessionKind
   signal: AbortSignal
   update(text: string): void
 }
@@ -83,6 +85,7 @@ export interface SessionToolContext {
     id: string
     kind: SessionKind
     cwd: string
+    directory: string
     provider: Provider
     model: string
     modelInputModalities?: ModelInputModality[]

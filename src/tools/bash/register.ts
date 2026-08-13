@@ -3,8 +3,9 @@ import { contributeRules, isDenied, matchRules } from "../../permissions/rules"
 import { registerPolicyRule } from "../../permissions/service"
 import type { PermissionRequest, PolicyDecision } from "../../permissions/types"
 import { registerTool } from "../registry"
+import { registerToolSessionDisposer } from "../session"
 import { commandEscapesWorkspace } from "./risk"
-import { shellPrompt } from "./shell"
+import { disposeShellSession, shellPrompt } from "./shell"
 import { splitCommand } from "./split"
 import { bashTool, commandOf, sandboxRequested } from "./tool"
 
@@ -36,6 +37,7 @@ function segmentDecision(request: PermissionRequest, segment: string): PolicyDec
 
 export function registerBash(): void {
   registerTool(bashTool)
+  registerToolSessionDisposer(disposeShellSession)
   registerPrompt({ id: "environment", text: shellPrompt })
   contributeRules({ ask: RISKY })
   registerPolicyRule({

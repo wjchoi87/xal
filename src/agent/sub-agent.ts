@@ -1,3 +1,5 @@
+import { mkdir, writeFile } from "node:fs/promises"
+import { join } from "node:path"
 import { AgentSession } from "./agent-session"
 import type { AgentEvent } from "./events"
 import { registerPrompt } from "./prompt"
@@ -6,21 +8,25 @@ import {
   appendAgentTranscript,
   createAgentJob,
   finishAgentJob,
+  sealAgentTranscript,
   setAgentActivity,
+  setAgentRecord,
   startAgentJob,
   stopJob,
-  suppressAgentOutcome,
   touchAgentActivity,
+  type BackgroundAgentOutcome,
   type BackgroundAgentJob,
 } from "../background/jobs"
 import { backgroundTasksChanged, registerBackgroundTask } from "../background/registry"
-import { createManagedWorktree } from "../git/worktrees"
+import { createManagedWorktree, type ManagedWorktree } from "../git/worktrees"
 import { describeError } from "../lib/error"
 import { asString, isRecord } from "../lib/json"
 import { compactPath } from "../lib/path"
 import { modeDefinition } from "../permissions/modes"
+import type { PermissionMode } from "../permissions/types"
 import { registerPolicyRule } from "../permissions/service"
 import { isThinkingEffort, type ThinkingEffort, type Usage } from "../providers/types"
+import { redactText } from "../secrets/redactor"
 import { toolFailed } from "../tools/output"
 import { registerTool } from "../tools/registry"
 import type { SessionTool, SessionToolContext } from "../tools/types"
@@ -42,6 +48,11 @@ interface ActivityState {
   toolCalls: Set<string>
   updatedCalls: Set<string>
   usage?: Usage
+}
+
+interface TaskTerminal {
+  outcome: BackgroundAgentOutcome
+  detail: string
 }
 
 interface Waiter {
@@ -153,8 +164,8 @@ function tasksFrom(args: Record<string, unknown>): TaskItem[] {
   return tasks
 }
 
-function childMode(access: TaskAccess): "plan" | "yolo" {
-  return access === "read" ? "plan" : "yolo"
+function childMode(access: TaskAccess, parentMode: PermissionMode): PermissionMode {
+  return access === "read" ? "plan" : parentMode
 }
 
 function toolActivity(tool: string, title: string): string {
@@ -275,6 +286,72 @@ function childPrompt(context: string, task: string): string {
   return `# Context\n${context}\n\n# Assignment\n${task}`
 }
 
+function taskDetail(detail: string, worktree: ManagedWorktree | undefined): string {
+  return worktree ? `${detail} in ${worktree.branch} at ${compactPath(worktree.path)}` : detail
+}
+
+function taskOutput(job: BackgroundAgentJob): string {
+  if (!job.record) return job.transcript
+  const record =
+    job.record.status === "saved" ? `Task record: ${job.record.path}` : `Task record unavailable: ${job.record.message}`
+  return job.transcript ? `${job.transcript}\n\n${record}` : record
+}
+
+async function saveTaskRecord(
+  directory: string,
+  job: BackgroundAgentJob,
+  terminal: TaskTerminal,
+  detail: string,
+  worktree: ManagedWorktree | undefined,
+): Promise<string> {
+  const path = join(directory, `agent-${job.id.replace(/[^a-zA-Z0-9_-]/g, "_")}-${crypto.randomUUID()}.md`)
+  const workspace = worktree
+    ? ["## Workspace", `Path: ${worktree.path}`, `Branch: ${worktree.branch}`, `Base: ${worktree.baseCommit}`, ""]
+    : []
+  const report = terminal.outcome.status === "completed" ? ["## Final report", terminal.outcome.report, ""] : []
+  const content = redactText(
+    [
+      "# Task agent record",
+      "",
+      `Agent: ${job.id}`,
+      `Status: ${terminal.outcome.status}`,
+      `Outcome: ${detail}`,
+      "",
+      "## Assignment",
+      job.task,
+      "",
+      ...workspace,
+      ...report,
+      "## Transcript",
+      job.transcript || "(no transcript)",
+      "",
+    ].join("\n"),
+  )
+  await mkdir(directory, { recursive: true, mode: 0o700 })
+  await writeFile(path, content, { encoding: "utf8", flag: "wx", mode: 0o600 })
+  return path
+}
+
+async function finishTask(
+  job: BackgroundAgentJob,
+  terminal: TaskTerminal,
+  directory: string,
+  worktree: ManagedWorktree | undefined,
+): Promise<void> {
+  const detail = taskDetail(terminal.detail, worktree)
+  sealAgentTranscript(job)
+  let finalDetail = detail
+  try {
+    const path = await saveTaskRecord(directory, job, terminal, detail, worktree)
+    setAgentRecord(job, { status: "saved", path })
+  } catch (error) {
+    const message = describeError(error)
+    setAgentRecord(job, { status: "failed", message })
+    finalDetail = `${detail}; task record unavailable: ${message}`
+  }
+  finishAgentJob(job, terminal.outcome, finalDetail)
+}
+
 function taskToolTitle(args: Record<string, unknown>): string {
   if (!Array.isArray(args.tasks) || args.tasks.length === 0) return "Dispatch tasks"
   const assignments = args.tasks.flatMap((value) => {
@@ -308,7 +385,7 @@ function registerTask(
     },
     state: () =>
       job.done ? { running: false, ok: job.outcome?.status === "completed", detail: job.detail } : { running: true },
-    output: () => job.transcript,
+    output: () => taskOutput(job),
     snapshot: () => ({
       activity: job.activity,
       elapsedMs: (job.finishedAt ?? Date.now()) - job.startedAt,
@@ -317,7 +394,6 @@ function registerTask(
     }),
     stop: async () => {
       await stopJob(job)
-      suppressAgentOutcome(job)
     },
   })
 }
@@ -335,6 +411,9 @@ async function runTask(
   let acquired = false
   let timedOut = false
   let deadline: ReturnType<typeof setTimeout> | undefined
+  let worktree: ManagedWorktree | undefined
+  let child: AgentSession | undefined
+  let terminal: TaskTerminal | undefined
   const record = (text: string): void => appendAgentTranscript(job, text)
   try {
     await scheduler.acquire(controller.signal)
@@ -349,7 +428,7 @@ async function runTask(
     }, TASK_TIMEOUT_MS)
     deadline.unref()
 
-    const worktree =
+    worktree =
       item.isolation === "worktree"
         ? await createManagedWorktree(ctx.session.cwd, item.task, controller.signal)
         : undefined
@@ -359,7 +438,7 @@ async function runTask(
     }
     if (controller.signal.aborted) throw new Error("task cancelled before it started")
 
-    const child = new AgentSession({
+    const taskSession = new AgentSession({
       kind: "subagent",
       cwd: worktree?.cwd ?? ctx.session.cwd,
       provider: ctx.session.provider,
@@ -368,20 +447,22 @@ async function runTask(
       thinking: item.thinking ?? ctx.session.thinking,
       interactive: false,
       persist: false,
+      inheritedDenyMode: ctx.session.mode,
       ...(item.access === "write" && !worktree
         ? { workspaceUndo: ctx.session.workspaceUndo, trackUndoPrompts: false }
         : {}),
     })
-    setChild(child)
-    child.setMode(childMode(item.access))
-    const abortChild = (): void => child.interrupt()
+    child = taskSession
+    setChild(taskSession)
+    taskSession.setMode(childMode(item.access, ctx.session.mode))
+    const abortChild = (): void => taskSession.interrupt()
     controller.signal.addEventListener("abort", abortChild)
     let outcome: Awaited<ReturnType<typeof runAgentTurn>>
     try {
-      outcome = await runAgentTurn(child, { text: childPrompt(context, item.task), images: [] }, (event) => {
+      outcome = await runAgentTurn(taskSession, { text: childPrompt(context, item.task), images: [] }, (event) => {
         if (job.done) return
         touchAgentActivity(job)
-        activity(event, child, state, record, (value) => setAgentActivity(job, value))
+        activity(event, taskSession, state, record, (value) => setAgentActivity(job, value))
       })
     } finally {
       controller.signal.removeEventListener("abort", abortChild)
@@ -389,52 +470,51 @@ async function runTask(
 
     if (timedOut) {
       setAgentActivity(job, "Timed out")
-      finishAgentJob(job, { status: "timed_out" }, "timed out after 10m")
-      return
-    }
-    if (outcome.status === "interrupted") {
+      terminal = { outcome: { status: "timed_out" }, detail: "timed out after 10m" }
+    } else if (outcome.status === "interrupted") {
       setAgentActivity(job, "Interrupted")
-      finishAgentJob(job, { status: "interrupted" }, "interrupted")
-      return
-    }
-    if (outcome.status === "failed") {
+      terminal = { outcome: { status: "interrupted" }, detail: "interrupted" }
+    } else if (outcome.status === "failed") {
       setAgentActivity(job, "Failed")
-      finishAgentJob(job, { status: "failed" }, `failed: ${outcome.error}`)
-      return
+      terminal = { outcome: { status: "failed" }, detail: `failed: ${outcome.error}` }
+    } else {
+      const report =
+        typeof outcome.response === "string" ? outcome.response.trim() : JSON.stringify(outcome.response, null, 2)
+      if (!report) {
+        setAgentActivity(job, "Failed")
+        record("\nTask agent completed without a final report.\n")
+        terminal = { outcome: { status: "failed" }, detail: "completed without a final report" }
+      } else {
+        setAgentActivity(job, "Report ready")
+        terminal = { outcome: { status: "completed", report }, detail: "completed" }
+      }
     }
-    const report =
-      typeof outcome.response === "string" ? outcome.response.trim() : JSON.stringify(outcome.response, null, 2)
-    if (!report) {
-      setAgentActivity(job, "Failed")
-      record("\nTask agent completed without a final report.\n")
-      finishAgentJob(job, { status: "failed" }, "completed without a final report")
-      return
-    }
-    setAgentActivity(job, "Report ready")
-    finishAgentJob(
-      job,
-      { status: "completed", report },
-      worktree ? `completed in ${worktree.branch} at ${compactPath(worktree.path)}` : "completed",
-    )
   } catch (error) {
-    if (job.done) return
     if (timedOut) {
       setAgentActivity(job, "Timed out")
-      finishAgentJob(job, { status: "timed_out" }, "timed out after 10m")
-      return
-    }
-    if (controller.signal.aborted) {
+      terminal = { outcome: { status: "timed_out" }, detail: "timed out after 10m" }
+    } else if (controller.signal.aborted) {
       setAgentActivity(job, "Interrupted")
-      finishAgentJob(job, { status: "interrupted" }, "interrupted")
-      return
+      terminal = { outcome: { status: "interrupted" }, detail: "interrupted" }
+    } else {
+      const message = describeError(error)
+      setAgentActivity(job, "Failed")
+      record(`\nTask agent failed: ${message}\n`)
+      terminal = { outcome: { status: "failed" }, detail: `failed: ${message}` }
     }
-    const message = describeError(error)
-    setAgentActivity(job, "Failed")
-    record(`\nTask agent failed: ${message}\n`)
-    finishAgentJob(job, { status: "failed" }, `failed: ${message}`)
   } finally {
     if (deadline) clearTimeout(deadline)
+    try {
+      child?.disposeToolResources()
+    } catch (error) {
+      const message = describeError(error)
+      record(`\nTask agent cleanup failed: ${message}\n`)
+      terminal = { outcome: { status: "failed" }, detail: `failed to clean up task resources: ${message}` }
+      setAgentActivity(job, "Cleanup failed")
+    }
     if (acquired) scheduler.release()
+    terminal ??= { outcome: { status: "failed" }, detail: "task ended without an outcome" }
+    await finishTask(job, terminal, ctx.session.directory, worktree)
     ctx.session.deliverAgentResult(job.id)
   }
 }
@@ -577,6 +657,7 @@ export function registerTaskAgents(): void {
       return [
         "You are a one-shot task agent working for a primary coding agent. Your first user message contains all shared context and your complete assignment.",
         "Complete only that assignment, work independently with the available tools, and do not ask the user or attempt further delegation.",
+        "Background Bash is unavailable. Run commands in the foreground; task resources are torn down before your result is delivered.",
         "Return a concise, self-contained final report with the result, evidence, changed files, and verification relevant to the assignment. Report failures clearly.",
       ].join("\n")
     },

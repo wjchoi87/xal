@@ -7,6 +7,8 @@ async function execute(contract: OutputContract, args: Record<string, unknown>):
   if (isInteractiveTool(tool) || isSessionTool(tool)) throw new Error("submit_output has an unexpected tool kind")
   return tool.execute(args, {
     cwd: process.cwd(),
+    sessionId: "output-contract-test",
+    sessionKind: "primary",
     signal: new AbortController().signal,
     update() {},
   })

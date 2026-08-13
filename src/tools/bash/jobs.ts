@@ -20,11 +20,11 @@ function registerExitHook(): void {
   })
 }
 
-export function startJob(command: string, proc: CommandProcess, cwd: string): BackgroundProcessJob {
+export function startJob(command: string, proc: CommandProcess, cwd: string, ownerId: string): BackgroundProcessJob {
   registerExitHook()
   runningProcs.add(proc)
   let exitCode: number | null = null
-  const job = createProcessJob("bash", () => killProcessTree(proc))
+  const job = createProcessJob("bash", ownerId, () => killProcessTree(proc))
   const collect = (chunk: Buffer): void => {
     appendProcessOutput(job, chunk.toString())
   }

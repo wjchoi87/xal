@@ -8,6 +8,8 @@ import {
   getJob,
   runningAgentJobs,
   unsettledAgentJobs,
+  unsettledJobs,
+  type BackgroundAgentJob,
 } from "../background/jobs"
 import { projectSessionsDir } from "../config/paths"
 import { describeError } from "../lib/error"
@@ -65,6 +67,7 @@ import { expandSkillInvocation } from "../skills/invoke"
 import { getTool, listTools } from "../tools/registry"
 import { boundToolOutput, TOOL_FAILED_PREFIX, TOOL_OUTPUT_UNSAVED_PREFIX, toolOutputDirectory } from "../tools/output"
 import { isInteractiveTool, isSessionTool, MAX_ELICITATION_ANSWER_LENGTH } from "../tools/types"
+import { disposeToolSession } from "../tools/session"
 import { WorkspaceUndo, type CodeRedo } from "../tools/undo"
 import type {
   ElicitationAnswer,
@@ -111,6 +114,7 @@ export interface AgentSessionDeps {
   outputSchema?: OutputSchema
   workspaceUndo?: WorkspaceUndo
   trackUndoPrompts?: boolean
+  inheritedDenyMode?: PermissionMode
 }
 
 export interface ResumeTarget {
@@ -246,9 +250,21 @@ function hasUnsettledAgentJobs(ownerId: string): boolean {
   return unsettledAgentJobs(ownerId).length > 0
 }
 
-function boundedAgentResult(output: string): string {
-  if (output.length <= MAX_AGENT_RESULT_CHARS) return output
-  return `${output.slice(0, MAX_AGENT_RESULT_CHARS)}\n\n[Result truncated; inspect the task transcript for the full output.]`
+function hasUnsettledJobs(ownerId: string): boolean {
+  return unsettledJobs(ownerId).length > 0
+}
+
+function agentRecordNotice(job: BackgroundAgentJob): string {
+  if (!job.record) return "Task record was not created."
+  return job.record.status === "saved"
+    ? `Full task record: ${job.record.path}`
+    : `Task record unavailable: ${job.record.message}`
+}
+
+function boundedAgentResult(output: string, job: BackgroundAgentJob): string {
+  const record = agentRecordNotice(job)
+  if (output.length <= MAX_AGENT_RESULT_CHARS) return `${output}\n\n${record}`
+  return `${output.slice(0, MAX_AGENT_RESULT_CHARS)}\n\n[Result truncated.]\n${record}`
 }
 
 function agentResultsMessage(results: BackgroundResult[], running: number): string {
@@ -311,6 +327,7 @@ export class AgentSession {
   private readonly kind: SessionKind
   private readonly outputContract: OutputContract | undefined
   private readonly trackUndoPrompts: boolean
+  private readonly inheritedDenyMode: PermissionMode | undefined
   private outputDirectory: string
   private cwd: string
   private workspaceUndo: WorkspaceUndo
@@ -346,6 +363,7 @@ export class AgentSession {
     this.cwd = resolve(deps.cwd ?? process.cwd())
     this.workspaceUndo = deps.workspaceUndo ?? new WorkspaceUndo(this.cwd)
     this.trackUndoPrompts = deps.trackUndoPrompts ?? true
+    this.inheritedDenyMode = deps.inheritedDenyMode
     this.provider = deps.provider
     this.model = deps.model
     this.modelInputModalities = deps.modelInputModalities
@@ -399,6 +417,10 @@ export class AgentSession {
     return this.modelInputModalities?.includes("image") ?? true
   }
 
+  disposeToolResources(): void {
+    disposeToolSession(this.sessionId)
+  }
+
   startEvent(resumed = false): SessionStartedEvent {
     return redactSessionStartedEvent({
       type: "session_started",
@@ -437,8 +459,9 @@ export class AgentSession {
   }
 
   reset(): boolean {
-    if (this.currentState !== "idle" || hasUnsettledAgentJobs(this.sessionId)) return false
+    if (this.currentState !== "idle" || hasUnsettledJobs(this.sessionId)) return false
     discardSettledAgentJobs(this.sessionId)
+    this.disposeToolResources()
     this.sessionId = crypto.randomUUID()
     this.permissionSessionKey = {}
     this.title = undefined
@@ -462,9 +485,16 @@ export class AgentSession {
   }
 
   resume(target: ResumeTarget): boolean {
-    if (this.currentState !== "idle" || hasUnsettledAgentJobs(this.sessionId)) return false
-    discardSettledAgentJobs(this.sessionId)
     const { meta } = target.session
+    if (
+      this.currentState !== "idle" ||
+      hasUnsettledJobs(this.sessionId) ||
+      (meta.id !== this.sessionId && hasUnsettledJobs(meta.id))
+    ) {
+      return false
+    }
+    discardSettledAgentJobs(this.sessionId)
+    this.disposeToolResources()
     this.sessionId = meta.id
     this.permissionSessionKey = {}
     this.title = target.session.title ? redactText(target.session.title) : undefined
@@ -557,6 +587,7 @@ export class AgentSession {
     const next = resolve(cwd)
     if (next === this.cwd) return
     const previous = this.cwd
+    this.disposeToolResources()
     this.cwd = next
     this.workspaceUndo = new WorkspaceUndo(next)
     this.workspaceUndo.seed(
@@ -751,7 +782,7 @@ export class AgentSession {
       if (outcome.status === "already_collected") continue
       const output =
         outcome.status === "completed" && job.detail !== "completed"
-          ? `${outcome.report}\n\nWorkspace: ${job.detail}`
+          ? `${outcome.report}\n\nOutcome: ${job.detail}`
           : outcome.status === "completed"
             ? outcome.report
             : job.detail
@@ -759,7 +790,7 @@ export class AgentSession {
         id: job.id,
         task: job.task,
         status: outcome.status,
-        output: boundedAgentResult(output),
+        output: boundedAgentResult(output, job),
       })
     }
     if (results.length === 0) return false
@@ -1827,6 +1858,7 @@ export class AgentSession {
       readOnly,
       sandboxed,
       mode: this.mode,
+      inheritedDenyMode: this.inheritedDenyMode,
     })
 
     if (decision === "deny") {
@@ -1895,6 +1927,7 @@ export class AgentSession {
                   id: this.sessionId,
                   kind: this.kind,
                   cwd: this.cwd,
+                  directory: this.outputDirectory,
                   provider: this.provider,
                   model: this.model,
                   modelInputModalities: this.modelInputModalities,
@@ -1907,7 +1940,13 @@ export class AgentSession {
                 signal,
                 update,
               })
-            : tool.execute(call.args, { cwd: this.cwd, signal, update })
+            : tool.execute(call.args, {
+                cwd: this.cwd,
+                sessionId: this.sessionId,
+                sessionKind: this.kind,
+                signal,
+                update,
+              })
       let result: ToolResult
       switch (undo.type) {
         case "none":

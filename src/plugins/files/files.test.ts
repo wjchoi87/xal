@@ -2,6 +2,7 @@ import { expect, test } from "bun:test"
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import type { ToolExecutionContext } from "../../tools/types"
 import { unifiedDiff } from "./diff"
 import { editTool } from "./edit"
 import { writeTool } from "./write"
@@ -15,9 +16,11 @@ async function withWorkspace(run: (workspace: string) => Promise<void>): Promise
   }
 }
 
-function context(cwd: string) {
+function context(cwd: string): ToolExecutionContext {
   return {
     cwd,
+    sessionId: "files-test",
+    sessionKind: "primary",
     signal: new AbortController().signal,
     update() {},
   }

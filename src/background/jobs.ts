@@ -10,6 +10,7 @@ const AGENT_RETENTION_MS = 5 * 60 * 1_000
 
 interface BackgroundJobBase {
   id: string
+  ownerId: string
   startedAt: number
   finishedAt?: number
   done: boolean
@@ -30,6 +31,8 @@ export interface BackgroundProcessJob extends BackgroundJobBase {
 export type BackgroundAgentOutcome =
   { status: "completed"; report: string } | { status: "failed" } | { status: "interrupted" } | { status: "timed_out" }
 
+export type BackgroundAgentRecord = { status: "saved"; path: string } | { status: "failed"; message: string }
+
 export interface BackgroundAgentControls {
   id?: string
   ownerId: string
@@ -40,7 +43,6 @@ export interface BackgroundAgentControls {
 
 export interface BackgroundAgentJob extends BackgroundJobBase {
   kind: "agent"
-  ownerId: string
   task: string
   phase: "queued" | "running"
   deadlineAt?: number
@@ -48,6 +50,7 @@ export interface BackgroundAgentJob extends BackgroundJobBase {
   transcript: string
   activity: string
   outcome?: BackgroundAgentOutcome
+  record?: BackgroundAgentRecord
   consumed: boolean
   send(message: string): boolean
 }
@@ -102,6 +105,7 @@ function jobId(prefix: string, preferred?: string): string {
 
 function createBase(
   prefix: string,
+  ownerId: string,
   stop: () => void,
   preferredId?: string,
 ): { base: BackgroundJobBase; complete: () => void } {
@@ -109,6 +113,7 @@ function createBase(
   return {
     base: {
       id: jobId(prefix, preferredId),
+      ownerId,
       startedAt: Date.now(),
       done: false,
       detail: "still running",
@@ -127,8 +132,8 @@ function registerJob(job: BackgroundJob, complete: () => void): void {
   profileJobCreated(job.id)
 }
 
-export function createProcessJob(prefix: string, stop: () => void): BackgroundProcessJob {
-  const created = createBase(prefix, stop)
+export function createProcessJob(prefix: string, ownerId: string, stop: () => void): BackgroundProcessJob {
+  const created = createBase(prefix, ownerId, stop)
   const job: BackgroundProcessJob = {
     ...created.base,
     kind: "process",
@@ -143,11 +148,10 @@ export function createProcessJob(prefix: string, stop: () => void): BackgroundPr
 }
 
 export function createAgentJob(prefix: string, controls: BackgroundAgentControls): BackgroundAgentJob {
-  const created = createBase(prefix, controls.stop, controls.id)
+  const created = createBase(prefix, controls.ownerId, controls.stop, controls.id)
   const job: BackgroundAgentJob = {
     ...created.base,
     kind: "agent",
-    ownerId: controls.ownerId,
     task: redactText(controls.task),
     phase: "queued",
     lastActivityAt: created.base.startedAt,
@@ -217,6 +221,18 @@ export function touchAgentActivity(job: BackgroundAgentJob): void {
   job.lastActivityAt = Date.now()
 }
 
+export function sealAgentTranscript(job: BackgroundAgentJob): void {
+  const redactor = redactors.get(job)
+  if (!redactor) return
+  appendTranscript(job, redactor.end())
+  redactors.delete(job)
+}
+
+export function setAgentRecord(job: BackgroundAgentJob, record: BackgroundAgentRecord): void {
+  job.record = record.status === "saved" ? record : { status: "failed", message: redactText(record.message) }
+  backgroundTasksChanged()
+}
+
 function completeJob(job: BackgroundJob, detail: string, remove: boolean): void {
   const complete = completions.get(job)
   if (!complete) throw new Error(`background job ${job.id} has no completion resolver`)
@@ -240,8 +256,7 @@ export function finishProcessJob(job: BackgroundProcessJob, detail: string): voi
 
 export function finishAgentJob(job: BackgroundAgentJob, outcome: BackgroundAgentOutcome, detail: string): void {
   if (job.done) return
-  appendTranscript(job, redactorOf(job).end())
-  redactors.delete(job)
+  sealAgentTranscript(job)
   job.outcome = outcome.status === "completed" ? { status: "completed", report: redactText(outcome.report) } : outcome
   completeJob(job, detail, false)
   if (job.consumed && jobs.get(job.id) === job) scheduleAgentEviction(job)
@@ -265,6 +280,10 @@ export function unsettledAgentJobs(ownerId: string): BackgroundAgentJob[] {
   return [...jobs.values()].filter(
     (job): job is BackgroundAgentJob => job.kind === "agent" && job.ownerId === ownerId && (!job.done || !job.consumed),
   )
+}
+
+export function unsettledJobs(ownerId: string): BackgroundJob[] {
+  return [...jobs.values()].filter((job) => job.ownerId === ownerId && (!job.done || !job.consumed))
 }
 
 export function readProcessOutput(job: BackgroundProcessJob): { text: string; dropped: boolean } {
@@ -339,8 +358,11 @@ export async function waitForAgentCompletion(
 
 export async function stopJob(job: BackgroundJob): Promise<void> {
   if (job.done) return
+  if (job.kind === "agent") {
+    suppressAgentOutcome(job)
+    setAgentActivity(job, "Stopping…")
+  }
   job.stop()
-  if (job.kind === "agent") setAgentActivity(job, "Stopping…")
   await Promise.race([job.completion, sleep(STOP_WAIT_MS, undefined, { ref: false })])
 }
 
