@@ -74,6 +74,7 @@ export class AttentionController {
       case "hook_finished":
       case "queue_changed":
       case "queue_flushed":
+      case "background_results":
       case "reasoning_summary_delta":
       case "reasoning_delta":
       case "reasoning_summary":

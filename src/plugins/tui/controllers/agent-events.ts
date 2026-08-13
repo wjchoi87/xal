@@ -101,6 +101,12 @@ export class AgentEventController {
       case "queue_flushed":
         this.screen.composer.restore(event.inputs)
         break
+      case "background_results":
+        for (const result of event.results) {
+          scrollback.append({ kind: "info", text: `background task ${result.id} · ${result.status}` })
+          scrollback.append({ kind: result.status === "completed" ? "text" : "error", text: result.output })
+        }
+        break
       case "text_delta":
         scrollback.appendStream("text", event.text)
         break

@@ -2,6 +2,13 @@ import { release } from "node:os"
 import { dirname, resolve } from "node:path"
 import { setTimeout as sleep } from "node:timers/promises"
 import { appInfo } from "../app-info"
+import {
+  collectAgentOutcome,
+  discardSettledAgentJobs,
+  getJob,
+  runningAgentJobs,
+  unsettledAgentJobs,
+} from "../background/jobs"
 import { projectSessionsDir } from "../config/paths"
 import { describeError } from "../lib/error"
 import type { JsonObject } from "../lib/json"
@@ -68,7 +75,7 @@ import {
   tailBudget,
 } from "./compaction"
 import type { CompactionTrigger } from "./compaction"
-import type { AgentEvent, AgentState, DenialCause, QueuedEntry, SessionStartedEvent } from "./events"
+import type { AgentEvent, AgentState, BackgroundResult, DenialCause, QueuedEntry, SessionStartedEvent } from "./events"
 import {
   activeHistory,
   rewindConversation,
@@ -146,6 +153,7 @@ interface RedoEntry {
 
 const MAX_PROVIDER_ATTEMPTS = 6
 const MAX_COMPACTION_FAILURES = 2
+const MAX_AGENT_RESULT_CHARS = 12_000
 
 interface ApprovalResult {
   decision: "allow" | "deny"
@@ -222,6 +230,35 @@ function isDirectShellInput(input: UserInput): boolean {
   return directShellCommand(input) !== undefined
 }
 
+function hasUnsettledAgentJobs(ownerId: string): boolean {
+  return unsettledAgentJobs(ownerId).length > 0
+}
+
+function boundedAgentResult(output: string): string {
+  if (output.length <= MAX_AGENT_RESULT_CHARS) return output
+  return `${output.slice(0, MAX_AGENT_RESULT_CHARS)}\n\n[Result truncated; inspect the task transcript for the full output.]`
+}
+
+function agentResultsMessage(results: BackgroundResult[], running: number): string {
+  const heading =
+    results.length === 1
+      ? `Background task ${results[0]!.id} has finished. Resume your work using its result.`
+      : `${results.length} background tasks have finished. Resume your work using their results.`
+  const reports = results.map(
+    (result) => `## ${result.id} · ${result.status}\nTask: ${result.task.split("\n", 1)[0]}\n\n${result.output}`,
+  )
+  return [
+    "<system-notice>",
+    heading,
+    running === 0
+      ? "No task agents remain running."
+      : `${running} task ${running === 1 ? "agent is" : "agents are"} still running; do not run shared final validation yet.`,
+    "Worker reports are evidence, not verification. Check important claims and shared-workspace changes before relying on them.",
+    ...reports,
+    "</system-notice>",
+  ].join("\n\n")
+}
+
 function addUsage(total: Usage | undefined, usage: Usage): Usage {
   return {
     totalInputTokens: (total?.totalInputTokens ?? 0) + (usage.totalInputTokens ?? 0),
@@ -255,6 +292,7 @@ export class AgentSession {
   private redoInvalidated: string | undefined
   private contextTokens: number | undefined
   private compactionFailures = 0
+  private readonly pendingAgentResults = new Set<string>()
   private readonly listeners = new Set<(event: AgentEvent) => void>()
   private readonly recorder: SessionRecorder | undefined
   private readonly interactive: boolean
@@ -279,6 +317,7 @@ export class AgentSession {
   private pendingElicitation: PendingElicitation | undefined
   private queued: UserInput[] = []
   private turnActive = false
+  private acceptingQueuedInput = false
   private promoteOnAbort = false
   private readonly hookReporter: HookReporter = {
     started: (hook, event) => {
@@ -386,7 +425,8 @@ export class AgentSession {
   }
 
   reset(): boolean {
-    if (this.currentState !== "idle") return false
+    if (this.currentState !== "idle" || hasUnsettledAgentJobs(this.sessionId)) return false
+    discardSettledAgentJobs(this.sessionId)
     this.sessionId = crypto.randomUUID()
     this.permissionSessionKey = {}
     this.title = undefined
@@ -399,16 +439,19 @@ export class AgentSession {
     this.workspaceUndo = new WorkspaceUndo(this.cwd)
     this.contextTokens = undefined
     this.compactionFailures = 0
+    this.pendingAgentResults.clear()
     this.plan = undefined
     this.planHandoffActive = false
     this.streaming = undefined
+    this.acceptingQueuedInput = false
     this.recorder?.start(this.meta(), this.cwd)
     this.emit(this.startEvent())
     return true
   }
 
   resume(target: ResumeTarget): boolean {
-    if (this.currentState !== "idle") return false
+    if (this.currentState !== "idle" || hasUnsettledAgentJobs(this.sessionId)) return false
+    discardSettledAgentJobs(this.sessionId)
     const { meta } = target.session
     this.sessionId = meta.id
     this.permissionSessionKey = {}
@@ -430,6 +473,7 @@ export class AgentSession {
     )
     this.contextTokens = recordedContext(target.session.events)
     this.compactionFailures = 0
+    this.pendingAgentResults.clear()
     this.plan = undefined
     this.planHandoffActive = false
     let recordedCwd = meta.cwd
@@ -443,6 +487,7 @@ export class AgentSession {
       if (event.type === "workspace_changed") recordedCwd = event.cwd
     }
     this.streaming = undefined
+    this.acceptingQueuedInput = false
     this.provider = target.provider
     this.model = target.model
     this.modelInputModalities = target.modelInputModalities
@@ -544,7 +589,33 @@ export class AgentSession {
     return true
   }
 
+  steer(text: string): boolean {
+    if (this.movingHistory || !this.turnActive || !this.acceptingQueuedInput) return false
+    this.queued.push(redactUserInput({ text, images: [] }))
+    this.emit({ type: "queue_changed", entries: this.queueEntries() })
+    return true
+  }
+
+  deliverAgentResult(id: string): void {
+    const job = getJob(id)
+    if (!job || job.kind !== "agent" || job.ownerId !== this.sessionId || job.consumed) return
+    this.pendingAgentResults.add(id)
+    queueMicrotask(() => this.startAgentResultTurn())
+  }
+
   private startTurn(inputs: UserInput[]): void {
+    this.startPreparedTurn((signal) => this.acceptInputs(inputs, signal))
+  }
+
+  private startAgentResultTurn(): boolean {
+    if (this.pendingAgentResults.size === 0 || this.movingHistory || this.turnActive || this.state !== "idle") {
+      return false
+    }
+    this.startPreparedTurn(() => Promise.resolve())
+    return true
+  }
+
+  private startPreparedTurn(prepare: (signal: AbortSignal) => Promise<void>): void {
     this.outputContract?.reset()
     const controller = new AbortController()
     const provider = this.provider
@@ -552,11 +623,12 @@ export class AgentSession {
     const thinking = this.thinking
     this.abortController = controller
     this.turnActive = true
+    this.acceptingQueuedInput = true
     this.promoteOnAbort = false
     this.setState("streaming")
     let errored = false
     const usage: TurnUsage = {}
-    void this.acceptInputs(inputs, controller.signal)
+    void prepare(controller.signal)
       .then(() => this.runTurn(controller.signal, provider, model, thinking, usage))
       .catch((error) => {
         if (isAbortError(error) || controller.signal.aborted) {
@@ -568,21 +640,22 @@ export class AgentSession {
       })
       .finally(() => {
         this.turnActive = false
+        this.acceptingQueuedInput = false
         this.abortController = undefined
         this.setState("idle")
         if (!errored && controller.signal.aborted && this.promoteOnAbort && this.queued.length > 0) {
           this.startNextQueued()
           return
         }
-        if (
-          !errored &&
-          !controller.signal.aborted &&
-          this.queued[0] !== undefined &&
-          isDirectShellInput(this.queued[0]) &&
-          this.startNextQueued()
-        ) {
+        if (controller.signal.aborted) {
+          this.flushQueue()
+          this.startAgentResultTurn()
           return
         }
+        if (!errored && this.queued[0] !== undefined && isDirectShellInput(this.queued[0]) && this.startNextQueued()) {
+          return
+        }
+        if (this.startAgentResultTurn()) return
         this.flushQueue()
       })
   }
@@ -591,6 +664,7 @@ export class AgentSession {
     const controller = new AbortController()
     this.abortController = controller
     this.turnActive = true
+    this.acceptingQueuedInput = false
     this.promoteOnAbort = false
     this.setState("running_tool")
     let errored = false
@@ -605,9 +679,16 @@ export class AgentSession {
       })
       .finally(() => {
         this.turnActive = false
+        this.acceptingQueuedInput = false
         this.abortController = undefined
         this.setState("idle")
         if (!errored && (!controller.signal.aborted || this.promoteOnAbort) && this.startNextQueued()) return
+        if (controller.signal.aborted) {
+          this.flushQueue()
+          this.startAgentResultTurn()
+          return
+        }
+        if (this.startAgentResultTurn()) return
         this.flushQueue()
       })
   }
@@ -642,6 +723,40 @@ export class AgentSession {
     return true
   }
 
+  private drainAgentResults(): boolean {
+    if (this.pendingAgentResults.size === 0) return false
+    const results: BackgroundResult[] = []
+    const pending = [...this.pendingAgentResults]
+    this.pendingAgentResults.clear()
+    for (const id of pending) {
+      const job = getJob(id)
+      if (!job || job.kind !== "agent" || job.ownerId !== this.sessionId || job.consumed) continue
+      if (!job.done || !job.outcome) {
+        this.pendingAgentResults.add(id)
+        continue
+      }
+      const outcome = collectAgentOutcome(job)
+      if (outcome.status === "already_collected") continue
+      const output =
+        outcome.status === "completed" && job.detail !== "completed"
+          ? `${outcome.report}\n\nWorkspace: ${job.detail}`
+          : outcome.status === "completed"
+            ? outcome.report
+            : job.detail
+      results.push({
+        id: job.id,
+        task: job.task,
+        status: outcome.status,
+        output: boundedAgentResult(output),
+      })
+    }
+    if (results.length === 0) return false
+    this.emit({ type: "background_results", results })
+    const running = runningAgentJobs(this.sessionId).length
+    this.pushItem({ type: "user_message", text: agentResultsMessage(results, running), images: [] })
+    return true
+  }
+
   private async acceptInputs(inputs: UserInput[], signal: AbortSignal): Promise<void> {
     for (const [index, input] of inputs.entries()) {
       try {
@@ -671,7 +786,7 @@ export class AgentSession {
 
     const messageId = crypto.randomUUID()
     this.invalidateRedos("Redo is unavailable because a new prompt created a divergent branch.")
-    if (this.trackUndoPrompts) this.workspaceUndo.markPrompt(messageId, input.text)
+    if (this.trackUndoPrompts) await this.workspaceUndo.markPromptAfterCaptures(messageId, input.text)
     this.checkpoints.push({ messageId, input: redactUserInput(input), before: [...this.items] })
     this.emit({
       type: "user_message",
@@ -711,7 +826,7 @@ export class AgentSession {
 
     this.ensureTitle(input)
     this.invalidateRedos("Redo is unavailable because a new prompt created a divergent branch.")
-    if (this.trackUndoPrompts) this.workspaceUndo.markPrompt(messageId, input.text)
+    if (this.trackUndoPrompts) await this.workspaceUndo.markPromptAfterCaptures(messageId, input.text)
     this.checkpoints.push({ messageId, input, before: [...this.items] })
     if (prepared) outcome = await this.executeToolCall(prepared, signal)
     if (!outcome) throw new Error("direct shell did not produce an outcome")
@@ -790,7 +905,7 @@ export class AgentSession {
   }
 
   async undo(messageId: string): Promise<UndoOutcome> {
-    if (this.currentState !== "idle") return { status: "busy" }
+    if (this.currentState !== "idle" || hasUnsettledAgentJobs(this.sessionId)) return { status: "busy" }
     if (!isMessageId(messageId)) return { status: "invalid" }
     const checkpoint = this.checkpoints.find((candidate) => candidate.messageId === messageId)
     if (!checkpoint) return { status: "invalid" }
@@ -890,7 +1005,7 @@ export class AgentSession {
   }
 
   async redo(): Promise<RedoOutcome> {
-    if (this.currentState !== "idle") return { status: "busy" }
+    if (this.currentState !== "idle" || hasUnsettledAgentJobs(this.sessionId)) return { status: "busy" }
     const entry = this.redos.at(-1)
     if (!entry) {
       return this.redoInvalidated ? { status: "nothing", message: this.redoInvalidated } : { status: "nothing" }
@@ -967,7 +1082,7 @@ export class AgentSession {
   }
 
   async compact(instructions?: string): Promise<CompactionOutcome> {
-    if (this.currentState !== "idle") return "busy"
+    if (this.currentState !== "idle" || hasUnsettledAgentJobs(this.sessionId)) return "busy"
     const controller = new AbortController()
     this.abortController = controller
     this.setState("compacting")
@@ -1240,6 +1355,7 @@ export class AgentSession {
     const toolLoops = new ToolLoopDetector()
 
     while (true) {
+      if (this.drainAgentResults()) toolLoops.reset()
       await this.autoCompact(signal, provider, model, thinking)
       if (signal.aborted) {
         this.emit({ type: "turn_interrupted" })
@@ -1257,6 +1373,7 @@ export class AgentSession {
       const toolCalls = items.filter((item): item is ToolCallItem => item.type === "tool_call")
       if (toolCalls.length === 0) {
         if (this.queued.length > 0 && !isDirectShellInput(this.queued[0]!)) continue
+        if (this.pendingAgentResults.size > 0) continue
         if (this.outputContract) {
           const correction = this.outputContract.missing()
           if (this.outputContract.exhausted) throw this.outputContract.failure()
@@ -1299,6 +1416,10 @@ export class AgentSession {
       }
       if (loopError) throw loopError
       if (this.outputContract?.output) {
+        if ((this.queued.length > 0 && !isDirectShellInput(this.queued[0]!)) || this.pendingAgentResults.size > 0) {
+          this.outputContract.reset()
+          continue
+        }
         await this.endTurn(usage, this.outputContract.output, signal)
         return
       }
@@ -1312,6 +1433,7 @@ export class AgentSession {
   }
 
   private async endTurn(usage: TurnUsage, output: string | JsonObject | undefined, signal: AbortSignal): Promise<void> {
+    this.acceptingQueuedInput = false
     await runTurnEndHooks(
       {
         ...(output === undefined ? {} : { output }),
@@ -1730,6 +1852,7 @@ export class AgentSession {
           : isSessionTool(tool)
             ? tool.execute(call.args, {
                 session: {
+                  id: this.sessionId,
                   kind: this.kind,
                   cwd: this.cwd,
                   provider: this.provider,
@@ -1739,6 +1862,7 @@ export class AgentSession {
                   mode: this.mode,
                   workspaceUndo: this.workspaceUndo,
                   changeWorkspace: (cwd) => this.changeWorkspace(cwd),
+                  deliverAgentResult: (id) => this.deliverAgentResult(id),
                 },
                 signal,
                 update,

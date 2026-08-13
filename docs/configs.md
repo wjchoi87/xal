@@ -94,7 +94,7 @@ export default {
 }
 ```
 
-Put the file at `plugin.ts` inside a plugin directory and add that directory's absolute path to `plugins`. In the TUI, `/hooks` lists every registered hook and the events it handles. Each completed primary-session hook invocation appears in the transcript with its action and elapsed time; sub-agent hook invocations appear in that agent's job output.
+Put the file at `plugin.ts` inside a plugin directory and add that directory's absolute path to `plugins`. In the TUI, `/hooks` lists every registered hook and the events it handles. Each completed primary-session hook invocation appears in the transcript with its action and elapsed time; task-agent hook invocations appear in that agent's job output.
 
 ### Thinking
 

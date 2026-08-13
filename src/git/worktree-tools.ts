@@ -34,7 +34,7 @@ function activeTaskAt(path: string): string | undefined {
 export const worktreeEnterTool: SessionTool = {
   name: "worktree_enter",
   description:
-    "Create a clean Git worktree on a new Tack branch and move this session into it. The current workspace must be clean. Sub-agents spawned afterward inherit the isolated checkout.",
+    "Create a clean Git worktree on a new Tack branch and move this session into it. The current workspace must be clean. Task agents spawned afterward inherit the isolated checkout.",
   parameters: {
     type: "object",
     properties: {
@@ -73,7 +73,7 @@ export const worktreeEnterTool: SessionTool = {
         `Entered isolated worktree ${compactPath(worktree.path)}.`,
         `Branch: ${worktree.branch}`,
         `Base: ${worktree.baseCommit}`,
-        "Sub-agents now inherit this worktree.",
+        "Task agents now inherit this worktree.",
       ].join("\n"),
     }
   },
@@ -138,13 +138,13 @@ export const worktreeExitTool: SessionTool = {
 export const worktreeRemoveTool: SessionTool = {
   name: "worktree_remove",
   description:
-    "Remove a managed Tack worktree that is not the current session workspace, such as an isolated sub-agent checkout. Refuses uncommitted or ignored files unless force is true and leaves the branch available.",
+    "Remove a managed Tack worktree that is not the current session workspace, such as an isolated task-agent checkout. Refuses uncommitted or ignored files unless force is true and leaves the branch available.",
   parameters: {
     type: "object",
     properties: {
       path: {
         type: "string",
-        description: "Managed worktree path returned by sub_agent",
+        description: "Managed worktree path reported by a task agent",
       },
       force: {
         type: "boolean",

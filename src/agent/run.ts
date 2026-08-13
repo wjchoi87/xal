@@ -67,6 +67,7 @@ export function runAgentTurn(
         case "hook_finished":
         case "queue_changed":
         case "queue_flushed":
+        case "background_results":
         case "text_delta":
         case "reasoning_summary_delta":
         case "reasoning_delta":

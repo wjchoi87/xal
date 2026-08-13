@@ -1,4 +1,4 @@
-import type { AgentEvent, DenialCause, DirectShellResult } from "../agent/events"
+import type { AgentEvent, BackgroundResult, DenialCause, DirectShellResult } from "../agent/events"
 import type { CompactionItem, HistoryItem } from "../agent/history"
 import { isMessageId } from "../agent/message-id"
 import type { HookAction, HookEvent } from "../hooks/types"
@@ -112,6 +112,19 @@ function parseMessageIdentity(raw: Record<string, unknown>): { messageId?: strin
   return isMessageId(raw.messageId) ? { messageId: raw.messageId } : undefined
 }
 
+function parseBackgroundResult(value: unknown): BackgroundResult | undefined {
+  if (!isRecord(value)) return undefined
+  const id = asString(value.id)
+  const task = asString(value.task)
+  const status = asString(value.status)
+  const output = asString(value.output)
+  if (!id || task === undefined || output === undefined) return undefined
+  if (status !== "completed" && status !== "failed" && status !== "interrupted" && status !== "timed_out") {
+    return undefined
+  }
+  return { id, task, status, output }
+}
+
 function parseEvent(raw: unknown): AgentEvent | undefined {
   if (!isRecord(raw)) return undefined
 
@@ -147,6 +160,14 @@ function parseEvent(raw: unknown): AgentEvent | undefined {
         imageCount: asNumber(raw.imageCount) ?? 0,
         sentAt: asNumber(raw.sentAt) ?? 0,
       }
+    }
+    case "background_results": {
+      if (!Array.isArray(raw.results) || raw.results.length === 0) return undefined
+      const results = raw.results.flatMap((value) => {
+        const result = parseBackgroundResult(value)
+        return result ? [result] : []
+      })
+      return results.length === raw.results.length ? { type: "background_results", results } : undefined
     }
     case "conversation_rewound": {
       const movement = parseConversationMove(raw)

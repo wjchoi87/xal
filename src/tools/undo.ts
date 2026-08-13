@@ -559,6 +559,17 @@ class UndoCore {
 
   markPrompt(messageId: string, prompt: string): void {
     this.assertPromptMutationAvailable()
+    this.appendPrompt(messageId, prompt)
+  }
+
+  markPromptAfterCaptures(messageId: string, prompt: string): Promise<void> {
+    return this.withCaptureTurn(async () => {
+      if (this.busy) throw new Error("a prompt checkpoint cannot be changed while code undo is running")
+      this.appendPrompt(messageId, prompt)
+    })
+  }
+
+  private appendPrompt(messageId: string, prompt: string): void {
     this.incrementBranch()
     this.checkpoints.push({
       messageId,
@@ -984,6 +995,10 @@ export class WorkspaceUndo {
 
   markPrompt(messageId: string, prompt: string): void {
     this.core.markPrompt(messageId, prompt)
+  }
+
+  markPromptAfterCaptures(messageId: string, prompt: string): Promise<void> {
+    return this.core.markPromptAfterCaptures(messageId, prompt)
   }
 
   previews(): Promise<UndoPreview[]> {
