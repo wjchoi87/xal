@@ -197,7 +197,7 @@ export class AgentSession {
     })
     this.asyncState.register()
     this.toolRunner = new ToolCallRunner(this.toolRunnerHost())
-    profileSessionCreated(this.sessionId, this.kind, this.provider.id, this.model, this.thinking, this.cwd)
+    profileSessionCreated(this.sessionId, this.kind, this.provider.id, this.model, this.thinking)
   }
 
   private toolRunnerHost(): ToolRunnerHost {

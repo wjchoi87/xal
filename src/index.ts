@@ -70,6 +70,19 @@ function registerCore(settings: Settings): void {
   registerTrustClis()
 }
 
+function parseGlobalOptions(input: string[]): { profile: boolean; args: string[] } {
+  let profile = false
+  let index = 0
+  while (input[index]?.startsWith("-")) {
+    const option = input[index]!
+    if (option !== "--profile") break
+    if (profile) throw new Error("duplicate option: --profile")
+    profile = true
+    index++
+  }
+  return { profile, args: input.slice(index) }
+}
+
 function normalize(args: string[]): string[] {
   const first = args[0]
   if (first === "-c" || first === "--continue") return ["resume", ...args.slice(1)]
@@ -77,8 +90,9 @@ function normalize(args: string[]): string[] {
 }
 
 async function main(input: string[]): Promise<void> {
-  startProfiler()
-  const args = normalize(input)
+  const options = parseGlobalOptions(input)
+  startProfiler(options.profile)
+  const args = normalize(options.args)
   const trusted = await ensureWorkspaceTrust({
     print: args.length === 0 ? ctx.print : ctx.error,
     choose: args.length === 0 && process.stdin.isTTY ? chooseOption : undefined,

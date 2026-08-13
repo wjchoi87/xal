@@ -21,15 +21,11 @@ export interface AgentSessionTestHarness {
 
 export async function setupAgentSessionTests(prefix: string): Promise<AgentSessionTestHarness> {
   const inheritedTackHome = process.env.TACK_HOME
-  const inheritedProfiler = process.env.ENABLE_PROFILER
   const testHome = await mkdtemp(join(tmpdir(), prefix))
   process.env.TACK_HOME = testHome
-  delete process.env.ENABLE_PROFILER
   const cleanup = async (): Promise<void> => {
     if (inheritedTackHome === undefined) delete process.env.TACK_HOME
     else process.env.TACK_HOME = inheritedTackHome
-    if (inheritedProfiler === undefined) delete process.env.ENABLE_PROFILER
-    else process.env.ENABLE_PROFILER = inheritedProfiler
     await rm(testHome, { recursive: true, force: true })
   }
 

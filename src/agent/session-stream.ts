@@ -1,5 +1,4 @@
 import { setTimeout as sleep } from "node:timers/promises"
-import { describeError } from "../lib/error"
 import {
   profileProviderFirstEvent,
   profileProviderRequestFinished,
@@ -115,7 +114,6 @@ export async function streamProviderTurn(
         profile,
         isAbortError(error) || signal.aborted ? "interrupted" : "failed",
         round.usage,
-        describeError(error),
       )
       if (isAbortError(error) || signal.aborted) {
         host.buffer.flush()

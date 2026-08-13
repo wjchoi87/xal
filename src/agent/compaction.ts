@@ -1,5 +1,4 @@
 import { resolveThinking } from "../config/thinking"
-import { describeError } from "../lib/error"
 import {
   profileProviderFirstEvent,
   profileProviderRequestFinished,
@@ -207,7 +206,6 @@ export async function summarizeHistory(request: SummaryRequest): Promise<string>
       profile,
       request.signal.aborted || (error instanceof Error && error.name === "AbortError") ? "interrupted" : "failed",
       usage,
-      describeError(error),
     )
     throw error
   }

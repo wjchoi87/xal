@@ -383,13 +383,18 @@ export async function drainOwnerDeliveries(ownerId: string): Promise<void> {
   }
 }
 
-function completeJob(job: BackgroundJob, detail: string, remove: boolean): void {
+function completeJob(
+  job: BackgroundJob,
+  detail: string,
+  outcome: "completed" | "failed" | "interrupted" | "timed_out",
+  remove: boolean,
+): void {
   const complete = completions.get(job)
   if (!complete) throw new Error(`background job ${job.id} has no completion resolver`)
   job.done = true
   job.finishedAt = Date.now()
   job.detail = redactText(detail)
-  profileJobFinished(job.id, job.detail)
+  profileJobFinished(job.id, outcome)
   completions.delete(job)
   complete()
   if (remove) removeBackgroundTask(job.id)
@@ -422,7 +427,16 @@ export async function finishProcessJob(job: BackgroundProcessJob, termination: P
     }
     job.record = logFailure ? { status: "failed", message: logFailure } : { status: "saved", path: log.path }
   }
-  completeJob(job, processDetail(termination, logFailure), true)
+  completeJob(
+    job,
+    processDetail(termination, logFailure),
+    termination.status === "signaled"
+      ? "interrupted"
+      : termination.status === "exited" && termination.exitCode === 0 && !logFailure
+        ? "completed"
+        : "failed",
+    true,
+  )
   wakeProcess(job)
   enqueueDelivery(job)
 }
@@ -431,7 +445,7 @@ export function finishAgentJob(job: BackgroundAgentJob, outcome: BackgroundAgent
   if (job.done) return
   sealAgentTranscript(job)
   job.outcome = outcome.status === "completed" ? { status: "completed", report: redactText(outcome.report) } : outcome
-  completeJob(job, detail, false)
+  completeJob(job, detail, outcome.status, false)
   enqueueDelivery(job)
 }
 

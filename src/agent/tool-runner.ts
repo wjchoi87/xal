@@ -257,21 +257,13 @@ export class ToolCallRunner {
         this.commit(outcome)
         if (recorded[index]) toolLoops.record(outcome.call, outcome.output)
       }
-      profileToolBatchFinished(
-        profile,
-        loopError ? "failed" : signal.aborted ? "interrupted" : "completed",
-        loopError?.message,
-      )
+      profileToolBatchFinished(profile, loopError ? "failed" : signal.aborted ? "interrupted" : "completed")
       return {
         ...(loopError ? { error: loopError } : {}),
         requiresContinuation: outcomes.some((outcome) => outcome?.requiresContinuation ?? true),
       }
     } catch (error) {
-      profileToolBatchFinished(
-        profile,
-        isAbortError(error) || signal.aborted ? "interrupted" : "failed",
-        describeError(error),
-      )
+      profileToolBatchFinished(profile, isAbortError(error) || signal.aborted ? "interrupted" : "failed")
       throw error
     }
   }
