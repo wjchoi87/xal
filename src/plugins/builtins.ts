@@ -10,6 +10,7 @@ import lsp from "./lsp/plugin"
 import mcp from "./mcp/plugin"
 import search from "./search/plugin"
 import tui from "./tui/plugin"
+import web from "./web/plugin"
 
 export const builtinPlugins: Plugin[] = [
   codeReview,
@@ -17,6 +18,7 @@ export const builtinPlugins: Plugin[] = [
   projectInstructions,
   files,
   search,
+  web,
   lsp,
   mcp,
   deepseek,
