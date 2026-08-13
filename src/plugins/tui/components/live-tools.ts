@@ -130,7 +130,15 @@ export class LiveTools {
     const view = column(this.ctx, {})
     const header = row(this.ctx, { height: 1, alignItems: "center" })
     header.add(label(this.ctx, { content: readOnly ? ">" : "*", width: 2, color: COLORS.faint }))
-    header.add(label(this.ctx, { content: commandLabel(tool, title), flexGrow: 1, flexShrink: 1, minWidth: 1 }))
+    header.add(
+      label(this.ctx, {
+        content: commandLabel(tool, title),
+        flexGrow: 1,
+        flexShrink: 1,
+        minWidth: 1,
+        color: COLORS.faint,
+      }),
+    )
     const status = label(this.ctx, { content: "", flexShrink: 0, marginLeft: 1 })
     header.add(status)
     view.add(header)

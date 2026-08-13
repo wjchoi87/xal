@@ -183,7 +183,15 @@ function tool(ctx: RenderContext, block: ToolBlock, expanded: boolean, grouped: 
   const box = column(ctx)
   const head = row(ctx, { height: 1, alignItems: "center" })
   head.add(label(ctx, { content: block.readOnly ? ">" : "*", width: 2, color: COLORS.faint }))
-  head.add(label(ctx, { content: commandLabel(block.tool, block.title), flexGrow: 1, flexShrink: 1, minWidth: 1 }))
+  head.add(
+    label(ctx, {
+      content: commandLabel(block.tool, block.title),
+      flexGrow: 1,
+      flexShrink: 1,
+      minWidth: 1,
+      color: COLORS.faint,
+    }),
+  )
   head.add(
     label(ctx, {
       content: settledStatus(outcome, summary, block.elapsed, ctx.width),
