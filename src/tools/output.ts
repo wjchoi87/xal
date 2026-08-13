@@ -95,10 +95,14 @@ function preview(text: string, maximumLines: number, maximumBytes: number): { he
   }
 }
 
-export async function boundToolOutput(directory: string, output: string): Promise<string> {
+export async function boundToolOutput(
+  directory: string,
+  output: string,
+  maximumBytes = MAX_OUTPUT_BYTES,
+): Promise<string> {
   const lines = lineCount(output)
   const bytes = Buffer.byteLength(output)
-  if (lines <= MAX_OUTPUT_LINES && bytes <= MAX_OUTPUT_BYTES) return output
+  if (lines <= MAX_OUTPUT_LINES && bytes <= maximumBytes) return output
 
   const path = join(directory, `tool-${crypto.randomUUID()}.txt`)
   await mkdir(directory, { recursive: true, mode: 0o700 })
@@ -106,8 +110,8 @@ export async function boundToolOutput(directory: string, output: string): Promis
 
   const notice = `... output truncated (${lines} lines, ${bytes} bytes) ...`
   const recovery = `Full output saved to: ${path}`
-  const availableBytes = MAX_OUTPUT_BYTES - Buffer.byteLength(notice) - Buffer.byteLength(recovery) - 6
-  if (availableBytes <= 0) return takePrefix(`${notice}\n${recovery}`, MAX_OUTPUT_BYTES)
+  const availableBytes = maximumBytes - Buffer.byteLength(notice) - Buffer.byteLength(recovery) - 6
+  if (availableBytes <= 0) return takePrefix(`${notice}\n${recovery}`, maximumBytes)
 
   const bounded = preview(output, MAX_OUTPUT_LINES - 6, availableBytes)
   return `${bounded.head}\n\n${notice}\n\n${bounded.tail}\n\n${recovery}`

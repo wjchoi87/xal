@@ -114,6 +114,7 @@ export type StreamEvent =
 
 export interface StreamRequest {
   model: string
+  conversationModel?: string
   thinking?: ThinkingEffort
   instructions: string
   input: ConversationItem[]

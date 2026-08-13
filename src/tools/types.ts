@@ -10,6 +10,7 @@ export const MAX_ELICITATION_ANSWER_LENGTH = 500
 export interface ToolResult {
   output: string
   events?: ToolEvent[]
+  maxOutputBytes?: number
 }
 
 export type ToolEvent = PlanUpdatedEvent | TaskListUpdatedEvent

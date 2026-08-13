@@ -1,8 +1,24 @@
+import { resolveThinking } from "../config/thinking"
+import { describeError } from "../lib/error"
+import {
+  profileProviderFirstEvent,
+  profileProviderRequestFinished,
+  profileProviderRequestStarted,
+} from "../profiler/profiler"
+import { findModel } from "../providers/catalog"
 import { prepareConversation } from "../providers/conversation"
-import type { ConversationItem, Provider, ProviderReplay, ThinkingEffort, UserMessageItem } from "../providers/types"
+import type {
+  ConversationItem,
+  Provider,
+  ProviderReplay,
+  ThinkingEffort,
+  Usage,
+  UserMessageItem,
+} from "../providers/types"
 import { redactStreamRequest } from "../secrets/data"
 import { redactText } from "../secrets/redactor"
 import { activeHistory, conversationOnly, directShellMessage, type HistoryItem } from "./history"
+import type { SessionKind } from "./types"
 
 export const COMPACTION_TRIGGER_RATIO = 0.85
 
@@ -12,6 +28,11 @@ const TAIL_RATIO = 0.25
 const MANUAL_TAIL_TOKENS = 16_000
 
 export type CompactionTrigger = "auto" | "manual"
+
+export interface CompactionTarget {
+  model: string
+  thinking: ThinkingEffort | undefined
+}
 
 const SUMMARY_INSTRUCTIONS = `You are compacting a coding session transcript so the assistant can keep working after the older messages are dropped.
 
@@ -34,6 +55,12 @@ export function tailBudget(window: number | undefined, trigger: CompactionTrigge
   if (window === undefined) return MANUAL_TAIL_TOKENS
   const budget = Math.floor(window * TAIL_RATIO)
   return trigger === "manual" ? Math.min(budget, MANUAL_TAIL_TOKENS) : budget
+}
+
+export async function resolveCompactionTarget(provider: Provider, model: string): Promise<CompactionTarget> {
+  const fastModel = model.endsWith("-fast") ? model : `${model}-fast`
+  const requestModel = fastModel === model || (await findModel(provider, fastModel)) ? fastModel : model
+  return { model: requestModel, thinking: await resolveThinking(provider, requestModel, "low") }
 }
 
 function textTokens(text: string): number {
@@ -114,8 +141,10 @@ export function splitForCompaction(items: HistoryItem[], tailTokens: number): Co
 export interface SummaryRequest {
   provider: Provider
   model: string
+  historyModel?: string
   thinking: ThinkingEffort | undefined
   sessionId: string
+  kind?: SessionKind
   history: HistoryItem[]
   instructions: string | undefined
   signal: AbortSignal
@@ -131,27 +160,55 @@ function summaryRequest(instructions: string | undefined): UserMessageItem {
 }
 
 export async function summarizeHistory(request: SummaryRequest): Promise<string> {
-  const target = { provider: request.provider.id, model: request.model }
+  const target = { provider: request.provider.id, model: request.historyModel ?? request.model }
   const input = prepareConversation([...activeHistory(request.history), summaryRequest(request.instructions)], target)
+  const profile = profileProviderRequestStarted(
+    request.sessionId,
+    request.kind ?? "primary",
+    "compaction",
+    request.provider.id,
+    request.model,
+    request.thinking,
+    1,
+  )
 
   let streamed = ""
   let settled = ""
-  for await (const event of request.provider.stream(
-    redactStreamRequest({
-      model: request.model,
-      thinking: request.thinking,
-      instructions: SUMMARY_INSTRUCTIONS,
-      input,
-      tools: [],
-      sessionId: request.sessionId,
-      signal: request.signal,
-    }),
-  )) {
-    if (event.type === "text_delta") streamed += event.text
-    if (event.type === "item_done" && event.item.type === "assistant_message") settled += event.item.text
-  }
+  let received = false
+  let usage: Usage | undefined
+  try {
+    for await (const event of request.provider.stream(
+      redactStreamRequest({
+        model: request.model,
+        ...(request.historyModel === undefined ? {} : { conversationModel: request.historyModel }),
+        thinking: request.thinking,
+        instructions: SUMMARY_INSTRUCTIONS,
+        input,
+        tools: [],
+        sessionId: request.sessionId,
+        signal: request.signal,
+      }),
+    )) {
+      if (!received) {
+        received = true
+        profileProviderFirstEvent(profile, event.type)
+      }
+      if (event.type === "text_delta") streamed += event.text
+      if (event.type === "item_done" && event.item.type === "assistant_message") settled += event.item.text
+      if (event.type === "done") usage = event.usage
+    }
 
-  const summary = (settled || streamed).trim()
-  if (!summary) throw new Error(`${request.provider.name} returned an empty summary`)
-  return redactText(summary)
+    const summary = (settled || streamed).trim()
+    if (!summary) throw new Error(`${request.provider.name} returned an empty summary`)
+    profileProviderRequestFinished(profile, "completed", usage)
+    return redactText(summary)
+  } catch (error) {
+    profileProviderRequestFinished(
+      profile,
+      request.signal.aborted || (error instanceof Error && error.name === "AbortError") ? "interrupted" : "failed",
+      usage,
+      describeError(error),
+    )
+    throw error
+  }
 }

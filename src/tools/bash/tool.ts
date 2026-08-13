@@ -1,3 +1,4 @@
+import { stripVTControlCharacters } from "node:util"
 import { asBoolean, asNumber, asString } from "../../lib/json"
 import type { Tool } from "../types"
 import { startJob } from "./jobs"
@@ -8,6 +9,25 @@ import { splitCommand } from "./split"
 
 const DEFAULT_TIMEOUT_S = 120
 const MAX_TIMEOUT_S = 600
+const MAX_RESULT_BYTES = 20 * 1024
+
+function normalizeLine(line: string): string {
+  const normalized: string[] = []
+  for (const character of line.slice(line.lastIndexOf("\r") + 1)) {
+    if (character === "\b") {
+      normalized.pop()
+      continue
+    }
+    const code = character.charCodeAt(0)
+    if ((code < 0x20 && character !== "\t") || code === 0x7f) continue
+    normalized.push(character)
+  }
+  return normalized.join("")
+}
+
+function normalizeCompletedOutput(output: string): string {
+  return stripVTControlCharacters(output).replaceAll("\r\n", "\n").split("\n").map(normalizeLine).join("\n")
+}
 
 export function commandOf(args: Record<string, unknown>): string {
   return asString(args.command)?.trim() ?? ""
@@ -137,7 +157,7 @@ export const bashTool: Tool = {
 
     try {
       const exitCode = await execution.done
-      const trimmed = output.trimEnd()
+      const trimmed = normalizeCompletedOutput(output).trimEnd()
       let footer: string
       if (timedOut) footer = `(timed out after ${timeoutSeconds}s and was killed)`
       else if (ctx.signal.aborted) footer = "(interrupted by user)"
@@ -150,7 +170,7 @@ export const bashTool: Tool = {
             ? `exit code ${exitCode} · read sandbox — network and filesystem state changes are blocked`
             : `exit code ${exitCode} · workspace sandbox — network and writes outside the workspace and temporary directories are blocked`
         })`
-      return { output: trimmed ? `${trimmed}\n${footer}` : footer }
+      return { output: trimmed ? `${trimmed}\n${footer}` : footer, maxOutputBytes: MAX_RESULT_BYTES }
     } finally {
       clearTimeout(timeout)
       ctx.signal.removeEventListener("abort", onAbort)

@@ -110,6 +110,7 @@ export function redactStreamRequest(request: StreamRequest): StreamRequest {
   return {
     ...request,
     model: redactText(request.model),
+    ...(request.conversationModel === undefined ? {} : { conversationModel: redactText(request.conversationModel) }),
     instructions: redactText(request.instructions),
     input: request.input.map(redactConversationItem),
     tools: request.tools.map(redactToolDefinition),

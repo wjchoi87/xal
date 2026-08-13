@@ -25,7 +25,7 @@ function buildBody(request: StreamRequest): string {
     store: false,
     stream: true,
     instructions: request.instructions,
-    input: buildInput(request.input, { provider: PROVIDER_ID, model: request.model }),
+    input: buildInput(request.input, { provider: PROVIDER_ID, model: request.conversationModel ?? request.model }),
     tools: request.tools.map((tool) => ({
       type: "function",
       name: tool.name,

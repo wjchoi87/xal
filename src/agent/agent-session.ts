@@ -18,7 +18,16 @@ import { rememberRule } from "../permissions/rules"
 import { evaluatePolicy } from "../permissions/service"
 import type { PermissionMode, PermissionScope } from "../permissions/types"
 import type { SessionPlan } from "../plans/types"
-import { profileAgentEvent, profileSessionCreated, profileStreamRound } from "../profiler/profiler"
+import {
+  profileAgentEvent,
+  profileProviderFirstEvent,
+  profileProviderRequestFinished,
+  profileProviderRequestStarted,
+  profileSessionCreated,
+  profileToolBatchFinished,
+  profileToolBatchStarted,
+  type ProviderRequestProfile,
+} from "../profiler/profiler"
 import { contextWindow } from "../providers/catalog"
 import { prepareConversation } from "../providers/conversation"
 import { ProviderError } from "../providers/errors"
@@ -63,6 +72,7 @@ import type {
 import {
   COMPACTION_TRIGGER_RATIO,
   estimateHistoryTokens,
+  resolveCompactionTarget,
   splitForCompaction,
   summarizeHistory,
   tailBudget,
@@ -165,6 +175,8 @@ interface PendingElicitation {
 interface StreamRound {
   received: boolean
   items: ProviderOutputItem[]
+  profile: ProviderRequestProfile
+  usage?: Usage
 }
 
 interface TurnUsage {
@@ -308,7 +320,7 @@ export class AgentSession {
       this.recorder = new SessionRecorder((message) => this.emit({ type: "error", message }))
       this.recorder.start(this.meta(), this.cwd)
     }
-    profileSessionCreated(this.sessionId, this.kind, this.provider.id, this.model, this.cwd)
+    profileSessionCreated(this.sessionId, this.kind, this.provider.id, this.model, this.thinking, this.cwd)
   }
 
   get id(): string {
@@ -972,14 +984,7 @@ export class AgentSession {
     this.abortController = controller
     this.setState("compacting")
     try {
-      const compacted = await this.runCompaction(
-        controller.signal,
-        this.provider,
-        this.model,
-        this.thinking,
-        "manual",
-        instructions,
-      )
+      const compacted = await this.runCompaction(controller.signal, this.provider, this.model, "manual", instructions)
       return compacted ? "compacted" : "nothing"
     } catch (error) {
       if (!isAbortError(error) && !controller.signal.aborted) throw error
@@ -1179,7 +1184,6 @@ export class AgentSession {
     signal: AbortSignal,
     provider: Provider,
     model: string,
-    thinking: ThinkingEffort | undefined,
     trigger: CompactionTrigger,
     instructions?: string,
   ): Promise<boolean> {
@@ -1188,11 +1192,14 @@ export class AgentSession {
     if (head.length === 0) return false
 
     this.setState("compacting")
+    const target = await resolveCompactionTarget(provider, model)
     const summary = await summarizeHistory({
       provider,
-      model,
-      thinking,
+      model: target.model,
+      historyModel: model,
+      thinking: target.thinking,
       sessionId: this.sessionId,
+      kind: this.kind,
       history: head,
       instructions,
       signal,
@@ -1207,19 +1214,14 @@ export class AgentSession {
     return true
   }
 
-  private async autoCompact(
-    signal: AbortSignal,
-    provider: Provider,
-    model: string,
-    thinking: ThinkingEffort | undefined,
-  ): Promise<void> {
+  private async autoCompact(signal: AbortSignal, provider: Provider, model: string): Promise<void> {
     if (this.compactionFailures >= MAX_COMPACTION_FAILURES) return
     const tokens = this.contextTokens ?? estimateHistoryTokens(activeHistory(this.items))
     const window = await contextWindow(provider, model)
     if (window === undefined || tokens < window * COMPACTION_TRIGGER_RATIO) return
 
     try {
-      await this.runCompaction(signal, provider, model, thinking, "auto")
+      await this.runCompaction(signal, provider, model, "auto")
     } catch (error) {
       if (isAbortError(error) || signal.aborted) return
       this.compactionFailures += 1
@@ -1240,7 +1242,7 @@ export class AgentSession {
     const toolLoops = new ToolLoopDetector()
 
     while (true) {
-      await this.autoCompact(signal, provider, model, thinking)
+      await this.autoCompact(signal, provider, model)
       if (signal.aborted) {
         this.emit({ type: "turn_interrupted" })
         return
@@ -1339,11 +1341,27 @@ export class AgentSession {
     let attempt = 1
 
     while (true) {
-      const round: StreamRound = { received: false, items: [] }
+      const profile = profileProviderRequestStarted(
+        this.sessionId,
+        this.kind,
+        "turn",
+        provider.id,
+        model,
+        thinking,
+        attempt,
+      )
+      const round: StreamRound = { received: false, items: [], profile }
       try {
         await this.consumeStream(signal, provider, model, thinking, round, usage)
+        profileProviderRequestFinished(profile, "completed", round.usage)
         return round.items
       } catch (error) {
+        profileProviderRequestFinished(
+          profile,
+          isAbortError(error) || signal.aborted ? "interrupted" : "failed",
+          round.usage,
+          describeError(error),
+        )
         if (isAbortError(error) || signal.aborted) {
           this.flushStream()
           for (const item of round.items.filter((item) => item.type === "assistant_message")) this.pushItem(item)
@@ -1429,6 +1447,7 @@ export class AgentSession {
         signal,
       }),
     )) {
+      if (!round.received) profileProviderFirstEvent(round.profile, event.type)
       round.received = true
       switch (event.type) {
         case "text_delta":
@@ -1477,11 +1496,11 @@ export class AgentSession {
           finishLoop(outputLoops.assistant, "assistant response")
           finishLoop(outputLoops.reasoning, "reasoning summary")
           finishLoop(outputLoops.rawReasoning, "reasoning")
-          if (!event.usage) break
-          usage.context = event.usage
-          usage.turn = addUsage(usage.turn, event.usage)
-          this.contextTokens = occupiedContext(event.usage)
-          profileStreamRound(this.sessionId, this.kind, event.usage)
+          round.usage = event.usage
+          if (!round.usage) break
+          usage.context = round.usage
+          usage.turn = addUsage(usage.turn, round.usage)
+          this.contextTokens = occupiedContext(round.usage)
           break
         }
       }
@@ -1584,55 +1603,75 @@ export class AgentSession {
     signal: AbortSignal,
     toolLoops: ToolLoopDetector,
   ): Promise<Error | undefined> {
-    const outcomes: Array<ToolCallOutcome | undefined> = batch.entries.map(() => undefined)
-    const ready: Array<{ index: number; prepared: PreparedToolCall }> = []
-    const recorded = batch.entries.map(() => false)
-    let loopError: Error | undefined
+    const profile = profileToolBatchStarted(
+      this.sessionId,
+      this.kind,
+      batch.concurrency,
+      batch.entries.map((entry) => (entry.type === "call" ? entry.call.name : entry.outcome.call.name)),
+    )
+    try {
+      const outcomes: Array<ToolCallOutcome | undefined> = batch.entries.map(() => undefined)
+      const ready: Array<{ index: number; prepared: PreparedToolCall }> = []
+      const recorded = batch.entries.map(() => false)
+      let loopError: Error | undefined
 
-    for (const [index, entry] of batch.entries.entries()) {
-      const call = entry.type === "call" ? entry.call : entry.outcome.call
-      if (loopError) {
-        outcomes[index] = this.skippedToolCallOutcome(call, "Not run because a repeated tool loop stopped the turn.")
-        continue
+      for (const [index, entry] of batch.entries.entries()) {
+        const call = entry.type === "call" ? entry.call : entry.outcome.call
+        if (loopError) {
+          outcomes[index] = this.skippedToolCallOutcome(call, "Not run because a repeated tool loop stopped the turn.")
+          continue
+        }
+
+        const loop = signal.aborted ? "allow" : toolLoops.inspect(call)
+        if (loop !== "allow") {
+          outcomes[index] = this.toolLoopOutcome(call, loop)
+          if (loop === "stop") loopError = new Error(`turn stopped after repeated ${call.name} tool calls`)
+          continue
+        }
+
+        recorded[index] = true
+        if (entry.type === "outcome") {
+          outcomes[index] = entry.outcome
+          continue
+        }
+        const preparation = await this.prepareToolCall(call, signal)
+        if (preparation.type === "outcome") {
+          outcomes[index] = preparation.outcome
+          continue
+        }
+        ready.push({ index, prepared: preparation.prepared })
       }
 
-      const loop = signal.aborted ? "allow" : toolLoops.inspect(call)
-      if (loop !== "allow") {
-        outcomes[index] = this.toolLoopOutcome(call, loop)
-        if (loop === "stop") loopError = new Error(`turn stopped after repeated ${call.name} tool calls`)
-        continue
+      if (batch.concurrency === "shared") {
+        const completed = await Promise.all(ready.map(({ prepared }) => this.executeToolCall(prepared, signal)))
+        completed.forEach((outcome, index) => {
+          const entry = ready[index]
+          if (!entry) throw new Error("tool scheduler lost a shared call")
+          outcomes[entry.index] = outcome
+        })
+      } else {
+        for (const entry of ready) outcomes[entry.index] = await this.executeToolCall(entry.prepared, signal)
       }
 
-      recorded[index] = true
-      if (entry.type === "outcome") {
-        outcomes[index] = entry.outcome
-        continue
+      for (const [index, outcome] of outcomes.entries()) {
+        if (!outcome) throw new Error("tool scheduler did not produce a result")
+        this.commitToolCall(outcome)
+        if (recorded[index]) toolLoops.record(outcome.call, outcome.output)
       }
-      const preparation = await this.prepareToolCall(call, signal)
-      if (preparation.type === "outcome") {
-        outcomes[index] = preparation.outcome
-        continue
-      }
-      ready.push({ index, prepared: preparation.prepared })
+      profileToolBatchFinished(
+        profile,
+        loopError ? "failed" : signal.aborted ? "interrupted" : "completed",
+        loopError?.message,
+      )
+      return loopError
+    } catch (error) {
+      profileToolBatchFinished(
+        profile,
+        isAbortError(error) || signal.aborted ? "interrupted" : "failed",
+        describeError(error),
+      )
+      throw error
     }
-
-    if (batch.concurrency === "shared") {
-      const completed = await Promise.all(ready.map(({ prepared }) => this.executeToolCall(prepared, signal)))
-      completed.forEach((outcome, index) => {
-        const entry = ready[index]
-        if (!entry) throw new Error("tool scheduler lost a shared call")
-        outcomes[entry.index] = outcome
-      })
-    } else {
-      for (const entry of ready) outcomes[entry.index] = await this.executeToolCall(entry.prepared, signal)
-    }
-
-    for (const [index, outcome] of outcomes.entries()) {
-      if (!outcome) throw new Error("tool scheduler did not produce a result")
-      this.commitToolCall(outcome)
-      if (recorded[index]) toolLoops.record(outcome.call, outcome.output)
-    }
-    return loopError
   }
 
   private async prepareToolCall(call: ToolCallItem, signal: AbortSignal): Promise<ToolCallPreparation> {
@@ -1714,6 +1753,7 @@ export class AgentSession {
     this.emit({ type: "tool_started", callId: call.callId, tool: call.name, title, readOnly })
     let output: string
     let events: ToolEvent[] = []
+    let maxOutputBytes: number | undefined
     const updates = createRedactedStream()
     const update = (text: string): void => {
       const redacted = updates.write(text)
@@ -1761,6 +1801,7 @@ export class AgentSession {
       }
       output = redactText(result.output)
       events = result.events ?? []
+      maxOutputBytes = result.maxOutputBytes
     } catch (error) {
       output = redactText(`${TOOL_FAILED_PREFIX}${describeError(error)}`)
     } finally {
@@ -1784,7 +1825,7 @@ export class AgentSession {
     }
     output = redactText(output)
     try {
-      output = await boundToolOutput(this.outputDirectory, output)
+      output = await boundToolOutput(this.outputDirectory, output, maxOutputBytes)
     } catch (error) {
       output = `${TOOL_OUTPUT_UNSAVED_PREFIX}${describeError(error)}. The operation may have changed state; inspect it before retrying.`
     }
