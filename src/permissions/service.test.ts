@@ -16,7 +16,7 @@ function request(tool: string, overrides: Partial<PermissionRequest> = {}): Perm
     subject: undefined,
     readOnly: false,
     sandboxed: false,
-    mode: "build",
+    mode: "normal",
     ...overrides,
   }
 }
@@ -27,15 +27,28 @@ test("permission policy enforces mode, deny, configured, registered, and remembe
   process.env.TACK_HOME = home
   try {
     const { evaluatePolicy, registerPolicyRule } = await import("./service")
+    const { configureModes } = await import("./modes")
     const { contributeRules, rememberRule, setUserRules } = await import("./rules")
     const { saveProjectRule } = await import("./store")
 
+    configureModes({
+      paranoid: { rules: { ask: ["*"] } },
+      audit: { base: "plan", rules: {} },
+      trusting: { base: "normal", rules: { allow: ["configured(review*)"], deny: ["configured(secret*)"] } },
+    })
+
     expect(await evaluatePolicy(request("default-read", { readOnly: true }))).toBe("allow")
     expect(await evaluatePolicy(request("default-sandbox", { sandboxed: true }))).toBe("allow")
-    expect(await evaluatePolicy(request("default-build"))).toBe("ask")
+    expect(await evaluatePolicy(request("default-normal"))).toBe("allow")
     expect(await evaluatePolicy(request("default-plan", { mode: "plan" }))).toBe("deny")
-    expect(await evaluatePolicy(request("default-auto", { mode: "auto" }))).toBe("allow")
     expect(await evaluatePolicy(request("default-yolo", { mode: "yolo" }))).toBe("allow")
+    expect(evaluatePolicy(request("default-unknown", { mode: "vanished" }))).rejects.toThrow("unknown permission mode")
+
+    expect(await evaluatePolicy(request("custom-default", { mode: "paranoid" }))).toBe("ask")
+    expect(await evaluatePolicy(request("custom-readonly", { mode: "audit" }))).toBe("deny")
+    expect(await evaluatePolicy(request("custom-readonly", { mode: "audit", readOnly: true }))).toBe("allow")
+    expect(() => configureModes({ normal: { rules: {} } })).toThrow("built in")
+    expect(() => configureModes({ broken: { base: "missing", rules: {} } })).toThrow("unknown base")
 
     contributeRules({ allow: ["precedence(*)"] })
     setUserRules({
@@ -47,6 +60,8 @@ test("permission policy enforces mode, deny, configured, registered, and remembe
     expect(await evaluatePolicy(request("configured", { subject: "safe/path" }))).toBe("allow")
     expect(await evaluatePolicy(request("configured", { subject: "review/path" }))).toBe("ask")
     expect(await evaluatePolicy(request("configured", { subject: "review/path", mode: "yolo" }))).toBe("allow")
+    expect(await evaluatePolicy(request("configured", { subject: "review/path", mode: "trusting" }))).toBe("allow")
+    expect(await evaluatePolicy(request("configured", { subject: "secret/path", mode: "trusting" }))).toBe("deny")
     expect(
       await evaluatePolicy(
         request("configured", { subject: "blocked/path", readOnly: true, sandboxed: true, mode: "yolo" }),
@@ -65,13 +80,16 @@ test("permission policy enforces mode, deny, configured, registered, and remembe
     expect(await evaluatePolicy(request("registered", { mode: "yolo" }))).toBe("allow")
 
     await rememberRule(defaultSessionKey, "/workspace/default", "remembered(/workspace/*)", "session")
-    expect(await evaluatePolicy(request("remembered", { subject: "/workspace/file.ts" }))).toBe("allow")
-    expect(await evaluatePolicy(request("remembered", { subject: "/other/file.ts" }))).toBe("ask")
+    expect(await evaluatePolicy(request("remembered", { subject: "/workspace/file.ts", mode: "paranoid" }))).toBe(
+      "allow",
+    )
+    expect(await evaluatePolicy(request("remembered", { subject: "/other/file.ts", mode: "paranoid" }))).toBe("ask")
     expect(
       await evaluatePolicy(
         request("remembered", {
           cwd: "/workspace/other",
           subject: "/workspace/file.ts",
+          mode: "paranoid",
         }),
       ),
     ).toBe("ask")
@@ -80,18 +98,23 @@ test("permission policy enforces mode, deny, configured, registered, and remembe
         request("remembered", {
           sessionKey: {},
           subject: "/workspace/file.ts",
+          mode: "paranoid",
         }),
       ),
     ).toBe("ask")
 
     await rememberRule(defaultSessionKey, "/workspace/first", "persistent", "always")
-    expect(await evaluatePolicy(request("persistent", { cwd: "/workspace/first" }))).toBe("allow")
-    expect(await evaluatePolicy(request("persistent", { sessionKey: {}, cwd: "/workspace/first" }))).toBe("allow")
-    expect(await evaluatePolicy(request("persistent", { cwd: "/workspace/second" }))).toBe("ask")
+    expect(await evaluatePolicy(request("persistent", { cwd: "/workspace/first", mode: "paranoid" }))).toBe("allow")
+    expect(
+      await evaluatePolicy(request("persistent", { sessionKey: {}, cwd: "/workspace/first", mode: "paranoid" })),
+    ).toBe("allow")
+    expect(await evaluatePolicy(request("persistent", { cwd: "/workspace/second", mode: "paranoid" }))).toBe("ask")
 
     await saveProjectRule("/workspace/from-disk", "loaded")
-    expect(await evaluatePolicy(request("loaded", { cwd: "/workspace/from-disk" }))).toBe("allow")
-    expect(await evaluatePolicy(request("loaded", { cwd: "/workspace/elsewhere" }))).toBe("ask")
+    expect(await evaluatePolicy(request("loaded", { cwd: "/workspace/from-disk", mode: "paranoid" }))).toBe("allow")
+    expect(await evaluatePolicy(request("loaded", { cwd: "/workspace/elsewhere", mode: "paranoid" }))).toBe("ask")
+
+    configureModes({})
   } finally {
     if (previousHome === undefined) delete process.env.TACK_HOME
     else process.env.TACK_HOME = previousHome
@@ -142,6 +165,11 @@ test("an AgentSession approval stays scoped to its session and workspace", async
 
     registerTool(tool)
     try {
+      const { configureModes } = await import("../permissions/modes")
+      configureModes({ paranoid: { rules: { ask: ["*"] } } })
+      session.setMode("paranoid")
+      otherSession.setMode("paranoid")
+
       await runSettledTurn(session, { text: "Change the first workspace", images: [] }, (event) => {
         if (event.type !== "approval_requested") return
         approvals.push(`first:${session.currentWorkingDirectory}`)
@@ -177,6 +205,8 @@ test("an AgentSession approval stays scoped to its session and workspace", async
       expect(executions).toBe(4)
     } finally {
       unregisterTool(tool)
+      const { configureModes } = await import("../permissions/modes")
+      configureModes({})
       await harness.cleanup()
     }
   } finally {

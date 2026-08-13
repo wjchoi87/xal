@@ -1,5 +1,6 @@
+import { modeDefinition } from "./modes"
 import { isDenied, loadRememberedRules, matchRules } from "./rules"
-import type { PermissionMode, PermissionRequest, PolicyDecision, PolicyRule } from "./types"
+import type { ModeDefinition, PermissionRequest, PolicyDecision, PolicyRule } from "./types"
 
 const rules: PolicyRule[] = []
 
@@ -15,25 +16,22 @@ function evaluateRegistered(request: PermissionRequest): PolicyDecision | undefi
   return undefined
 }
 
-function underMode(decision: PolicyDecision, mode: PermissionMode): PolicyDecision {
-  return mode === "yolo" && decision === "ask" ? "allow" : decision
+function underMode(decision: PolicyDecision, mode: ModeDefinition): PolicyDecision {
+  return mode.skipAsk && decision === "ask" ? "allow" : decision
 }
 
-export async function evaluatePolicy(request: PermissionRequest, defaultDecision?: "allow"): Promise<PolicyDecision> {
+export async function evaluatePolicy(request: PermissionRequest): Promise<PolicyDecision> {
   await loadRememberedRules(request.cwd)
 
+  const mode = modeDefinition(request.mode)
   if (isDenied(request)) return "deny"
-  if (request.mode === "plan" && !request.readOnly) return "deny"
+  if (mode.readOnly && !request.readOnly) return "deny"
 
   const registered = evaluateRegistered(request)
-  if (registered) return underMode(registered, request.mode)
+  if (registered) return underMode(registered, mode)
 
   const matched = matchRules(request)
-  if (matched) return underMode(matched, request.mode)
+  if (matched) return underMode(matched, mode)
 
-  if (request.readOnly || request.sandboxed) return "allow"
-  if (defaultDecision) return defaultDecision
-  if (request.mode === "build") return "ask"
-  if (request.mode === "plan") return "deny"
   return "allow"
 }

@@ -61,7 +61,7 @@ export const submitPlanTool: InteractiveTool = {
           options: [
             {
               label: APPROVE,
-              description: "Switch to build mode and begin implementing this plan.",
+              description: "Switch to normal mode and begin implementing this plan.",
             },
             {
               label: REVISE,

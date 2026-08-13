@@ -22,11 +22,12 @@ Commands that save model, thinking, or TUI display preferences write the user fi
 | `model`        | `string`   | Provider default         | Model ID used for new sessions. Run `tack models` to refresh and list available models. |
 | `ui`           | `string`   | `"tui"`                  | UI ID started when Tack is run without a command.                                       |
 | `permissions`  | `object`   | `{}`                     | Permission rules under `allow`, `ask`, and `deny`.                                      |
+| `modes`        | `object`   | `{}`                     | Custom permission modes keyed by mode name.                                             |
 | `redaction`    | `object`   | `{}`                     | Sensitive values to redact under `values` and `environment`.                            |
 | `pluginConfig` | `object`   | `{}`                     | Configuration keyed by plugin name.                                                     |
 | `thinking`     | `object`   | `{}`                     | Thinking effort keyed by provider ID and then model ID.                                 |
 
-Malformed `permissions` or `redaction` configuration fails startup instead of silently running without those rules.
+Malformed `permissions`, `modes`, or `redaction` configuration fails startup instead of silently running without those rules.
 
 Built-in provider IDs are `openai-chatgpt` and `deepseek`. `chatgpt` is an alias for `openai-chatgpt`. The only built-in UI ID is `tui`. Plugins may register more providers, aliases, and UIs.
 
@@ -121,12 +122,35 @@ Supported effort values are `none`, `low`, `medium`, `high`, `xhigh`, and `max`.
   "permissions": {
     "allow": ["bash(git status*)"],
     "ask": ["bash(git push*)"],
-    "deny": ["bash(rm *)"]
+    "deny": ["bash(rm -rf /*)"]
   }
 }
 ```
 
-`allow`, `ask`, and `deny` are arrays of permission rules. A rule is either a tool name, such as `bash`, or a tool and subject pattern, such as `bash(git status*)` or `write(src/*)`. `*` matches any sequence of characters. Deny rules are evaluated before all other permission rules.
+`allow`, `ask`, and `deny` are arrays of permission rules. A rule is either a tool name, such as `bash`, or a tool and subject pattern, such as `bash(git status*)` or `write(src/*)`. `*` matches any sequence of characters and also works in the tool name, so `mcp__github__*` matches every tool from that MCP server and `*` alone matches every tool. Deny rules are evaluated before all other permission rules.
+
+### Permission modes
+
+Tack ships three modes, cycled in the TUI with Shift+Tab:
+
+- `normal` is the default. Actions run without confirmation unless they are risky: shell commands whose file arguments, redirect targets, or `cd` destinations leave the workspace, destructive commands aimed at the workspace root or `.git`, file writes and edits outside the workspace, privileged or system-level commands such as `sudo` and `dd`, network fetches with `curl` or `wget`, force pushes, package publishes, remote MCP calls, and reads of `.env` files or key material ask first. Deletes and other file operations inside the workspace run without prompting because workspace undo can restore them. Writes to the system temporary directory are also allowed.
+- `plan` is read-only. Tools that mutate anything are refused before they run.
+- `yolo` converts every ask into an allow. Only deny rules still block actions.
+
+Chained commands are evaluated per segment, so `git status && rm /etc/hosts` asks even though `git status` alone would not. Commands using substitution or grouping that cannot be split safely always ask. The built-in risky-command rules are ordinary rules, so configuration can override them: `"allow": ["bash(curl *)"]` stops `curl` from asking.
+
+Custom modes are defined under `modes` and appear in the Shift+Tab cycle and `--mode`:
+
+```json
+{
+  "modes": {
+    "paranoid": { "ask": ["*"], "guidance": "Every action needs confirmation." },
+    "trusting": { "base": "normal", "allow": ["bash(curl *)", "write(/*)"] }
+  }
+}
+```
+
+`base` selects the built-in mode a custom mode behaves like (`normal` by default; `plan` inherits read-only, `yolo` inherits ask-skipping). `allow`, `ask`, and `deny` are mode-scoped rules that apply only while the mode is active, sitting above the global `permissions` rules and below approvals remembered from the approval prompt. `guidance` replaces the mode instructions shown to the model. Built-in mode names cannot be redefined. A session restored with a mode that no longer exists falls back to `normal`.
 
 ### Redaction
 
@@ -335,7 +359,10 @@ Every option is optional. A configuration using all currently supported built-in
   "permissions": {
     "allow": ["bash(git status*)"],
     "ask": ["bash(git push*)"],
-    "deny": ["bash(rm *)"]
+    "deny": ["bash(rm -rf /*)"]
+  },
+  "modes": {
+    "paranoid": { "ask": ["*"] }
   },
   "redaction": {
     "environment": ["MY_PROJECT_TOKEN"]

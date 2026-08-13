@@ -24,6 +24,7 @@ function settings(plugins: string[] = [], pluginConfig: Settings["pluginConfig"]
   return {
     plugins,
     permissions: { allow: [], ask: [], deny: [] },
+    modes: {},
     redaction: { values: [], environment: [] },
     pluginConfig,
     thinking: {},

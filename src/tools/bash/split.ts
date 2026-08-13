@@ -1,8 +1,3 @@
-export interface SplitCommand {
-  segments: string[]
-  redirected: boolean
-}
-
 function readSingleQuoted(command: string, start: number): { text: string; end: number } {
   const close = command.indexOf("'", start + 1)
   if (close < 0) return { text: command.slice(start), end: command.length }
@@ -25,10 +20,9 @@ function readDoubleQuoted(command: string, start: number): { text: string; end: 
   return undefined
 }
 
-export function splitCommand(command: string): SplitCommand | undefined {
+export function splitCommand(command: string): string[] | undefined {
   const segments: string[] = []
   let current = ""
-  let redirected = false
   let index = 0
   const push = (): void => {
     const segment = current.trim()
@@ -63,7 +57,6 @@ export function splitCommand(command: string): SplitCommand | undefined {
       continue
     }
     if (char === "&" && command[index + 1] === ">") {
-      redirected = true
       current += "&>"
       index += 2
       continue
@@ -79,16 +72,10 @@ export function splitCommand(command: string): SplitCommand | undefined {
       index += char === "|" && command[index + 1] === "|" ? 2 : 1
       continue
     }
-    if (char === "<" || char === ">") {
-      redirected = true
-      current += char
-      index += 1
-      continue
-    }
     current += char
     index += 1
   }
   push()
   if (segments.length === 0) return undefined
-  return { segments, redirected }
+  return segments
 }

@@ -3,7 +3,7 @@ import type { CompactionItem, HistoryItem } from "../agent/history"
 import { isMessageId } from "../agent/message-id"
 import type { HookAction, HookEvent } from "../hooks/types"
 import { asBoolean, asNumber, asString, isJsonObject, isRecord } from "../lib/json"
-import { isPermissionMode } from "../permissions/types"
+import { defaultPermissionMode, isPermissionMode } from "../permissions/modes"
 import { parseSessionPlan } from "../plans/types"
 import {
   isThinkingEffort,
@@ -237,8 +237,8 @@ function parseEvent(raw: unknown): AgentEvent | undefined {
       return { type: "turn_interrupted" }
     case "mode_changed": {
       const mode = asString(raw.mode)
-      if (!mode || !isPermissionMode(mode)) return undefined
-      return { type: "mode_changed", mode }
+      if (!mode) return undefined
+      return { type: "mode_changed", mode: isPermissionMode(mode) ? mode : defaultPermissionMode }
     }
     case "model_changed": {
       const provider = asString(raw.provider)
@@ -266,7 +266,7 @@ function parseMeta(raw: unknown): SessionMeta | undefined {
   const provider = asString(raw.provider)
   const model = asString(raw.model)
   const mode = asString(raw.mode)
-  if (!id || !cwd || !provider || !model || !mode || !isPermissionMode(mode)) return undefined
+  if (!id || !cwd || !provider || !model || !mode) return undefined
   return {
     version: 1,
     id,
@@ -274,7 +274,7 @@ function parseMeta(raw: unknown): SessionMeta | undefined {
     provider,
     model,
     thinking: parseThinking(raw.thinking),
-    mode,
+    mode: isPermissionMode(mode) ? mode : defaultPermissionMode,
     startedAt: asNumber(raw.startedAt) ?? 0,
   }
 }

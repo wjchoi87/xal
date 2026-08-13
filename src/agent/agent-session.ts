@@ -13,6 +13,7 @@ import {
   type HookReporter,
 } from "../hooks/registry"
 import type { HookContext } from "../hooks/types"
+import { defaultPermissionMode, modeDefinition } from "../permissions/modes"
 import { rememberRule } from "../permissions/rules"
 import { evaluatePolicy } from "../permissions/service"
 import type { PermissionMode, PermissionScope } from "../permissions/types"
@@ -269,7 +270,7 @@ export class AgentSession {
   private thinking: ThinkingEffort | undefined
   private state: AgentState = "idle"
   private movingHistory = false
-  private mode: PermissionMode = "build"
+  private mode: PermissionMode = defaultPermissionMode
   private plan: SessionPlan | undefined
   private planHandoffActive = false
   private streaming: { kind: StreamKind; text: string; redactor: RedactedStream } | undefined
@@ -702,7 +703,7 @@ export class AgentSession {
       if (entry.type === "outcome") {
         outcome = entry.outcome
       } else {
-        const preparation = await this.prepareToolCall(entry.call, signal, true)
+        const preparation = await this.prepareToolCall(entry.call, signal)
         if (preparation.type === "outcome") outcome = preparation.outcome
         else prepared = preparation.prepared
       }
@@ -1634,7 +1635,7 @@ export class AgentSession {
     return loopError
   }
 
-  private async prepareToolCall(call: ToolCallItem, signal: AbortSignal, direct = false): Promise<ToolCallPreparation> {
+  private async prepareToolCall(call: ToolCallItem, signal: AbortSignal): Promise<ToolCallPreparation> {
     const tool = this.availableTool(call.name)
     const title = tool?.title(call.args, { cwd: this.cwd }) ?? JSON.stringify(call.args)
     const readOnly = tool?.readOnly?.(call.args, { cwd: this.cwd }) ?? false
@@ -1655,28 +1656,20 @@ export class AgentSession {
 
     const sandboxed = tool.sandboxed?.(call.args, { cwd: this.cwd }) ?? false
     const permission = tool.permission?.(call.args, { cwd: this.cwd })
-    const directDecision = direct ? tool.directPolicy?.(call.args, { cwd: this.cwd }) : undefined
-    const evaluated = await evaluatePolicy(
-      {
-        sessionKey: this.permissionSessionKey,
-        cwd: this.cwd,
-        tool: call.name,
-        title,
-        args: call.args,
-        subject: permission?.subject,
-        readOnly,
-        sandboxed,
-        mode: this.mode,
-      },
-      directDecision === "allow" ? "allow" : undefined,
-    )
-    const decision =
-      directDecision === "ask" && this.mode === "build" && !readOnly && !sandboxed && evaluated === "allow"
-        ? "ask"
-        : evaluated
+    const decision = await evaluatePolicy({
+      sessionKey: this.permissionSessionKey,
+      cwd: this.cwd,
+      tool: call.name,
+      title,
+      args: call.args,
+      subject: permission?.subject,
+      readOnly,
+      sandboxed,
+      mode: this.mode,
+    })
 
     if (decision === "deny") {
-      const cause = this.mode === "plan" && !readOnly ? "plan" : "policy"
+      const cause = modeDefinition(this.mode).readOnly && !readOnly ? "plan" : "policy"
       const message = cause === "plan" && this.kind === "subagent" ? subagentPlanDenial : denialMessages[cause]
       return {
         type: "outcome",
@@ -1818,7 +1811,7 @@ export class AgentSession {
         this.plan = event.plan
         this.planHandoffActive = event.plan.status === "approved"
         this.emit(event)
-        if (event.plan.status === "approved") this.setMode("build")
+        if (event.plan.status === "approved") this.setMode(defaultPermissionMode)
         break
       case "task_list_updated":
         this.emit(event)

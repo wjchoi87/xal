@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
+import { contributeRules } from "../permissions/rules"
 import { registerTool, unregisterTool } from "../tools/registry"
 import type { Tool } from "../tools/types"
 import { ProviderError } from "../providers/errors"
@@ -143,8 +144,9 @@ describe("AgentSession", () => {
     }
   })
 
-  test("does not execute a build-mode tool when approval is denied", async () => {
+  test("does not execute a tool when approval is denied", async () => {
     const toolName = `write_test_${crypto.randomUUID().replaceAll("-", "_")}`
+    contributeRules({ ask: [toolName] })
     let executions = 0
     const tool: Tool = {
       name: toolName,
@@ -199,8 +201,9 @@ describe("AgentSession", () => {
     }
   })
 
-  test("executes a build-mode tool after approval", async () => {
+  test("executes a tool the rules mark as ask after approval", async () => {
     const toolName = `write_test_${crypto.randomUUID().replaceAll("-", "_")}`
+    contributeRules({ ask: [toolName] })
     let executions = 0
     const tool: Tool = {
       name: toolName,

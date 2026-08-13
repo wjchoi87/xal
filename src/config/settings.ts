@@ -12,6 +12,14 @@ export interface PermissionSettings {
   deny: string[]
 }
 
+export interface ModeSettings {
+  base?: string
+  allow: string[]
+  ask: string[]
+  deny: string[]
+  guidance?: string
+}
+
 export interface RedactionSettings {
   values: string[]
   environment: string[]
@@ -23,6 +31,7 @@ export interface Settings {
   model?: string
   ui?: string
   permissions: PermissionSettings
+  modes: Record<string, ModeSettings>
   redaction: RedactionSettings
   pluginConfig: Record<string, Record<string, unknown>>
   thinking: Record<string, Record<string, ThinkingEffort>>
@@ -31,6 +40,7 @@ export interface Settings {
 let current: Settings = {
   plugins: [],
   permissions: { allow: [], ask: [], deny: [] },
+  modes: {},
   redaction: { values: [], environment: [] },
   pluginConfig: {},
   thinking: {},
@@ -105,6 +115,17 @@ function strictStringArray(value: unknown, path: string): string[] {
 function parseSettings(raw: Record<string, unknown>): Settings {
   const plugins = asStringArray(raw.plugins)
   const permissions = sectionRecord(raw, "permissions")
+  const modes: Record<string, ModeSettings> = {}
+  for (const [name, value] of Object.entries(sectionRecord(raw, "modes"))) {
+    if (!isRecord(value)) throw new Error(`modes.${name} must be an object`)
+    modes[name] = {
+      base: asString(value.base),
+      allow: strictStringArray(value.allow, `modes.${name}.allow`),
+      ask: strictStringArray(value.ask, `modes.${name}.ask`),
+      deny: strictStringArray(value.deny, `modes.${name}.deny`),
+      guidance: asString(value.guidance),
+    }
+  }
   const redaction = sectionRecord(raw, "redaction")
   const pluginConfig: Record<string, Record<string, unknown>> = {}
   if (isRecord(raw.pluginConfig)) {
@@ -133,6 +154,7 @@ function parseSettings(raw: Record<string, unknown>): Settings {
       ask: strictStringArray(permissions.ask, "permissions.ask"),
       deny: strictStringArray(permissions.deny, "permissions.deny"),
     },
+    modes,
     redaction: {
       values: strictStringArray(redaction.values, "redaction.values"),
       environment: strictStringArray(redaction.environment, "redaction.environment"),

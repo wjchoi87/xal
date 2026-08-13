@@ -23,9 +23,9 @@ type TurnOutcome = "completed" | "failed" | "interrupted"
 
 function modeColor(mode: PermissionMode): RGBA {
   if (mode === "plan") return COLORS.success
-  if (mode === "auto") return COLORS.warning
   if (mode === "yolo") return COLORS.error
-  return COLORS.accent
+  if (mode === "normal") return COLORS.accent
+  return COLORS.warning
 }
 
 export class StatusBar {

@@ -4,6 +4,7 @@ import type { PermissionRequest, PermissionRules, PermissionScope, PolicyDecisio
 
 interface Matcher {
   tool: string
+  toolPattern: RegExp | undefined
   pattern: RegExp | undefined
 }
 
@@ -18,6 +19,8 @@ let config: Entry[] = []
 const project = new Map<string, Entry[]>()
 const session = new WeakMap<object, Map<string, Entry[]>>()
 let denies: Matcher[] = []
+let modeEntries = new Map<string, Entry[]>()
+let modeDenies = new Map<string, Matcher[]>()
 const loaded = new Map<string, Promise<void>>()
 
 function projectKey(cwd: string): string {
@@ -34,7 +37,11 @@ function parseMatcher(rule: string): Matcher | undefined {
   if (!match) return undefined
   const tool = match[1]!.trim()
   if (!tool) return undefined
-  return { tool, pattern: match[2] === undefined ? undefined : toRegExp(match[2]) }
+  return {
+    tool,
+    toolPattern: tool.includes("*") ? toRegExp(tool) : undefined,
+    pattern: match[2] === undefined ? undefined : toRegExp(match[2]),
+  }
 }
 
 function toEntries(patterns: string[] | undefined, decision: "allow" | "ask"): Entry[] {
@@ -54,7 +61,7 @@ function toMatchers(patterns: string[] | undefined): Matcher[] {
 }
 
 function matches(matcher: Matcher, request: PermissionRequest): boolean {
-  if (matcher.tool !== request.tool) return false
+  if (matcher.toolPattern ? !matcher.toolPattern.test(request.tool) : matcher.tool !== request.tool) return false
   if (!matcher.pattern) return true
   return request.subject !== undefined && matcher.pattern.test(request.subject)
 }
@@ -66,6 +73,15 @@ export function contributeRules(rules: PermissionRules): void {
 export function setUserRules(rules: PermissionRules): void {
   config = [...toEntries(rules.allow, "allow"), ...toEntries(rules.ask, "ask")]
   denies = toMatchers(rules.deny)
+}
+
+export function setModeRules(rulesByMode: Record<string, PermissionRules>): void {
+  modeEntries = new Map()
+  modeDenies = new Map()
+  for (const [mode, rules] of Object.entries(rulesByMode)) {
+    modeEntries.set(mode, [...toEntries(rules.allow, "allow"), ...toEntries(rules.ask, "ask")])
+    modeDenies.set(mode, toMatchers(rules.deny))
+  }
 }
 
 export async function loadRememberedRules(cwd: string): Promise<void> {
@@ -106,7 +122,8 @@ export async function rememberRule(
 }
 
 export function isDenied(request: PermissionRequest): boolean {
-  return denies.some((matcher) => matches(matcher, request))
+  const scoped = modeDenies.get(request.mode) ?? []
+  return [...denies, ...scoped].some((matcher) => matches(matcher, request))
 }
 
 export function matchRules(request: PermissionRequest): PolicyDecision | undefined {
@@ -114,6 +131,7 @@ export function matchRules(request: PermissionRequest): PolicyDecision | undefin
   const entries = [
     ...defaults,
     ...config,
+    ...(modeEntries.get(request.mode) ?? []),
     ...(project.get(key) ?? []),
     ...(session.get(request.sessionKey)?.get(key) ?? []),
   ]

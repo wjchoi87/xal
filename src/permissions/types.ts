@@ -1,4 +1,4 @@
-export type PermissionMode = "build" | "plan" | "auto" | "yolo"
+export type PermissionMode = string
 
 export type PermissionScope = "once" | "session" | "always"
 
@@ -26,13 +26,10 @@ export interface PermissionRules {
   deny?: string[]
 }
 
-export const permissionModes: PermissionMode[] = ["build", "plan", "auto", "yolo"]
-
-export function isPermissionMode(value: string): value is PermissionMode {
-  return permissionModes.some((mode) => mode === value)
-}
-
-export function nextPermissionMode(mode: PermissionMode): PermissionMode {
-  const index = permissionModes.indexOf(mode)
-  return permissionModes[(index + 1) % permissionModes.length]!
+export interface ModeDefinition {
+  name: string
+  readOnly: boolean
+  skipAsk: boolean
+  guidance: string
+  subagentGuidance: string
 }

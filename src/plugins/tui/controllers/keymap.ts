@@ -2,7 +2,7 @@ import type { CliRenderer, KeyEvent } from "@opentui/core"
 import type { AgentSession } from "../../../agent/agent-session"
 import { saveThinking, thinkingOptions } from "../../../config/thinking"
 import { describeError } from "../../../lib/error"
-import { nextPermissionMode } from "../../../permissions/types"
+import { nextPermissionMode } from "../../../permissions/modes"
 import type { Screen } from "../screen"
 
 const QUIT_WINDOW_MS = 2000

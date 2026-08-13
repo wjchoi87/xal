@@ -14,7 +14,7 @@ const meta: SessionMeta = {
   cwd: "/workspace",
   provider: "provider",
   model: "model",
-  mode: "build",
+  mode: "normal",
   startedAt: 123,
 }
 
@@ -118,7 +118,7 @@ test("replays records written through the serialized recorder queue", async () =
 
 test("truncates an incomplete trailing record after loading complete data", async () => {
   await withSessionFile(async (path) => {
-    const modeEvent: AgentEvent = { type: "mode_changed", mode: "auto" }
+    const modeEvent: AgentEvent = { type: "mode_changed", mode: "yolo" }
     const assistantEvent: AgentEvent = { type: "assistant_message", text: "Merhaba 👋" }
     const complete =
       record({ type: "meta", meta }) +

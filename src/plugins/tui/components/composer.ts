@@ -10,7 +10,6 @@ import {
   type RenderContext,
   type TextRenderable,
 } from "@opentui/core"
-import { appInfo } from "../../../app-info"
 import { describeError } from "../../../lib/error"
 import { asNumber, asString, isRecord } from "../../../lib/json"
 import type { ImageInput, UserInput } from "../../../providers/types"

@@ -98,15 +98,11 @@ export const bashTool: Tool = {
   },
   permission(args) {
     const command = commandOf(args)
-    const split = splitCommand(command)
-    if (!split || split.segments.length > 1) return { subject: command }
-    const words = split.segments[0]!.split(/\s+/)
+    const segments = splitCommand(command)
+    if (!segments || segments.length > 1) return { subject: command }
+    const words = segments[0]!.split(/\s+/)
     if (words.length < 2) return { subject: command, suggestion: `bash(${command})` }
     return { subject: command, suggestion: `bash(${words[0]} ${words[1]}*)` }
-  },
-  directPolicy(args) {
-    const split = splitCommand(commandOf(args))
-    return split && !split.redirected ? "allow" : "ask"
   },
   async execute(args, ctx) {
     const command = commandOf(args)

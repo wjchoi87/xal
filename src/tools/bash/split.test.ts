@@ -10,38 +10,28 @@ describe("splitCommand", () => {
       { command: "bun test; bun run lint", segments: ["bun test", "bun run lint"] },
       { command: "bun test\nbun run lint", segments: ["bun test", "bun run lint"] },
     ]) {
-      expect(splitCommand(example.command)).toEqual({ segments: example.segments, redirected: false })
+      expect(splitCommand(example.command)).toEqual(example.segments)
     }
   })
 
   test("keeps quoted and escaped separators within their command", () => {
-    expect(splitCommand("printf '%s' 'left && right | still; one\ntwo' && next")).toEqual({
-      segments: ["printf '%s' 'left && right | still; one\ntwo'", "next"],
-      redirected: false,
-    })
-    expect(splitCommand('printf "%s" "left && right | still; one" | next')).toEqual({
-      segments: ['printf "%s" "left && right | still; one"', "next"],
-      redirected: false,
-    })
-    expect(splitCommand("echo left \\| right \\; still \\&\\& one")).toEqual({
-      segments: ["echo left \\| right \\; still \\&\\& one"],
-      redirected: false,
-    })
-    expect(splitCommand("echo 'left > right'")).toEqual({
-      segments: ["echo 'left > right'"],
-      redirected: false,
-    })
+    expect(splitCommand("printf '%s' 'left && right | still; one\ntwo' && next")).toEqual([
+      "printf '%s' 'left && right | still; one\ntwo'",
+      "next",
+    ])
+    expect(splitCommand('printf "%s" "left && right | still; one" | next')).toEqual([
+      'printf "%s" "left && right | still; one"',
+      "next",
+    ])
+    expect(splitCommand("echo left \\| right \\; still \\&\\& one")).toEqual([
+      "echo left \\| right \\; still \\&\\& one",
+    ])
+    expect(splitCommand("echo 'left > right'")).toEqual(["echo 'left > right'"])
   })
 
-  test("tracks redirections without treating them as command separators", () => {
-    expect(splitCommand("sort < input | uniq > output")).toEqual({
-      segments: ["sort < input", "uniq > output"],
-      redirected: true,
-    })
-    expect(splitCommand("command 2>> errors 2>&1 &> all")).toEqual({
-      segments: ["command 2>> errors 2>&1 &> all"],
-      redirected: true,
-    })
+  test("keeps redirections within their command instead of splitting on them", () => {
+    expect(splitCommand("sort < input | uniq > output")).toEqual(["sort < input", "uniq > output"])
+    expect(splitCommand("command 2>> errors 2>&1 &> all")).toEqual(["command 2>> errors 2>&1 &> all"])
   })
 
   test("rejects shell constructs that cannot be split safely", () => {

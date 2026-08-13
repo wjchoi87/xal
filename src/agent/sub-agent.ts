@@ -7,6 +7,7 @@ import { createManagedWorktree } from "../git/worktrees"
 import { describeError } from "../lib/error"
 import { asString } from "../lib/json"
 import { compactPath } from "../lib/path"
+import { modeDefinition } from "../permissions/modes"
 import type { PermissionMode } from "../permissions/types"
 import { isThinkingEffort, type ThinkingEffort, type Usage } from "../providers/types"
 import { toolFailed } from "../tools/output"
@@ -54,8 +55,7 @@ function thinkingFrom(args: Record<string, unknown>): ThinkingEffort | undefined
 }
 
 function childMode(parent: PermissionMode, access: SubAgentAccess): PermissionMode {
-  if (access === "read") return "plan"
-  return parent === "yolo" ? "yolo" : "auto"
+  return access === "read" ? "plan" : parent
 }
 
 function toolActivity(tool: string, title: string): string {
@@ -227,8 +227,8 @@ export const subAgentTool: SessionTool = {
     const task = taskFrom(args)
     const access = accessFrom(args)
     const isolation = isolationFrom(args)
-    if (access === "write" && ctx.session.mode === "plan") {
-      throw new Error("write delegation is unavailable in plan mode")
+    if (access === "write" && modeDefinition(ctx.session.mode).readOnly) {
+      throw new Error("write delegation is unavailable in a read-only mode")
     }
     if (isolation === "worktree" && access !== "write") {
       throw new Error("worktree isolation is available only to write delegations")

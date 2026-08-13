@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
+import { contributeRules } from "../permissions/rules"
 import { registerTool, unregisterTool } from "../tools/registry"
 import type { ElicitationResult, InteractiveTool, Tool } from "../tools/types"
 import type { AgentEvent } from "./events"
@@ -212,6 +213,7 @@ describe("AgentSession control flow", () => {
 
   test("interrupts a pending approval and settles without executing the tool", async () => {
     const toolName = `approval_interrupt_${crypto.randomUUID().replaceAll("-", "_")}`
+    contributeRules({ ask: [toolName] })
     let executions = 0
     const tool: Tool = {
       name: toolName,

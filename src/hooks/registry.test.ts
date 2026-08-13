@@ -17,7 +17,7 @@ function context(): HookContext {
       cwd: "/workspace",
       provider: "provider",
       model: "model",
-      mode: "build",
+      mode: "normal",
     },
     signal: new AbortController().signal,
   }

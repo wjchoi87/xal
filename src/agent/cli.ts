@@ -3,7 +3,8 @@ import { registerCli } from "../cli/registry"
 import type { Cli } from "../cli/types"
 import { describeError } from "../lib/error"
 import { readJsonFile } from "../lib/fs"
-import { isPermissionMode, permissionModes, type PermissionMode } from "../permissions/types"
+import { defaultPermissionMode, isPermissionMode, permissionModes } from "../permissions/modes"
+import type { PermissionMode } from "../permissions/types"
 import type { AgentSession } from "./agent-session"
 import { createSession } from "./compose"
 import type { AgentEvent } from "./events"
@@ -33,7 +34,7 @@ interface SetupFailure {
 }
 
 function usage(): string {
-  return `${appInfo.name} run [--format text|json|jsonl] [--mode ${permissionModes.join("|")}] [--provider id] [--model id] [--output-schema file] [prompt]`
+  return `${appInfo.name} run [--format text|json|jsonl] [--mode ${permissionModes().join("|")}] [--provider id] [--model id] [--output-schema file] [prompt]`
 }
 
 function optionValue(args: string[], index: number, option: string): string {
@@ -47,7 +48,7 @@ function isOutputFormat(value: string): value is OutputFormat {
 }
 
 function parseArgs(args: string[]): RunOptions {
-  const options: RunOptions = { format: "text", mode: "build", prompt: [], help: false }
+  const options: RunOptions = { format: "text", mode: defaultPermissionMode, prompt: [], help: false }
 
   for (let index = 0; index < args.length; index++) {
     const arg = args[index]!
@@ -65,7 +66,7 @@ function parseArgs(args: string[]): RunOptions {
       }
       case "--mode": {
         const value = optionValue(args, index, arg)
-        if (!isPermissionMode(value)) throw new Error(`--mode expects one of: ${permissionModes.join(", ")}`)
+        if (!isPermissionMode(value)) throw new Error(`--mode expects one of: ${permissionModes().join(", ")}`)
         options.mode = value
         index++
         break
@@ -101,7 +102,7 @@ function printHelp(print: (line: string) => void): void {
   print("Run one agent turn without starting the TUI.")
   print("")
   print("  --format text|json|jsonl  final text, one JSON result, or live JSONL events")
-  print(`  --mode ${permissionModes.join("|")}  permission mode (default: build)`)
+  print(`  --mode ${permissionModes().join("|")}  permission mode (default: ${defaultPermissionMode})`)
   print("  --provider id             override the configured provider")
   print("  --model id                override the configured model")
   print("  --output-schema file      require the final response to match a JSON Schema")
@@ -163,7 +164,7 @@ function runSession(
 
     if (event.type === "approval_requested") {
       const message = "This action needed approval but the session is headless, so it was not run."
-      if (format !== "jsonl") error(`${message} Rerun with --mode auto to allow it.`)
+      if (format !== "jsonl") error(`${message} Rerun with --mode yolo to allow it.`)
       session.deny("policy", message)
     }
     if (event.type === "retry_scheduled" && format !== "jsonl") {
