@@ -14,16 +14,6 @@ const clearCommand: Command = {
   },
 }
 
-const renameCommand: Command = {
-  name: "rename",
-  describe: "rename the current session",
-  async run(args, ctx) {
-    const title = ctx.session.setTitle(args.join(" "))
-    if (!title) throw new Error("usage: /rename <title>")
-    ctx.print(`session renamed to ${title}`)
-  },
-}
-
 function promptPreview(checkpoint: UndoCheckpoint): string {
   const compact = checkpoint.text.replace(/\s+/g, " ").trim()
   if (compact) {
@@ -174,7 +164,6 @@ const resumeCommand: Command = {
 
 export function registerSessionCommands(): void {
   registerCommand(clearCommand)
-  registerCommand(renameCommand)
   registerCommand(historyCommand)
   registerCommand(undoCommand)
   registerCommand(redoCommand)
