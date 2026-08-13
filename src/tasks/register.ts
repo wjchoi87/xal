@@ -1,7 +1,8 @@
-import { isRecord } from "../../lib/json"
-import { parseTaskList } from "../../tasks/types"
-import type { Plugin } from "../types"
+import { isRecord } from "../lib/json"
+import { registerTool } from "../tools/registry"
+import { registerToolRenderer } from "../ui/extension"
 import { updateTasksTool } from "./tool"
+import { parseTaskList } from "./types"
 
 function summarize(output: string): string | undefined {
   let result: unknown
@@ -19,16 +20,11 @@ function summarize(output: string): string | undefined {
   return `${completed}/${tasks.length} done${active}`
 }
 
-const plugin: Plugin = {
-  name: "tasks",
-  register(ctx) {
-    ctx.registerTool(updateTasksTool)
-    ctx.registerToolRenderer({
-      tool: updateTasksTool.name,
-      summarize: (output) => summarize(output) ?? "invalid result",
-      failed: (output) => summarize(output) === undefined,
-    })
-  },
+export function registerTasks(): void {
+  registerTool(updateTasksTool)
+  registerToolRenderer({
+    tool: updateTasksTool.name,
+    summarize: (output) => summarize(output) ?? "invalid result",
+    failed: (output) => summarize(output) === undefined,
+  })
 }
-
-export default plugin

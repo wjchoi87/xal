@@ -1,7 +1,7 @@
-import { asStringArray } from "../../lib/json"
-import { loadRememberedRules, setUserRules } from "../../permissions/rules"
-import type { PermissionMode } from "../../permissions/types"
-import type { Plugin } from "../types"
+import { registerPrompt } from "../agent/prompt"
+import type { Settings } from "../config/settings"
+import { setUserRules } from "./rules"
+import type { PermissionMode } from "./types"
 
 const modeGuidance: Record<PermissionMode, string> = {
   build: "",
@@ -17,22 +17,10 @@ const subagentModeGuidance: Record<PermissionMode, string> = {
   yolo: "This delegation inherits the parent's pre-approved mode. Be correspondingly careful: prefer the narrowest action that completes the assigned task.",
 }
 
-const plugin: Plugin = {
-  name: "permissions",
-  register(ctx) {
-    setUserRules({
-      allow: asStringArray(ctx.config.allow),
-      ask: asStringArray(ctx.config.ask),
-      deny: asStringArray(ctx.config.deny),
-    })
-    ctx.registerPrompt({
-      id: "permissions",
-      text: (prompt) => (prompt.kind === "subagent" ? subagentModeGuidance[prompt.mode] : modeGuidance[prompt.mode]),
-    })
-  },
-  async bootstrap() {
-    await loadRememberedRules(process.cwd())
-  },
+export function registerPermissions(settings: Settings): void {
+  setUserRules(settings.permissions)
+  registerPrompt({
+    id: "permissions",
+    text: (prompt) => (prompt.kind === "subagent" ? subagentModeGuidance[prompt.mode] : modeGuidance[prompt.mode]),
+  })
 }
-
-export default plugin

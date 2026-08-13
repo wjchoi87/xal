@@ -1,5 +1,5 @@
-import { MAX_TASKS, MAX_TASK_STEP_LENGTH, parseTaskList, type TrackedTask } from "../../tasks/types"
-import type { Tool } from "../../tools/types"
+import { MAX_TASKS, MAX_TASK_STEP_LENGTH, parseTaskList, type TrackedTask } from "./types"
+import type { Tool } from "../tools/types"
 
 function tasksFrom(args: Record<string, unknown>): TrackedTask[] {
   const tasks = parseTaskList(args.tasks)

@@ -1,9 +1,11 @@
 import { isAbsolute, relative, resolve } from "node:path"
-import { listBackgroundTasks } from "../../background/registry"
-import { createManagedWorktree, managedWorktreeAt, removeManagedWorktree, unmanageWorktree } from "../../git/worktrees"
-import { asBoolean, asString } from "../../lib/json"
-import { compactPath } from "../../lib/path"
-import type { SessionTool } from "../../tools/types"
+import { listBackgroundTasks } from "../background/registry"
+import { createManagedWorktree, managedWorktreeAt, removeManagedWorktree, unmanageWorktree } from "./worktrees"
+import { asBoolean, asString } from "../lib/json"
+import { compactPath } from "../lib/path"
+import { contributeRules } from "../permissions/rules"
+import { registerTool } from "../tools/registry"
+import type { SessionTool } from "../tools/types"
 
 const MAX_NAME_LENGTH = 80
 
@@ -182,4 +184,13 @@ export const worktreeRemoveTool: SessionTool = {
       output: `Removed ${compactPath(worktree.path)}. Branch ${worktree.branch} remains available.`,
     }
   },
+}
+
+export function registerWorktreeTools(): void {
+  registerTool(worktreeEnterTool)
+  registerTool(worktreeExitTool)
+  registerTool(worktreeRemoveTool)
+  contributeRules({
+    ask: ["worktree_exit(remove force)", "worktree_remove(* force)"],
+  })
 }

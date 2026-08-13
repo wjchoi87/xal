@@ -1,7 +1,7 @@
 import { join } from "node:path"
-import { writeSecureText } from "../../lib/fs"
-import { MAX_PLAN_LENGTH, parsePlanMarkdown, type SessionPlan } from "../../plans/types"
-import type { InteractiveTool } from "../../tools/types"
+import { writeSecureText } from "../lib/fs"
+import { MAX_PLAN_LENGTH, parsePlanMarkdown, type SessionPlan } from "./types"
+import type { InteractiveTool } from "../tools/types"
 
 const APPROVE = "Approve and build"
 const REVISE = "Request changes"

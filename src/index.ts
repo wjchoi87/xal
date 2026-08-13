@@ -1,12 +1,20 @@
+import { registerBasePrompt } from "./agent/base-prompt"
+import { registerAgentClis } from "./agent/cli"
 import { registerAgentCommands } from "./agent/commands"
+import { registerSubAgents } from "./agent/sub-agent"
+import { registerJobTools } from "./background/register"
 import { chooseOption } from "./cli/choose"
 import { runCli } from "./cli/run"
 import { askSecret } from "./cli/secret"
 import type { CliContext } from "./cli/types"
 import { loadCredentialSecrets } from "./config/credentials"
-import { loadSettings } from "./config/settings"
+import { loadSettings, type Settings } from "./config/settings"
+import { registerWorktreeTools } from "./git/worktree-tools"
+import { registerHookCommands } from "./hooks/commands"
 import { describeError } from "./lib/error"
-import { bootstrapPlugins, registerPlugins, shutdownPlugins } from "./plugins/discover"
+import { registerPermissions } from "./permissions/register"
+import { registerPlans } from "./plans/register"
+import { bootstrapPlugins, registerBootstrapStep, registerPlugins, shutdownPlugins } from "./plugins/discover"
 import { startProfiler, stopProfiler } from "./profiler/profiler"
 import { registerTrustClis } from "./project/cli"
 import { ensureWorkspaceTrust } from "./project/trust"
@@ -15,6 +23,10 @@ import { registerProviderCommands } from "./providers/commands"
 import { registerSessionClis } from "./sessions/cli"
 import { registerSessionCommands } from "./sessions/commands"
 import { protectSecretValue, redactText } from "./secrets/redactor"
+import { registerRedaction } from "./secrets/register"
+import { discoverSkills, registerSkills } from "./skills/register"
+import { registerTasks } from "./tasks/register"
+import { registerBash } from "./tools/bash/register"
 import { getUi } from "./ui/registry"
 
 const ctx: CliContext = {
@@ -36,10 +48,23 @@ const ctx: CliContext = {
 
 let terminationRequested = false
 
-function registerCore(): void {
+function registerCore(settings: Settings): void {
+  registerPermissions(settings)
+  registerRedaction(settings)
+  registerBasePrompt()
+  registerPlans()
+  registerTasks()
+  registerSkills()
+  registerBootstrapStep("skills", discoverSkills)
+  registerBash()
+  registerJobTools()
+  registerWorktreeTools()
+  registerSubAgents()
   registerProviderCommands()
   registerProviderClis()
   registerAgentCommands()
+  registerAgentClis()
+  registerHookCommands()
   registerSessionCommands()
   registerSessionClis()
   registerTrustClis()
@@ -61,7 +86,7 @@ async function main(input: string[]): Promise<void> {
   if (!trusted) return
   const settings = await loadSettings()
   await loadCredentialSecrets()
-  registerCore()
+  registerCore(settings)
   const plugins = await registerPlugins(settings)
   if (terminationRequested) return
 

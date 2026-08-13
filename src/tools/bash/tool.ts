@@ -1,5 +1,5 @@
 import { asBoolean, asNumber, asString } from "../../lib/json"
-import type { Tool } from "../../tools/types"
+import type { Tool } from "../types"
 import { startJob } from "./jobs"
 import { spawnCommand } from "./process"
 import { sandboxAvailable, type SandboxAccess } from "./sandbox"
@@ -73,7 +73,7 @@ function description(): string {
 
 function guidance(): string {
   const base =
-    "Use bash for shell work: builds, tests, git. Use the grep and glob tools to search instead of rg, find, or ls, and read, write, and edit for file contents instead of cat, sed, echo, or heredocs. Quote paths that contain spaces. Issue independent commands as parallel calls; chain dependent commands with && so a failure stops the sequence. Prefer non-interactive flags; anything that waits for input hangs until the timeout kills it. Start long-lived processes like dev servers and watchers with background:true, follow them with job_output (pass wait to block until new output or exit instead of sleeping between polls), and stop them with job_kill; never background quick commands. Only commit, amend, or push with git when the user asks for it."
+    "Use bash for shell work: builds, tests, git. Prefer a dedicated tool over a shell equivalent when one is available. Quote paths that contain spaces. Issue independent commands as parallel calls; chain dependent commands with && so a failure stops the sequence. Prefer non-interactive flags; anything that waits for input hangs until the timeout kills it. Start long-lived processes like dev servers and watchers with background:true, follow them with job_output (pass wait to block until new output or exit instead of sleeping between polls), and stop them with job_kill; never background quick commands. Only commit, amend, or push with git when the user asks for it."
   if (!sandboxAvailable()) return base
   return `${base} Use sandbox:"read" for inspection commands because the OS blocks filesystem state changes. Use sandbox:"workspace" for builds and commands that may write only in the workspace or temporary directories. Omit sandbox when the command needs network or writes elsewhere.`
 }

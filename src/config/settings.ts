@@ -6,16 +6,35 @@ import { isTrusted } from "../project/trust"
 import { isThinkingEffort, type ThinkingEffort } from "../providers/types"
 import { agentHome, projectConfigPath } from "./paths"
 
+export interface PermissionSettings {
+  allow: string[]
+  ask: string[]
+  deny: string[]
+}
+
+export interface RedactionSettings {
+  values: string[]
+  environment: string[]
+}
+
 export interface Settings {
   plugins: string[]
   provider?: string
   model?: string
   ui?: string
+  permissions: PermissionSettings
+  redaction: RedactionSettings
   pluginConfig: Record<string, Record<string, unknown>>
   thinking: Record<string, Record<string, ThinkingEffort>>
 }
 
-let current: Settings = { plugins: [], pluginConfig: {}, thinking: {} }
+let current: Settings = {
+  plugins: [],
+  permissions: { allow: [], ask: [], deny: [] },
+  redaction: { values: [], environment: [] },
+  pluginConfig: {},
+  thinking: {},
+}
 
 function userSettingsPath(): string {
   return join(agentHome(), "config.json")
@@ -68,8 +87,25 @@ function mergeSettings(lower: Record<string, unknown>, higher: Record<string, un
   return merged
 }
 
+function sectionRecord(raw: Record<string, unknown>, field: string): Record<string, unknown> {
+  const value = raw[field]
+  if (value === undefined) return {}
+  if (!isRecord(value)) throw new Error(`${field} must be an object`)
+  return value
+}
+
+function strictStringArray(value: unknown, path: string): string[] {
+  if (value === undefined) return []
+  if (!Array.isArray(value) || asStringArray(value).length !== value.length) {
+    throw new Error(`${path} must be an array of strings`)
+  }
+  return asStringArray(value)
+}
+
 function parseSettings(raw: Record<string, unknown>): Settings {
   const plugins = asStringArray(raw.plugins)
+  const permissions = sectionRecord(raw, "permissions")
+  const redaction = sectionRecord(raw, "redaction")
   const pluginConfig: Record<string, Record<string, unknown>> = {}
   if (isRecord(raw.pluginConfig)) {
     for (const [name, value] of Object.entries(raw.pluginConfig)) {
@@ -92,6 +128,15 @@ function parseSettings(raw: Record<string, unknown>): Settings {
     provider: asString(raw.provider),
     model: asString(raw.model),
     ui: asString(raw.ui),
+    permissions: {
+      allow: strictStringArray(permissions.allow, "permissions.allow"),
+      ask: strictStringArray(permissions.ask, "permissions.ask"),
+      deny: strictStringArray(permissions.deny, "permissions.deny"),
+    },
+    redaction: {
+      values: strictStringArray(redaction.values, "redaction.values"),
+      environment: strictStringArray(redaction.environment, "redaction.environment"),
+    },
     pluginConfig,
     thinking,
   }

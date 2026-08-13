@@ -24,37 +24,69 @@ interface RegisteredPlugin {
   abort: AbortController
 }
 
+interface BootstrapStep {
+  name: string
+  run(): Promise<void>
+}
+
 let status: PluginStatus = { total: 0, failures: [] }
 let registered: RegisteredPlugin[] = []
+const bootstrapSteps: BootstrapStep[] = []
+
+export function registerBootstrapStep(name: string, run: () => Promise<void>): void {
+  bootstrapSteps.push({ name, run })
+}
 let bootstrapRun: Promise<PluginStatus> | undefined
 let shutdownRun: Promise<PluginStatus> | undefined
 
-function contextFor(plugin: Plugin, settings: Settings, pluginOrder: number, signal: AbortSignal): PluginContext {
+interface StagedContext {
+  ctx: PluginContext
+  commit(): void
+}
+
+function contextFor(plugin: Plugin, settings: Settings, pluginOrder: number, signal: AbortSignal): StagedContext {
   let hookOrder = 0
-  return {
+  let staged: (() => void)[] | undefined = []
+  const apply = (action: () => void): void => {
+    if (staged) staged.push(action)
+    else action()
+  }
+  const ctx: PluginContext = {
     config: settings.pluginConfig[plugin.name] ?? {},
     events,
     signal,
-    registerTool,
-    unregisterTool,
-    registerProvider,
-    registerCli,
-    registerCommand,
-    registerHook: (hook) => registerHook(plugin.name, pluginOrder, hookOrder++, hook),
-    registerPrompt,
-    registerPolicyRule,
-    registerPermissionRules: contributeRules,
-    registerSecrets: (values) => replaceSecretValues(`plugin:${plugin.name}`, values),
-    registerUi,
-    registerToolRenderer,
+    registerTool: (tool) => apply(() => registerTool(tool)),
+    unregisterTool: (tool) => apply(() => unregisterTool(tool)),
+    registerProvider: (provider) => apply(() => registerProvider(provider)),
+    registerCli: (cli) => apply(() => registerCli(cli)),
+    registerCommand: (command) => apply(() => registerCommand(command)),
+    registerHook: (hook) => {
+      const order = hookOrder++
+      apply(() => registerHook(plugin.name, pluginOrder, order, hook))
+    },
+    registerPrompt: (section) => apply(() => registerPrompt(section)),
+    registerPolicyRule: (rule) => apply(() => registerPolicyRule(rule)),
+    registerPermissionRules: (rules) => apply(() => contributeRules(rules)),
+    registerSecrets: (values) => apply(() => replaceSecretValues(`plugin:${plugin.name}`, values)),
+    registerUi: (ui) => apply(() => registerUi(ui)),
+    registerToolRenderer: (renderer) => apply(() => registerToolRenderer(renderer)),
+  }
+  return {
+    ctx,
+    commit() {
+      const actions = staged ?? []
+      staged = undefined
+      for (const action of actions) action()
+    },
   }
 }
 
 function registerPlugin(plugin: Plugin, settings: Settings, pluginOrder: number): RegisteredPlugin {
   const abort = new AbortController()
-  const ctx = contextFor(plugin, settings, pluginOrder, abort.signal)
-  plugin.register(ctx)
-  return { plugin, ctx, pluginOrder, abort }
+  const staged = contextFor(plugin, settings, pluginOrder, abort.signal)
+  plugin.register(staged.ctx)
+  staged.commit()
+  return { plugin, ctx: staged.ctx, pluginOrder, abort }
 }
 
 export async function registerPlugins(settings: Settings): Promise<PluginStatus> {
@@ -68,7 +100,6 @@ export async function registerPlugins(settings: Settings): Promise<PluginStatus>
     try {
       registered.push(registerPlugin(plugin, settings, pluginOrder))
     } catch (error) {
-      removeHooks(pluginOrder)
       failures.push({ plugin: plugin.name, phase: "register", reason: describeError(error) })
     }
   }
@@ -78,7 +109,6 @@ export async function registerPlugins(settings: Settings): Promise<PluginStatus>
       const plugin = await importPlugin(spec, agentHome())
       registered.push(registerPlugin(plugin, settings, builtinPlugins.length + index))
     } catch (error) {
-      removeHooks(builtinPlugins.length + index)
       failures.push({ plugin: spec, phase: "register", reason: describeError(error) })
     }
   }
@@ -90,15 +120,21 @@ export async function registerPlugins(settings: Settings): Promise<PluginStatus>
 
 async function runBootstrap(): Promise<PluginStatus> {
   const entries = registered.filter((entry) => entry.plugin.bootstrap)
-  events.emitRetained({ type: "plugin_bootstrap_started", total: entries.length })
-  const outcomes = await Promise.allSettled(
-    entries.map((entry) => Promise.resolve().then(() => entry.plugin.bootstrap?.(entry.ctx))),
-  )
+  const jobs: { name: string; pluginOrder?: number; run(): void | Promise<void> }[] = [
+    ...bootstrapSteps.map((step) => ({ name: step.name, run: step.run })),
+    ...entries.map((entry) => ({
+      name: entry.plugin.name,
+      pluginOrder: entry.pluginOrder,
+      run: () => entry.plugin.bootstrap?.(entry.ctx),
+    })),
+  ]
+  events.emitRetained({ type: "plugin_bootstrap_started", total: jobs.length })
+  const outcomes = await Promise.allSettled(jobs.map((job) => Promise.resolve().then(() => job.run())))
   const failures = outcomes.flatMap((outcome, index): PluginFailure[] => {
     if (outcome.status === "fulfilled") return []
-    const entry = entries[index]!
-    removeHooks(entry.pluginOrder)
-    return [{ plugin: entry.plugin.name, phase: "bootstrap", reason: describeError(outcome.reason) }]
+    const job = jobs[index]!
+    if (job.pluginOrder !== undefined) removeHooks(job.pluginOrder)
+    return [{ plugin: job.name, phase: "bootstrap", reason: describeError(outcome.reason) }]
   })
   status = { total: status.total, failures: [...status.failures, ...failures] }
   events.emitRetained({ type: "plugin_bootstrap_finished", status })

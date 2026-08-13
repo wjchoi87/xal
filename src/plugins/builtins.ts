@@ -1,50 +1,26 @@
 import type { Plugin } from "./types"
 import ask from "./ask/plugin"
-import bash from "./bash/plugin"
 import codeReview from "./code-review/plugin"
 import deepseek from "./deepseek/plugin"
 import files from "./files/plugin"
-import headless from "./headless/plugin"
-import hooks from "./hooks/plugin"
 import openaiChatgpt from "./openai-chatgpt/plugin"
-import permissions from "./permissions/plugin"
-import plan from "./plan/plugin"
-import prompt from "./prompt/plugin"
 import promptCommands from "./prompt-commands/plugin"
 import projectInstructions from "./project-instructions/plugin"
-import redaction from "./redaction/plugin"
-import jobs from "./jobs/plugin"
 import lsp from "./lsp/plugin"
 import mcp from "./mcp/plugin"
 import search from "./search/plugin"
-import skills from "./skills/plugin"
-import subAgents from "./sub-agents/plugin"
-import tasks from "./tasks/plugin"
 import tui from "./tui/plugin"
-import worktrees from "./worktrees/plugin"
 
 export const builtinPlugins: Plugin[] = [
-  permissions,
-  redaction,
-  prompt,
-  hooks,
-  plan,
   codeReview,
   promptCommands,
   projectInstructions,
-  bash,
   files,
-  jobs,
   search,
   lsp,
   mcp,
-  skills,
-  worktrees,
-  subAgents,
-  tasks,
   deepseek,
   openaiChatgpt,
-  headless,
   ask,
   tui,
 ]

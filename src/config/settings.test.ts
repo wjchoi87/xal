@@ -40,6 +40,10 @@ test("trusted project settings override user settings with recursive object merg
       plugins: ["user-plugin"],
       provider: "user-provider",
       model: "user-model",
+      permissions: {
+        allow: ["bash(git status*)"],
+        deny: ["bash(rm *)"],
+      },
       pluginConfig: {
         shared: {
           location: "user",
@@ -55,6 +59,12 @@ test("trusted project settings override user settings with recursive object merg
     await writeJson(join(project, ".tack", "config.json"), {
       plugins: ["project-plugin"],
       model: "project-model",
+      permissions: {
+        allow: ["bash(git log*)"],
+      },
+      redaction: {
+        environment: ["MY_PROJECT_TOKEN"],
+      },
       pluginConfig: {
         shared: {
           location: "project",
@@ -72,6 +82,15 @@ test("trusted project settings override user settings with recursive object merg
       provider: "user-provider",
       model: "project-model",
       ui: undefined,
+      permissions: {
+        allow: ["bash(git log*)"],
+        ask: [],
+        deny: ["bash(rm *)"],
+      },
+      redaction: {
+        values: [],
+        environment: ["MY_PROJECT_TOKEN"],
+      },
       pluginConfig: {
         shared: {
           location: "project",
@@ -99,6 +118,8 @@ test("does not read malformed project settings until the project is trusted", as
       provider: "user-provider",
       model: undefined,
       ui: undefined,
+      permissions: { allow: [], ask: [], deny: [] },
+      redaction: { values: [], environment: [] },
       pluginConfig: {},
       thinking: {},
     })
@@ -135,9 +156,21 @@ test("saves only user settings securely while retaining project overrides in mem
       provider: "project-provider",
       model: "selected-model",
       ui: undefined,
+      permissions: { allow: [], ask: [], deny: [] },
+      redaction: { values: [], environment: [] },
       pluginConfig: { userPlugin: { enabled: true } },
       thinking: {},
     })
     expect((await stat(userConfig)).mode & 0o777).toBe(0o600)
+  })
+})
+
+test("rejects permission and redaction settings that are not string arrays", async () => {
+  await withSettingsEnvironment(async ({ home }) => {
+    await writeJson(join(home, "config.json"), { redaction: { values: "secret" } })
+    await expect(loadSettings()).rejects.toThrow("redaction.values must be an array of strings")
+
+    await writeJson(join(home, "config.json"), { permissions: { deny: [42] } })
+    await expect(loadSettings()).rejects.toThrow("permissions.deny must be an array of strings")
   })
 })

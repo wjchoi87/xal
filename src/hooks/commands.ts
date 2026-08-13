@@ -1,6 +1,6 @@
-import type { Command } from "../../commands/types"
-import { listHooks } from "../../hooks/registry"
-import type { Plugin } from "../types"
+import { registerCommand } from "../commands/registry"
+import type { Command } from "../commands/types"
+import { listHooks } from "./registry"
 
 const hooksCommand: Command = {
   name: "hooks",
@@ -15,11 +15,6 @@ const hooksCommand: Command = {
   },
 }
 
-const plugin: Plugin = {
-  name: "hooks",
-  register(ctx) {
-    ctx.registerCommand(hooksCommand)
-  },
+export function registerHookCommands(): void {
+  registerCommand(hooksCommand)
 }
-
-export default plugin

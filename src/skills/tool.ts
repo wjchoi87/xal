@@ -1,7 +1,7 @@
-import { asString } from "../../lib/json"
-import { getSkill } from "../../skills/registry"
-import type { Skill } from "../../skills/types"
-import type { Tool } from "../../tools/types"
+import { asString } from "../lib/json"
+import { getSkill } from "./registry"
+import type { Skill } from "./types"
+import type { Tool } from "../tools/types"
 import { listSkillFiles, readSkillResource } from "./catalog"
 
 function requiredSkill(args: Record<string, unknown>): Skill {

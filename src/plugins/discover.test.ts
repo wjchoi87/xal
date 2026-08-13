@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, mock, test } from "bun:test"
 import type { Settings } from "../config/settings"
 import { events, type AppEvent } from "../events"
 import { listHooks } from "../hooks/registry"
+import { getTool } from "../tools/registry"
 import type { Plugin } from "./types"
 
 const builtinPlugins: Plugin[] = []
@@ -20,7 +21,13 @@ mock.module("./load", () => ({
 const { bootstrapPlugins, registerPlugins, shutdownPlugins } = await import("./discover")
 
 function settings(plugins: string[] = [], pluginConfig: Settings["pluginConfig"] = {}): Settings {
-  return { plugins, pluginConfig, thinking: {} }
+  return {
+    plugins,
+    permissions: { allow: [], ask: [], deny: [] },
+    redaction: { values: [], environment: [] },
+    pluginConfig,
+    thinking: {},
+  }
 }
 
 function latch(): { promise: Promise<void>; release(): void } {
@@ -48,6 +55,13 @@ describe("plugin orchestration", () => {
       register(ctx) {
         registered.push("broken")
         ctx.registerHook({ name: "partial", prompt: async () => undefined })
+        ctx.registerTool({
+          name: "partial-tool",
+          description: "",
+          parameters: { type: "object", properties: {} },
+          title: () => "",
+          execute: async () => ({ output: "" }),
+        })
         throw new Error("registration exploded")
       },
     })
@@ -68,6 +82,7 @@ describe("plugin orchestration", () => {
       })
       expect(registered).toEqual(["broken", "working:true"])
       expect(listHooks()).toEqual([{ id: "working-plugin/active", events: ["prompt"] }])
+      expect(getTool("partial-tool")).toBeUndefined()
       expect(observed).toEqual([{ type: "plugin_registration_finished", status }])
     } finally {
       unsubscribe()

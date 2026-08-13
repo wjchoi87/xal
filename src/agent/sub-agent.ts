@@ -1,16 +1,18 @@
-import { AgentSession } from "../../agent/agent-session"
-import type { AgentEvent } from "../../agent/events"
-import { runAgentTurn } from "../../agent/run"
-import { appendAgentTranscript, createAgentJob, finishAgentJob, setAgentActivity, stopJob } from "../../background/jobs"
-import { backgroundTasksChanged, registerBackgroundTask, type BackgroundTaskState } from "../../background/registry"
-import { createManagedWorktree } from "../../git/worktrees"
-import { describeError } from "../../lib/error"
-import { asString } from "../../lib/json"
-import { compactPath } from "../../lib/path"
-import type { PermissionMode } from "../../permissions/types"
-import { isThinkingEffort, type ThinkingEffort, type Usage } from "../../providers/types"
-import { toolFailed } from "../../tools/output"
-import type { SessionTool } from "../../tools/types"
+import { AgentSession } from "./agent-session"
+import type { AgentEvent } from "./events"
+import { runAgentTurn } from "./run"
+import { appendAgentTranscript, createAgentJob, finishAgentJob, setAgentActivity, stopJob } from "../background/jobs"
+import { backgroundTasksChanged, registerBackgroundTask, type BackgroundTaskState } from "../background/registry"
+import { createManagedWorktree } from "../git/worktrees"
+import { describeError } from "../lib/error"
+import { asString } from "../lib/json"
+import { compactPath } from "../lib/path"
+import type { PermissionMode } from "../permissions/types"
+import { isThinkingEffort, type ThinkingEffort, type Usage } from "../providers/types"
+import { toolFailed } from "../tools/output"
+import { registerTool } from "../tools/registry"
+import type { SessionTool } from "../tools/types"
+import { registerPrompt } from "./prompt"
 
 type SubAgentAccess = "read" | "write"
 type SubAgentIsolation = "shared" | "worktree"
@@ -335,4 +337,19 @@ export const subAgentTool: SessionTool = {
       output: `Started sub-agent ${job.id} (${access}, ${isolation}) in the background${workspace} Join it once with job_output(${job.id}) and a sufficient wait to collect its final report, or stop it with job_kill(${job.id}).`,
     }
   },
+}
+
+export function registerSubAgents(): void {
+  registerPrompt({
+    id: "sub-agent",
+    text(prompt) {
+      if (prompt.kind !== "subagent") return ""
+      return [
+        "You are a one-shot sub-agent working for a primary coding agent. Your first user message is the complete assignment; you have no parent conversation history.",
+        "Complete only that assignment, work independently with the available tools, and do not ask the user or attempt further delegation.",
+        "Return a concise, self-contained final report with the result, evidence, changed files, and verification relevant to the assignment. Report failures clearly.",
+      ].join("\n")
+    },
+  })
+  registerTool(subAgentTool)
 }

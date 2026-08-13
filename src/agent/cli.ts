@@ -1,13 +1,14 @@
-import { createSession } from "../../agent/compose"
-import type { AgentSession } from "../../agent/agent-session"
-import type { AgentEvent } from "../../agent/events"
-import { parseOutputSchema, type OutputSchema } from "../../agent/output-contract"
-import { runAgentTurn, type AgentRunOutcome } from "../../agent/run"
-import { appInfo } from "../../app-info"
-import type { Cli } from "../../cli/types"
-import { describeError } from "../../lib/error"
-import { readJsonFile } from "../../lib/fs"
-import { isPermissionMode, permissionModes, type PermissionMode } from "../../permissions/types"
+import { appInfo } from "../app-info"
+import { registerCli } from "../cli/registry"
+import type { Cli } from "../cli/types"
+import { describeError } from "../lib/error"
+import { readJsonFile } from "../lib/fs"
+import { isPermissionMode, permissionModes, type PermissionMode } from "../permissions/types"
+import type { AgentSession } from "./agent-session"
+import { createSession } from "./compose"
+import type { AgentEvent } from "./events"
+import { parseOutputSchema, type OutputSchema } from "./output-contract"
+import { runAgentTurn, type AgentRunOutcome } from "./run"
 
 type OutputFormat = "text" | "json" | "jsonl"
 interface RunOptions {
@@ -190,7 +191,7 @@ function result(outcome: AgentRunOutcome, session: AgentSession): RunResult {
   }
 }
 
-export const runCli: Cli = {
+const runCli: Cli = {
   name: "run",
   usage: "run [prompt]",
   describe: "run one prompt without the TUI",
@@ -248,4 +249,8 @@ export const runCli: Cli = {
     if (outcome.status === "failed") setFailureExitCode()
     if (outcome.status === "interrupted") setFailureExitCode(130)
   },
+}
+
+export function registerAgentClis(): void {
+  registerCli(runCli)
 }

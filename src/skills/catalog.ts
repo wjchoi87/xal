@@ -1,8 +1,8 @@
 import { readdir, readFile, realpath, stat } from "node:fs/promises"
 import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path"
-import { isMissingPathError } from "../../lib/error"
-import { asString, isRecord } from "../../lib/json"
-import type { Skill, SkillSource } from "../../skills/types"
+import { isMissingPathError } from "../lib/error"
+import { asString, isRecord } from "../lib/json"
+import type { Skill, SkillSource } from "./types"
 
 const MAX_SKILL_BYTES = 64 * 1024
 const MAX_RESOURCE_BYTES = 50_000

@@ -9,9 +9,9 @@ import {
   type BackgroundAgentJob,
   type BackgroundJob,
   type BackgroundProcessJob,
-} from "../../background/jobs"
-import { asNumber, asString } from "../../lib/json"
-import type { Tool } from "../../tools/types"
+} from "./jobs"
+import { asNumber, asString } from "../lib/json"
+import type { Tool } from "../tools/types"
 
 const MAX_WAIT_S = 600
 

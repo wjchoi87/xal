@@ -21,14 +21,18 @@ Commands that save model, thinking, or TUI display preferences write the user fi
 | `provider`     | `string`   | Last registered provider | Provider ID or alias used for new sessions.                                             |
 | `model`        | `string`   | Provider default         | Model ID used for new sessions. Run `tack models` to refresh and list available models. |
 | `ui`           | `string`   | `"tui"`                  | UI ID started when Tack is run without a command.                                       |
+| `permissions`  | `object`   | `{}`                     | Permission rules under `allow`, `ask`, and `deny`.                                      |
+| `redaction`    | `object`   | `{}`                     | Sensitive values to redact under `values` and `environment`.                            |
 | `pluginConfig` | `object`   | `{}`                     | Configuration keyed by plugin name.                                                     |
 | `thinking`     | `object`   | `{}`                     | Thinking effort keyed by provider ID and then model ID.                                 |
+
+Malformed `permissions` or `redaction` configuration fails startup instead of silently running without those rules.
 
 Built-in provider IDs are `openai-chatgpt` and `deepseek`. `chatgpt` is an alias for `openai-chatgpt`. The only built-in UI ID is `tui`. Plugins may register more providers, aliases, and UIs.
 
 ### Plugins
 
-The `plugins` array tells Tack what to load; it does not install or download anything. Every referenced plugin must already exist and be resolvable when Tack starts. If importing or validating a plugin fails, Tack records a plugin registration failure and does not use that plugin.
+The `plugins` array tells Tack what to load; it does not install or download anything. Every referenced plugin must already exist and be resolvable when Tack starts. Plugin registration is transactional: if importing, validating, or registering a plugin fails, Tack records a plugin registration failure and keeps none of that plugin's contributions.
 
 Each `plugins` entry supports one of these forms:
 
@@ -109,6 +113,31 @@ Thinking preferences use this shape:
 ```
 
 Supported effort values are `none`, `low`, `medium`, `high`, `xhigh`, and `max`. Each provider and model may support only a subset. An unavailable saved effort is ignored in favor of that model's default.
+
+### Permissions
+
+```json
+{
+  "permissions": {
+    "allow": ["bash(git status*)"],
+    "ask": ["bash(git push*)"],
+    "deny": ["bash(rm *)"]
+  }
+}
+```
+
+`allow`, `ask`, and `deny` are arrays of permission rules. A rule is either a tool name, such as `bash`, or a tool and subject pattern, such as `bash(git status*)` or `write(src/*)`. `*` matches any sequence of characters. Deny rules are evaluated before all other permission rules.
+
+### Redaction
+
+| Option        | Type       | Default | Description                                                     |
+| ------------- | ---------- | ------- | --------------------------------------------------------------- |
+| `values`      | `string[]` | `[]`    | Exact sensitive values to replace.                              |
+| `environment` | `string[]` | `[]`    | Environment variable names whose current values should be used. |
+
+Matches are case-sensitive and normally become `[REDACTED]` before content reaches a model, session or prompt-history storage, tool-output artifacts, CLI output, or the TUI. Tack chooses a safe alternate marker when a configured value is part of that text. Provider access tokens, refresh tokens, and API keys in Tack's credential store are included automatically. Prefer `environment` for additional values so the secret itself does not need to appear in a configuration file.
+
+Custom plugins can add values from their own credential sources with `ctx.registerSecrets`.
 
 ### Model discovery
 
@@ -279,33 +308,6 @@ Servers connect in parallel during plugin bootstrap. One unavailable server is r
 
 Connected resource catalogs, resource templates, and prompts are exposed through `mcp_resources`, `mcp_read_resource`, `mcp_prompts`, and `mcp_get_prompt`. Server instructions join the system prompt. Binary resource and image or audio content is summarized with its media type and byte size because Tack's tool-result boundary is text-only. Tools that require the experimental MCP task protocol, or whose output schema uses an unsupported dialect, are skipped and reported in status; ordinary and task-optional tools remain available. Tool-list change notifications refresh registered tools, and `/mcp reconnect [server]` reconnects one server or all servers. Run `/mcp` to see transport, status, and capability counts.
 
-### `permissions`
-
-```json
-{
-  "pluginConfig": {
-    "permissions": {
-      "allow": ["bash(git status*)"],
-      "ask": ["bash(git push*)"],
-      "deny": ["bash(rm *)"]
-    }
-  }
-}
-```
-
-`allow`, `ask`, and `deny` are arrays of permission rules. A rule is either a tool name, such as `bash`, or a tool and subject pattern, such as `bash(git status*)` or `write(src/*)`. `*` matches any sequence of characters. Deny rules are evaluated before all other permission rules.
-
-### `redaction`
-
-| Option        | Type       | Default | Description                                                     |
-| ------------- | ---------- | ------- | --------------------------------------------------------------- |
-| `values`      | `string[]` | `[]`    | Exact sensitive values to replace.                              |
-| `environment` | `string[]` | `[]`    | Environment variable names whose current values should be used. |
-
-Matches are case-sensitive and normally become `[REDACTED]` before content reaches a model, session or prompt-history storage, tool-output artifacts, CLI output, or the TUI. Tack chooses a safe alternate marker when a configured value is part of that text. Provider access tokens, refresh tokens, and API keys in Tack's credential store are included automatically. Prefer `environment` for additional values so the secret itself does not need to appear in a configuration file.
-
-Custom plugins can add values from their own credential sources with `ctx.registerSecrets`.
-
 ### `project-instructions`
 
 | Option     | Type             | Default | Description                                                          |
@@ -330,6 +332,14 @@ Every option is optional. A configuration using all currently supported built-in
   "provider": "openai-chatgpt",
   "model": "gpt-5.6-terra",
   "ui": "tui",
+  "permissions": {
+    "allow": ["bash(git status*)"],
+    "ask": ["bash(git push*)"],
+    "deny": ["bash(rm *)"]
+  },
+  "redaction": {
+    "environment": ["MY_PROJECT_TOKEN"]
+  },
   "thinking": {
     "openai-chatgpt": {
       "gpt-5.6-terra": "high"
@@ -339,14 +349,6 @@ Every option is optional. A configuration using all currently supported built-in
     "tui": {
       "showOutputs": false,
       "showThinking": false
-    },
-    "permissions": {
-      "allow": ["bash(git status*)"],
-      "ask": ["bash(git push*)"],
-      "deny": ["bash(rm *)"]
-    },
-    "redaction": {
-      "environment": ["MY_PROJECT_TOKEN"]
     },
     "project-instructions": {
       "maxBytes": 65536
