@@ -75,7 +75,7 @@ export class Scrollback {
   append(block: Block): void {
     this.endStream()
     const redacted = redactBlock(block)
-    const previous = this.blocks[this.blocks.length - 1]
+    const previous = this.blocks.findLast((candidate) => this.visible(candidate))
     this.blocks.push(redacted)
     this.emit(redacted, previous)
   }

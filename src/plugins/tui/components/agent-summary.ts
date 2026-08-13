@@ -38,7 +38,7 @@ export class AgentSummary {
     private readonly ctx: RenderContext,
     private readonly onChange: () => void,
   ) {
-    this.view = column(ctx, { paddingLeft: 2, paddingRight: 2, visible: false })
+    this.view = column(ctx, { visible: false })
     const header = row(ctx, { height: 1 })
     this.spinnerLabel = label(ctx, { content: "", width: 2, color: COLORS.agent })
     this.heading = label(ctx, { content: "", flexGrow: 1, flexShrink: 1, minWidth: 1 })

@@ -20,8 +20,8 @@ export function settledStatus(
   const glyph = outcome === "success" ? "✓" : "x"
   const color = outcome === "success" ? COLORS.success : COLORS.error
   const detail = elapsed ? `${summary} - ${elapsed}` : summary
-  if (width >= 68) return new StyledText([paint(color, glyph), muted(` ${detail}`)])
-  if (width >= 46) return new StyledText([paint(color, glyph), muted(` ${summary}`)])
+  if (width >= 68) return new StyledText([muted(`${detail} `), paint(color, glyph)])
+  if (width >= 46) return new StyledText([muted(`${summary} `), paint(color, glyph)])
   return new StyledText([paint(color, glyph)])
 }
 

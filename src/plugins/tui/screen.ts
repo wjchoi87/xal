@@ -146,7 +146,7 @@ export class Screen {
       error: (message) => this.scrollback.append({ kind: "error", text: message }),
     })
 
-    this.mainPanel = column(renderer, {})
+    this.mainPanel = column(renderer, { paddingLeft: 2, paddingRight: 2 })
     this.mainPanel.add(this.agentSummary.view)
     this.mainPanel.add(this.live.view)
     this.mainPanel.add(this.queued.view)
