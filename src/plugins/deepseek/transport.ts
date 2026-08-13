@@ -1,92 +1,45 @@
+import type { JsonObject } from "../../lib/json"
+import { streamChatCompletions, type ChatCompletionProvider } from "../../providers/chat-completions"
 import { ProviderError } from "../../providers/errors"
-import { sseEvents, streamError } from "../../providers/transport"
-import type { StreamEvent, StreamRequest, Usage } from "../../providers/types"
-import { deepSeekFetch } from "./api"
+import type { StreamEvent, StreamRequest, ThinkingEffort } from "../../providers/types"
+import { deepSeekFetch, PROVIDER_ID } from "./api"
 import { apiKey } from "./auth"
-import { assistantItem, buildMessages, parseChunk, reasoningItem, requestThinking, toolCallItem } from "./wire"
 
-interface PendingToolCall {
-  id: string
-  name: string
-  arguments: string
+function requestThinking(effort: ThinkingEffort | undefined): JsonObject {
+  switch (effort) {
+    case "none":
+      return { thinking: { type: "disabled" } }
+    case "low":
+    case "max":
+      return { thinking: { type: "enabled" }, reasoning_effort: effort }
+    case "medium":
+    case "high":
+    case "xhigh":
+    case undefined:
+      return { thinking: { type: "enabled" }, reasoning_effort: "high" }
+  }
 }
 
-function buildBody(request: StreamRequest): string {
-  return JSON.stringify({
-    model: request.model,
-    messages: buildMessages(request.instructions, request.input),
-    stream: true,
-    stream_options: { include_usage: true },
-    user_id: request.sessionId,
-    ...requestThinking(request.thinking),
-    ...(request.tools.length === 0
-      ? {}
-      : {
-          tools: request.tools.map((tool) => ({
-            type: "function",
-            function: { name: tool.name, description: tool.description, parameters: tool.parameters },
-          })),
-        }),
-  })
+const provider: ChatCompletionProvider = {
+  id: PROVIDER_ID,
+  name: "DeepSeek",
+  async fetch(body, signal) {
+    return deepSeekFetch("/chat/completions", await apiKey(), {
+      method: "POST",
+      headers: { accept: "text/event-stream" },
+      body,
+      signal,
+    })
+  },
+  requestOptions(request) {
+    return { user_id: request.sessionId, ...requestThinking(request.thinking) }
+  },
+  finishReasonError(finishReason) {
+    if (finishReason !== "insufficient_system_resource") return undefined
+    return new ProviderError("DeepSeek had insufficient capacity to complete the response", { retryable: true })
+  },
 }
 
-export async function* streamResponse(request: StreamRequest): AsyncGenerator<StreamEvent> {
-  const response = await deepSeekFetch("/chat/completions", await apiKey(), {
-    method: "POST",
-    headers: { accept: "text/event-stream" },
-    body: buildBody(request),
-    signal: request.signal,
-  })
-  if (!response.body) throw new ProviderError("DeepSeek response had no body", { retryable: true })
-
-  let text = ""
-  let reasoning = ""
-  let usage: Usage | undefined
-  let terminal = false
-  let finishReason: string | undefined
-  const calls = new Map<number, PendingToolCall>()
-
-  try {
-    for await (const raw of sseEvents(response.body)) {
-      if (raw.done) {
-        terminal = true
-        break
-      }
-      const chunk = parseChunk(raw.data)
-      if (!chunk) continue
-      if (chunk.text) {
-        text += chunk.text
-        yield { type: "text_delta", text: chunk.text }
-      }
-      if (chunk.reasoning) {
-        reasoning += chunk.reasoning
-        yield { type: "reasoning_summary_delta", text: chunk.reasoning }
-      }
-      if (chunk.usage) usage = chunk.usage
-      if (chunk.finishReason) finishReason = chunk.finishReason
-      for (const delta of chunk.toolCalls) {
-        const call = calls.get(delta.index) ?? { id: "", name: "", arguments: "" }
-        if (delta.id) call.id += delta.id
-        if (delta.name) call.name += delta.name
-        if (delta.arguments) call.arguments += delta.arguments
-        calls.set(delta.index, call)
-      }
-    }
-  } catch (error) {
-    streamError("DeepSeek", error, request.signal)
-  }
-
-  if (!terminal) throw new ProviderError("DeepSeek stream ended unexpectedly", { retryable: true })
-  if (finishReason === "insufficient_system_resource") {
-    throw new ProviderError("DeepSeek had insufficient capacity to complete the response", { retryable: true })
-  }
-  if (reasoning) yield { type: "item_done", item: reasoningItem(reasoning) }
-  yield { type: "item_done", item: assistantItem(request.model, text) }
-  for (const call of [...calls.entries()].sort(([left], [right]) => left - right).map(([, call]) => call)) {
-    if (!call.id || !call.name) {
-      throw new ProviderError("DeepSeek returned an incomplete tool call", { retryable: false })
-    }
-    yield { type: "item_done", item: toolCallItem(request.model, call.id, call.name, call.arguments) }
-  }
-  yield { type: "done", usage }
+export function streamResponse(request: StreamRequest): AsyncIterable<StreamEvent> {
+  return streamChatCompletions(request, provider)
 }

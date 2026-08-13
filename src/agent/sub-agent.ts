@@ -21,6 +21,7 @@ import {
   type BackgroundProcessJob,
 } from "../background/jobs"
 import { backgroundTasksChanged, registerBackgroundTask } from "../background/registry"
+import { resolveThinking } from "../config/thinking"
 import { createManagedWorktree, type ManagedWorktree } from "../git/worktrees"
 import { describeError } from "../lib/error"
 import { asString, isRecord } from "../lib/json"
@@ -584,13 +585,18 @@ async function runTask(
     }
     if (controller.signal.aborted) throw new Error("task cancelled before it started")
 
+    const thinking = await resolveThinking(
+      ctx.session.provider,
+      ctx.session.model,
+      item.thinking ?? ctx.session.thinking,
+    )
     const taskSession = new AgentSession({
       kind: "subagent",
       cwd: worktree?.cwd ?? ctx.session.cwd,
       provider: ctx.session.provider,
       model: ctx.session.model,
       modelInputModalities: ctx.session.modelInputModalities,
-      thinking: item.thinking ?? ctx.session.thinking,
+      thinking,
       interactive: false,
       persist: false,
       inheritedDenyMode: ctx.session.mode,

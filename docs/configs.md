@@ -29,7 +29,7 @@ Commands that save model, thinking, or TUI display preferences write the user fi
 
 Malformed `permissions`, `modes`, or `redaction` configuration fails startup instead of silently running without those rules.
 
-Built-in provider IDs are `openai-chatgpt` and `deepseek`. `chatgpt` is an alias for `openai-chatgpt`. The only built-in UI ID is `tui`. Plugins may register more providers, aliases, and UIs.
+Built-in provider IDs are `openai-chatgpt`, `deepseek`, and `alibaba-cloud`. `chatgpt` is an alias for `openai-chatgpt`, and `dashscope` is an alias for `alibaba-cloud`. The only built-in UI ID is `tui`. Plugins may register more providers, aliases, and UIs.
 
 ### Plugins
 
@@ -167,7 +167,7 @@ Custom plugins can add values from their own credential sources with `ctx.regist
 
 `tack models` and the TUI's `/model` command refresh every connected provider's model catalog. The catalog supplies the model picker, context-window tracking, input modalities, and the choices shown by `/thinking`.
 
-The ChatGPT provider discovers the account-visible catalog from the authenticated Codex service and stores the last successful result in `$TACK_HOME/cache/openai-chatgpt-models.json` (or `~/.tack/cache/openai-chatgpt-models.json`). If live discovery is unavailable, Tack reports the failure and uses that cache, then its bundled catalog. DeepSeek discovers models from its authenticated `/models` endpoint and reports when it must use bundled model metadata.
+The ChatGPT provider discovers the account-visible catalog from the authenticated Codex service and stores the last successful result in `$TACK_HOME/cache/openai-chatgpt-models.json` (or `~/.tack/cache/openai-chatgpt-models.json`). If live discovery is unavailable, Tack reports the failure and uses that cache, then its bundled catalog. DeepSeek discovers models from its authenticated `/models` endpoint and reports when it must use bundled model metadata. Alibaba Cloud uses a bundled catalog of Qwen models shared by Model Studio and Coding Plan.
 
 ## Prompt commands
 
@@ -338,6 +338,15 @@ Connected resource catalogs, resource templates, and prompts are exposed through
 | ---------- | ---------------- | ------- | -------------------------------------------------------------------- |
 | `maxBytes` | Positive integer | `32768` | Maximum combined UTF-8 byte budget for discovered `AGENTS.md` files. |
 
+### `alibaba-cloud`
+
+| Option       | Type   | Default                                                  | Description                                                                           |
+| ------------ | ------ | -------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `baseUrl`    | string | `https://dashscope-intl.aliyuncs.com/compatible-mode/v1` | HTTPS OpenAI-compatible endpoint for the API key's region, workspace, or Coding Plan. |
+| `clientName` | string | Tack's application name                                  | Client name used in the provider request user agent.                                  |
+
+Alibaba Cloud Model Studio API keys are region-specific. Set `baseUrl` to the OpenAI-compatible API Host shown when the key is created. Coding Plan keys use `https://coding-intl.dashscope.aliyuncs.com/v1`. `/connect` stores the key without making a billable model request; the first turn validates that the key, endpoint, and selected model are compatible.
+
 ### `openai-chatgpt`
 
 | Option          | Type             | Default  | Description                                                 |
@@ -401,6 +410,9 @@ Every option is optional. A configuration using all currently supported built-in
           "rootMarkers": ["tsconfig.json", "package.json", ".git"]
         }
       }
+    },
+    "alibaba-cloud": {
+      "baseUrl": "https://coding-intl.dashscope.aliyuncs.com/v1"
     },
     "openai-chatgpt": {
       "contextWindow": 260000
