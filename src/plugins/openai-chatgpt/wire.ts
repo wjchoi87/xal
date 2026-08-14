@@ -171,6 +171,7 @@ export function buildInput(items: ConversationItem[], target: ConversationTarget
 }
 
 export interface TokenResponse {
+  idToken?: string
   accessToken: string
   refreshToken?: string
   expiresInSeconds: number
@@ -179,7 +180,14 @@ export interface TokenResponse {
 export function parseTokenResponse(raw: unknown): TokenResponse {
   if (!isRecord(raw)) throw new Error("token response was not an object")
   const accessToken = asString(raw.access_token)
-  const expiresInSeconds = asNumber(raw.expires_in)
-  if (!accessToken || !expiresInSeconds) throw new Error("token response missing access_token or expires_in")
-  return { accessToken, refreshToken: asString(raw.refresh_token), expiresInSeconds }
+  if (!accessToken) throw new Error("token response missing access_token")
+  const rawExpires = asNumber(raw.expires_in)
+  const expiresInSeconds = rawExpires !== undefined && rawExpires > 0 ? rawExpires : 3600
+  const idToken = asString(raw.id_token)
+  return {
+    ...(idToken ? { idToken } : {}),
+    accessToken,
+    refreshToken: asString(raw.refresh_token),
+    expiresInSeconds,
+  }
 }

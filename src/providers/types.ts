@@ -123,9 +123,14 @@ export interface StreamRequest {
   signal?: AbortSignal
 }
 
+export interface ConnectChoice {
+  label: string
+  detail: string
+}
+
 export interface ConnectContext {
   print(line: string): void
-  ask?(question: string): Promise<string>
+  select(choices: ConnectChoice[]): Promise<number | undefined>
   askSecret?(question: string): Promise<string | undefined>
 }
 

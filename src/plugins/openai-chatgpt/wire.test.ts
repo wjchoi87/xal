@@ -147,9 +147,12 @@ describe("ChatGPT wire conversion", () => {
     expect(() =>
       parseOutputItem({ type: "function_call", call_id: "call", name: "read", arguments: "not-json" }, target),
     ).toThrow("ChatGPT tool call read had invalid JSON arguments")
-    expect(() => parseTokenResponse({ access_token: "token" })).toThrow(
-      "token response missing access_token or expires_in",
-    )
+    expect(() => parseTokenResponse({ expires_in: 3600 })).toThrow("token response missing access_token")
+    expect(parseTokenResponse({ access_token: "token" })).toEqual({
+      accessToken: "token",
+      refreshToken: undefined,
+      expiresInSeconds: 3600,
+    })
     expect(parseTokenResponse({ access_token: "token", refresh_token: "refresh", expires_in: 3600 })).toEqual({
       accessToken: "token",
       refreshToken: "refresh",

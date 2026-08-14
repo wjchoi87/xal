@@ -1,4 +1,5 @@
 import { appInfo } from "../app-info"
+import { chooseOption } from "../cli/choose"
 import { registerCli } from "../cli/registry"
 import type { Cli } from "../cli/types"
 import { settings } from "../config/settings"
@@ -30,7 +31,7 @@ const connectCli: Cli = {
 
     await provider.connect({
       print: (line) => ctx.print(line),
-      ask: (question) => ctx.ask(question),
+      select: (choices) => chooseOption(choices.map((choice) => `${choice.label} — ${choice.detail}`)),
       askSecret: (question) => ctx.askSecret(question),
     })
   },

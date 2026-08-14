@@ -36,9 +36,6 @@ const ctx: CliContext = {
   error(line) {
     console.error(redactText(line))
   },
-  ask(question) {
-    return Promise.resolve(prompt(redactText(question)) ?? "")
-  },
   async askSecret(question) {
     const value = await askSecret(redactText(question))
     if (value !== undefined) protectSecretValue(value)

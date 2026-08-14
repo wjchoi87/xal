@@ -24,6 +24,10 @@ const connectCommand: Command = {
 
     const connected = await target.provider.connect?.({
       print: (line) => ctx.print(line),
+      select: (choices) =>
+        ctx.select({
+          options: choices.map((choice, index) => ({ ...choice, value: index })),
+        }),
       askSecret: (question) => ctx.askSecret(question),
     })
     if (!connected) return
