@@ -4,9 +4,9 @@ import { registerPolicyRule } from "../../permissions/service"
 import type { PermissionRequest, PolicyDecision } from "../../permissions/types"
 import { registerTool } from "../registry"
 import { registerToolSessionDisposer } from "../session"
-import { commandEscapesWorkspace } from "./risk"
+import { commandEscapesWorkspace, commandSubjects } from "./risk"
 import { disposeShellSession, shellPrompt } from "./shell"
-import { splitCommand } from "./split"
+import { commandSegments } from "./split"
 import { bashTool, commandOf, sandboxRequested } from "./tool"
 
 const RISKY = [
@@ -32,7 +32,17 @@ function segmentDecision(request: PermissionRequest, segment: string): PolicyDec
   if (isDenied(scoped)) return "deny"
   const matched = matchRules(scoped)
   if (matched) return matched
-  return commandEscapesWorkspace(segment, request.cwd) ? "ask" : undefined
+  let normalizedAllowed = false
+  for (const normalized of commandSubjects(segment)) {
+    if (normalized === segment) continue
+    const normalizedRequest = { ...request, subject: normalized }
+    if (isDenied(normalizedRequest)) return "deny"
+    const normalizedMatch = matchRules(normalizedRequest)
+    if (normalizedMatch === "ask") return "ask"
+    if (normalizedMatch === "allow") normalizedAllowed = true
+  }
+  if (commandEscapesWorkspace(segment, request.cwd)) return "ask"
+  return normalizedAllowed ? "allow" : undefined
 }
 
 export function registerBash(): void {
@@ -45,7 +55,7 @@ export function registerBash(): void {
       if (request.tool !== "bash" || sandboxRequested(request.args)) return undefined
       const command = commandOf(request.args)
       if (!command) return undefined
-      const segments = splitCommand(command)
+      const segments = commandSegments(command)
       if (!segments) return "ask"
       const decisions = segments.map((segment) => segmentDecision(request, segment))
       if (decisions.includes("deny")) return "deny"
