@@ -126,6 +126,7 @@ function lastState(loaded: LoadedSession): {
 }
 
 export async function resumeSession(session: AgentSession, summary: SessionSummary): Promise<string[]> {
+  await session.flushPersistence()
   const loaded = await loadSession(summary.path)
   if (!loaded) throw new Error(`session is unreadable: ${summary.path}`)
 

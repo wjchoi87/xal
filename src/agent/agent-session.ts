@@ -33,7 +33,9 @@ import {
   redactUserInput,
 } from "../secrets/data"
 import { redactJsonObject, redactText } from "../secrets/redactor"
+import type { SessionExport } from "../sessions/export"
 import { SessionRecorder } from "../sessions/recorder"
+import { isPersistable } from "../sessions/records"
 import { normalizeSessionTitle, titleFromInput } from "../sessions/title"
 import type { SessionMeta } from "../sessions/types"
 import { expandSkillInvocation } from "../skills/invoke"
@@ -72,6 +74,7 @@ import {
   type AgentSessionDeps,
   type AgentSessionState,
   type CompactionOutcome,
+  type ForkOutcome,
   type RedoEntry,
   type RedoOutcome,
   type ResumeTarget,
@@ -123,10 +126,12 @@ function recordedContext(events: AgentEvent[]): number | undefined {
 
 export class AgentSession {
   private sessionId: string = crypto.randomUUID()
+  private parentId: string | undefined
   private sessionPermissionKey = {}
   private title: string | undefined
   private startedAt = Date.now()
   private items: HistoryItem[] = []
+  private events: AgentEvent[] = []
   private checkpoints: ConversationCheckpoint[] = []
   private redos: RedoEntry[] = []
   private redoInvalidated: string | undefined
@@ -278,6 +283,10 @@ export class AgentSession {
     return this.asyncState.hasPendingAsyncWork()
   }
 
+  async flushPersistence(): Promise<void> {
+    await this.recorder?.flush()
+  }
+
   suppressAsyncDeliveries(): void {
     this.asyncState.suppressAll()
   }
@@ -318,6 +327,7 @@ export class AgentSession {
     return {
       version: 1,
       id: this.sessionId,
+      ...(this.parentId ? { parentId: this.parentId } : {}),
       cwd: redactText(this.cwd),
       provider: redactText(this.provider.id),
       model: redactText(this.model),
@@ -327,17 +337,27 @@ export class AgentSession {
     }
   }
 
+  exportSnapshot(): SessionExport {
+    return {
+      meta: this.meta(),
+      ...(this.title ? { title: this.title } : {}),
+      events: this.events.map(redactAgentEvent),
+    }
+  }
+
   reset(): boolean {
     if (this.currentState !== "idle" || this.asyncState.hasPendingAsyncWork()) return false
     discardSettledAgentJobs(this.sessionId)
     this.disposeToolResources()
     this.asyncState.advanceEpoch()
     this.sessionId = crypto.randomUUID()
+    this.parentId = undefined
     this.sessionPermissionKey = {}
     this.title = undefined
     this.outputDirectory = toolOutputDirectory(projectSessionsDir(this.cwd), this.sessionId)
     this.startedAt = Date.now()
     this.items = []
+    this.events = []
     this.checkpoints = []
     this.redos = []
     this.redoInvalidated = undefined
@@ -355,6 +375,48 @@ export class AgentSession {
     return true
   }
 
+  async fork(): Promise<ForkOutcome> {
+    if (this.currentState !== "idle" || this.asyncState.hasPendingAsyncWork()) return { status: "busy" }
+    if (this.items.length === 0) return { status: "empty" }
+    if (!this.recorder) return { status: "unavailable" }
+
+    this.movingHistory = true
+    const parentId = this.sessionId
+    const id = crypto.randomUUID()
+    const startedAt = Date.now()
+    const current = this.meta()
+    try {
+      const forked = await this.recorder.fork(
+        {
+          id,
+          parentId,
+          startedAt,
+          cwd: current.cwd,
+          provider: current.provider,
+          model: current.model,
+          thinking: current.thinking,
+          mode: current.mode,
+        },
+        this.cwd,
+      )
+      discardSettledAgentJobs(parentId)
+      this.disposeToolResources()
+      this.asyncState.advanceEpoch()
+      this.sessionId = id
+      this.parentId = parentId
+      this.sessionPermissionKey = {}
+      this.startedAt = startedAt
+      this.events.push(...forked.corrections)
+      this.outputDirectory = toolOutputDirectory(dirname(forked.path), id)
+      this.turnEndToolEvents.clear()
+      this.asyncState.register()
+      profileSessionCreated(id, this.kind, this.provider.id, this.model, this.thinking)
+      return { status: "forked", id }
+    } finally {
+      this.movingHistory = false
+    }
+  }
+
   resume(target: ResumeTarget): boolean {
     const { meta } = target.session
     if (
@@ -368,12 +430,14 @@ export class AgentSession {
     this.disposeToolResources()
     this.asyncState.advanceEpoch()
     this.sessionId = meta.id
+    this.parentId = meta.parentId
     this.sessionPermissionKey = {}
     this.title = target.session.title ? redactText(target.session.title) : undefined
     this.outputDirectory = toolOutputDirectory(dirname(target.path), this.sessionId)
     this.cwd = resolve(target.cwd)
     this.startedAt = meta.startedAt
     this.items = target.session.items.map(redactHistoryItem)
+    this.events = target.session.events.map(redactAgentEvent)
     this.checkpoints = target.session.checkpoints.map((checkpoint) => ({
       messageId: checkpoint.messageId,
       input: redactUserInput(checkpoint.input),
@@ -450,7 +514,7 @@ export class AgentSession {
   }
 
   setMode(mode: PermissionMode): void {
-    if (this.mode === mode) return
+    if (this.movingHistory || this.mode === mode) return
     this.mode = mode
     if (mode === "plan") this.planHandoffActive = false
     this.emit({ type: "mode_changed", mode })
@@ -1100,9 +1164,14 @@ export class AgentSession {
     return tool.available?.({ interactive: this.interactive, kind: this.kind, mode: this.mode }) ?? true
   }
 
+  private rememberEvent(event: AgentEvent): void {
+    if (isPersistable(event)) this.events.push(event)
+  }
+
   private emit(event: AgentEvent): void {
     const redacted = redactAgentEvent(event)
     profileAgentEvent(this.sessionId, this.kind, redacted)
+    this.rememberEvent(redacted)
     this.recorder?.event(redacted)
     this.notifyRedacted(redacted)
     if (event.type === "turn_ended") this.planHandoffActive = false
@@ -1112,6 +1181,7 @@ export class AgentSession {
     const redacted = redactAgentEvent(event)
     profileAgentEvent(this.sessionId, this.kind, redacted)
     await this.recorder?.eventAndWait(redacted)
+    this.rememberEvent(redacted)
     return redacted
   }
 

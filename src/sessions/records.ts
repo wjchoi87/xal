@@ -344,14 +344,16 @@ function parseMeta(raw: unknown): SessionMeta | undefined {
   if (!isRecord(raw)) return undefined
   if (asNumber(raw.version) !== 1) return undefined
   const id = asString(raw.id)
+  const parentId = asString(raw.parentId)
   const cwd = asString(raw.cwd)
   const provider = asString(raw.provider)
   const model = asString(raw.model)
   const mode = asString(raw.mode)
-  if (!id || !cwd || !provider || !model || !mode) return undefined
+  if (!id || (raw.parentId !== undefined && !parentId) || !cwd || !provider || !model || !mode) return undefined
   return {
     version: 1,
     id,
+    ...(parentId ? { parentId } : {}),
     cwd,
     provider,
     model,

@@ -2,8 +2,10 @@ import { resumeSession } from "../agent/compose"
 import type { UndoCheckpoint } from "../agent/session-types"
 import { registerCommand } from "../commands/registry"
 import type { Command, CommandContext } from "../commands/types"
-import { compactPath } from "../lib/path"
+import { writeNewSecureText } from "../lib/fs"
+import { compactPath, displayPath, resolveFilePath } from "../lib/path"
 import { formatRelative } from "../lib/time"
+import { renderSessionMarkdown } from "./export"
 import { listSessions } from "./store"
 
 const clearCommand: Command = {
@@ -12,6 +14,57 @@ const clearCommand: Command = {
   describe: "start a new session",
   async run(_args, ctx) {
     if (!ctx.session.reset()) ctx.print("cannot start a new session while a turn or background job is unsettled")
+  },
+}
+
+const forkCommand: Command = {
+  name: "fork",
+  describe: "continue this conversation in a new session",
+  async run(args, ctx) {
+    if (args.length > 0) throw new Error("usage: /fork")
+    ctx.busy("Forking session")
+    const outcome = await ctx.session.fork().finally(() => ctx.busy())
+    switch (outcome.status) {
+      case "busy":
+        ctx.print("Cannot fork while a turn or background job is unsettled.")
+        break
+      case "empty":
+        ctx.print("Nothing to fork yet.")
+        break
+      case "unavailable":
+        ctx.print("This session is not being saved and cannot be forked.")
+        break
+      case "forked":
+        ctx.print(`Forked session · ${outcome.id}`)
+        break
+    }
+  },
+}
+
+function exportFileName(title: string | undefined, id: string): string {
+  const slug = title
+    ?.normalize("NFKD")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 48)
+  return `${slug || "session"}-${id.slice(0, 8)}.md`
+}
+
+const exportCommand: Command = {
+  name: "export",
+  describe: "export this session as Markdown",
+  async run(args, ctx) {
+    if (ctx.session.currentState !== "idle") {
+      ctx.print("Cannot export while a turn is active.")
+      return
+    }
+    const snapshot = ctx.session.exportSnapshot()
+    const requested = args.join(" ") || exportFileName(snapshot.title, snapshot.meta.id)
+    const path = resolveFilePath(requested, ctx.session.currentWorkingDirectory)
+    ctx.busy("Exporting session")
+    await writeNewSecureText(path, renderSessionMarkdown(snapshot)).finally(() => ctx.busy())
+    ctx.print(`Exported session to ${displayPath(path, ctx.session.currentWorkingDirectory)}`)
   },
 }
 
@@ -165,6 +218,8 @@ const resumeCommand: Command = {
 
 export function registerSessionCommands(): void {
   registerCommand(clearCommand)
+  registerCommand(exportCommand)
+  registerCommand(forkCommand)
   registerCommand(historyCommand)
   registerCommand(undoCommand)
   registerCommand(redoCommand)

@@ -6,6 +6,7 @@ import type { ThinkingEffort } from "../providers/types"
 export interface SessionMeta {
   version: 1
   id: string
+  parentId?: string
   cwd: string
   provider: string
   model: string

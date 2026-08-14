@@ -35,6 +35,8 @@ export interface ResumeTarget {
 
 export type CompactionOutcome = "compacted" | "nothing" | "busy" | "interrupted"
 
+export type ForkOutcome = { status: "forked"; id: string } | { status: "busy" | "empty" | "unavailable" }
+
 export type AgentSessionState = AgentState | "moving_history"
 
 export interface UndoCheckpoint {

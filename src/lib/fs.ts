@@ -1,4 +1,4 @@
-import { chmod, mkdir, readFile, rename, stat, writeFile } from "node:fs/promises"
+import { chmod, link, mkdir, open, readFile, rename, stat, unlink, writeFile } from "node:fs/promises"
 import { basename, dirname, join } from "node:path"
 import { isMissingPathError } from "./error"
 
@@ -35,6 +35,25 @@ export async function writeSecureText(path: string, text: string): Promise<void>
   await writeFile(tmp, text, { mode: 0o600 })
   await rename(tmp, path)
   await chmod(path, 0o600)
+}
+
+export async function writeNewSecureText(path: string, text: string): Promise<void> {
+  const dir = dirname(path)
+  await mkdir(dir, { recursive: true })
+  const tmp = join(dir, `.${basename(path)}.${process.pid}.${crypto.randomUUID()}.tmp`)
+  const file = await open(tmp, "wx", 0o600)
+  let closed = false
+  try {
+    await file.writeFile(text, "utf8")
+    await file.sync()
+    await file.chmod(0o600)
+    await file.close()
+    closed = true
+    await link(tmp, path)
+  } finally {
+    if (!closed) await file.close()
+    await unlink(tmp)
+  }
 }
 
 export function writeSecureJson(path: string, value: unknown): Promise<void> {
