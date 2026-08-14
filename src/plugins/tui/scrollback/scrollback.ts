@@ -1,6 +1,6 @@
 import type { CliRenderer, RGBA, ScrollbackSurface, TextRenderable } from "@opentui/core"
 import { createRedactedStream, redactText, type RedactedStream } from "../../../secrets/redactor"
-import type { TuiConfig } from "../config"
+import type { TuiPreferences } from "../config"
 import { COLORS, userMessageBackground } from "../theme/colors"
 import type { Block, StreamBlock, StreamKind } from "./blocks"
 import { contentWidth, renderBlock, streamContent, streamView } from "./render"
@@ -54,7 +54,8 @@ export class Scrollback {
     private readonly renderer: CliRenderer,
     startRow: number,
     private readonly onCommit: (rows: number) => void,
-    config: TuiConfig,
+    config: TuiPreferences,
+    private readonly detailsShortcut: string | undefined,
   ) {
     this.origin = startRow
     this.expanded = config.showOutputs
@@ -198,7 +199,9 @@ export class Scrollback {
     if (!this.visible(block)) return
     const surface = this.renderer.createScrollbackSurface()
     try {
-      surface.root.add(renderBlock(surface.renderContext, block, this.expanded, this.userBackground, previous))
+      surface.root.add(
+        renderBlock(surface.renderContext, block, this.expanded, this.userBackground, this.detailsShortcut, previous),
+      )
       surface.render()
       this.onCommit(surface.height)
       surface.commitRows(0, surface.height)

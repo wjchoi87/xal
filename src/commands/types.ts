@@ -25,6 +25,7 @@ export interface CommandContext {
 
 export interface Command {
   name: string
+  aliases?: string[]
   describe: string
   hidden?: boolean
   run(args: string[], ctx: CommandContext): Promise<void>

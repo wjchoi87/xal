@@ -42,12 +42,7 @@ async function exitTui(): Promise<void> {
 
 const quitCommand: Command = {
   name: "quit",
-  describe: `exit ${appInfo.name}`,
-  run: exitTui,
-}
-
-const exitCommand: Command = {
-  name: "exit",
+  aliases: ["exit"],
   describe: `exit ${appInfo.name}`,
   run: exitTui,
 }
@@ -56,5 +51,4 @@ export function registerTuiCommands(ctx: PluginContext): void {
   ctx.registerCommand(configCommand)
   ctx.registerCommand(terminalCommand)
   ctx.registerCommand(quitCommand)
-  ctx.registerCommand(exitCommand)
 }

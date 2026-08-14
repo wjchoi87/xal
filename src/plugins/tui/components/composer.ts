@@ -143,12 +143,6 @@ export class Composer {
       keyBindings: [
         { name: "return", action: "submit" },
         { name: "kpenter", action: "submit" },
-        { name: "return", shift: true, action: "newline" },
-        { name: "kpenter", shift: true, action: "newline" },
-        { name: "linefeed", shift: true, action: "newline" },
-        { name: "return", meta: true, action: "newline" },
-        { name: "kpenter", meta: true, action: "newline" },
-        { name: "j", ctrl: true, action: "newline" },
       ],
       onContentChange: () => this.change(),
       onCursorChange: () => this.notifyCompletion(),

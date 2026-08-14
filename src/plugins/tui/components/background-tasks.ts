@@ -82,6 +82,7 @@ export class BackgroundTasks {
   constructor(
     private readonly ctx: RenderContext,
     private readonly actions: BackgroundTasksActions,
+    private readonly stopAllShortcut: string | undefined,
   ) {
     this.view = column(ctx, { paddingLeft: 2, paddingRight: 2 })
     this.overflow = row(this.ctx, { height: 1, visible: false })
@@ -357,12 +358,13 @@ export class BackgroundTasks {
   }
 
   private hint(): string {
+    const stopAll = this.stopAllShortcut ? [`${this.stopAllShortcut} stop all`] : []
     const entry = this.rows[this.selected]
-    if (!entry || entry.kind === "main") return "↑↓ move · enter main · ctrl+x ctrl+k stop all · esc back"
+    if (!entry || entry.kind === "main") return ["↑↓ move", "enter main", ...stopAll, "esc back"].join(" · ")
     if (entry.task.kind === "agent") {
       const open = entry.task.id === this.viewedAgentId ? "enter close" : "enter view"
       const action = entry.task.state().running ? "x stop" : "x dismiss"
-      return `↑↓ move · ${open} · ${action} · ctrl+x ctrl+k stop all · esc back`
+      return ["↑↓ move", open, action, ...stopAll, "esc back"].join(" · ")
     }
     const view = this.expanded ? "enter collapse" : "enter output"
     const action = entry.task.state().running ? "x stop" : "x dismiss"

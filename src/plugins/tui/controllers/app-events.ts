@@ -28,6 +28,7 @@ export class AppEventController {
   constructor(
     private readonly screen: Screen,
     private readonly input: InputQueue,
+    private readonly detailsShortcut: string | undefined,
   ) {}
 
   handle(event: AppEvent): void {
@@ -41,9 +42,10 @@ export class AppEventController {
           scrollback.append({ kind: "info", text: `plugins: ${registered}/${total} registered` })
           break
         }
+        const hint = this.detailsShortcut ? ` — ${this.detailsShortcut} to see failures` : ""
         scrollback.append({
           kind: "notice",
-          summary: `plugins: ${registered}/${total} registered — ctrl+o to see failures`,
+          summary: `plugins: ${registered}/${total} registered${hint}`,
           details: failureDetails(failures),
         })
         break
@@ -55,9 +57,10 @@ export class AppEventController {
         statusBar.setLoading(undefined)
         const failures = event.status.failures.filter((failure) => failure.phase === "bootstrap")
         if (failures.length > 0) {
+          const hint = this.detailsShortcut ? ` — ${this.detailsShortcut} to see failures` : ""
           scrollback.append({
             kind: "notice",
-            summary: `plugins: ${failures.length} failed to initialize — ctrl+o to see failures`,
+            summary: `plugins: ${failures.length} failed to initialize${hint}`,
             details: failureDetails(failures),
           })
         }

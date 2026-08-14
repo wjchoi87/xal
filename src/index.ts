@@ -105,6 +105,9 @@ async function main(input: string[]): Promise<void> {
     const uiId = settings.ui ?? "tui"
     const ui = getUi(uiId)
     if (!ui) {
+      for (const failure of plugins.failures) {
+        ctx.error(`plugin failed: ${failure.plugin}: ${failure.reason}`)
+      }
       ctx.error(`unknown ui: ${uiId}`)
       process.exitCode = 1
       return

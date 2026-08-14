@@ -58,6 +58,7 @@ export function renderBlock(
   block: Block,
   expanded: boolean,
   userBackground: RGBA,
+  detailsShortcut: string | undefined,
   previous?: Block,
 ): Renderable {
   switch (block.kind) {
@@ -72,7 +73,7 @@ export function renderBlock(
     case "notice":
       return frame(ctx, notice(ctx, block, expanded))
     case "compaction":
-      return frame(ctx, compaction(ctx, block, expanded))
+      return frame(ctx, compaction(ctx, block, expanded, detailsShortcut))
     case "plan":
       return frame(ctx, plan(ctx, block))
     case "text":
@@ -141,10 +142,15 @@ function notice(ctx: RenderContext, block: NoticeBlock, expanded: boolean): Rend
   return box
 }
 
-function compaction(ctx: RenderContext, block: CompactionBlock, expanded: boolean): Renderable {
+function compaction(
+  ctx: RenderContext,
+  block: CompactionBlock,
+  expanded: boolean,
+  detailsShortcut: string | undefined,
+): Renderable {
   const box = column(ctx)
   const before = block.tokensBefore === undefined ? "" : ` · was ${formatTokens(block.tokensBefore)} tokens`
-  const hint = expanded ? "" : " · ctrl+o to read it"
+  const hint = expanded || !detailsShortcut ? "" : ` · ${detailsShortcut} to read it`
   box.add(
     paragraph(ctx, {
       content: `context compacted · ${block.replaced} items summarized${before}${hint}`,

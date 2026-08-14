@@ -4,13 +4,14 @@ import { saveThinking, thinkingOptions } from "../../../config/thinking"
 import { describeError } from "../../../lib/error"
 import { nextPermissionMode } from "../../../permissions/modes"
 import type { Screen } from "../screen"
+import type { ResolvedShortcuts, ShortcutAction, ShortcutStroke } from "../shortcuts"
 
 const QUIT_WINDOW_MS = 2000
-const STOP_AGENTS_WINDOW_MS = 2000
 
 export interface KeymapDeps {
   session: AgentSession
   screen: Screen
+  shortcuts: ResolvedShortcuts
   edit(): Promise<void>
   quit(): void
 }
@@ -34,23 +35,27 @@ async function stepThinking(session: AgentSession, direction: -1 | 1): Promise<s
   await saveThinking(provider, model, next)
 }
 
-function thinkingDirection(key: KeyEvent): -1 | 1 | undefined {
-  if (key.ctrl || key.shift || key.repeated) return undefined
-  if (key.meta && key.name === ",") return -1
-  if (key.meta && key.name === ".") return 1
-  if (key.raw === "\u001b,") return -1
-  if (key.raw === "\u001b.") return 1
-  return undefined
-}
-
 export function bindKeys(renderer: CliRenderer, deps: KeymapDeps): void {
-  const { session, screen, edit, quit } = deps
+  const { session, screen, shortcuts, edit, quit } = deps
   let lastInterrupt = 0
-  let lastEscape = 0
-  let stopAgentsChord = 0
+  let pending: ShortcutStroke[] = []
+  let pendingStartedAt = 0
+  let pendingUntil = 0
+  let pendingTimer: ReturnType<typeof setTimeout> | undefined
+  let pendingNotice = false
   let thinkingChange = Promise.resolve()
 
-  function handleInterrupt(): void {
+  function clearPending(): void {
+    pending = []
+    pendingStartedAt = 0
+    pendingUntil = 0
+    if (pendingTimer !== undefined) clearTimeout(pendingTimer)
+    pendingTimer = undefined
+    if (pendingNotice) screen.statusBar.clearNotice()
+    pendingNotice = false
+  }
+
+  function handleInterrupt(binding: string): void {
     if (session.currentState !== "idle") {
       session.interrupt()
       return
@@ -61,85 +66,156 @@ export function bindKeys(renderer: CliRenderer, deps: KeymapDeps): void {
       return
     }
     lastInterrupt = now
-    screen.statusBar.setNotice("Ctrl+C again to quit")
+    screen.statusBar.setNotice(`${binding} again to quit`)
     const timer = setTimeout(() => {
       if (session.currentState === "idle") screen.statusBar.clearNotice()
     }, QUIT_WINDOW_MS)
     timer.unref()
   }
 
-  renderer.keyInput.on("keypress", (key) => {
-    if (key.name !== "escape") lastEscape = 0
-    if (key.ctrl && key.name === "x" && screen.tasks.hasRunningAgents) {
-      key.preventDefault()
-      stopAgentsChord = Date.now()
-      screen.statusBar.setNotice("Ctrl+K to stop all agents")
-      const timer = setTimeout(() => {
-        if (Date.now() - stopAgentsChord >= STOP_AGENTS_WINDOW_MS) screen.statusBar.clearNotice()
-      }, STOP_AGENTS_WINDOW_MS)
-      timer.unref()
-      return
+  function active(action: ShortcutAction, key: KeyEvent, first: ShortcutStroke): boolean {
+    switch (action) {
+      case "agents.stop-all":
+        return screen.tasks.hasRunningAgents
+      case "app.cancel":
+      case "display.toggle-details":
+      case "display.toggle-todos":
+        return true
+      case "composer.clear":
+      case "composer.newline":
+      case "session.next-mode":
+        return !screen.overlayVisible
+      case "composer.external-editor":
+      case "composer.paste-image":
+      case "thinking.decrease":
+      case "thinking.increase":
+        return !key.repeated && !screen.overlayVisible
+      case "history.open":
+        if (screen.overlayVisible) return false
+        if (first.name !== "escape") return true
+        return (
+          session.currentState === "idle" &&
+          !screen.tasks.focused &&
+          !screen.agentViewer.visible &&
+          !screen.palette.visible
+        )
     }
-    if (key.ctrl && key.name === "k" && Date.now() - stopAgentsChord < STOP_AGENTS_WINDOW_MS) {
-      key.preventDefault()
-      stopAgentsChord = 0
-      screen.statusBar.setNotice(screen.tasks.stopAllAgents() ? "Stopping all agents…" : "No agents are running")
-      const timer = setTimeout(() => screen.statusBar.clearNotice(), STOP_AGENTS_WINDOW_MS)
-      timer.unref()
-      return
-    }
-    if (key.ctrl && key.name === "c") {
-      key.preventDefault()
-      if (screen.secret.visible) {
-        screen.secret.hide()
-        screen.syncFooter()
+  }
+
+  function changeThinking(direction: -1 | 1): void {
+    thinkingChange = thinkingChange
+      .then(() => stepThinking(session, direction))
+      .then((message) => {
+        if (message) screen.scrollback.append({ kind: "info", text: message })
+      })
+      .catch((error: unknown) => {
+        screen.scrollback.append({ kind: "error", text: `thinking shortcut failed: ${describeError(error)}` })
+      })
+  }
+
+  function runAction(action: ShortcutAction, binding: string): void {
+    switch (action) {
+      case "agents.stop-all":
+        screen.statusBar.setNotice(screen.tasks.stopAllAgents() ? "Stopping all agents…" : "No agents are running")
+        setTimeout(() => screen.statusBar.clearNotice(), QUIT_WINDOW_MS).unref()
+        return
+      case "app.cancel":
+        if (screen.secret.visible) {
+          screen.secret.hide()
+          screen.syncFooter()
+          return
+        }
+        if (!screen.overlayVisible && screen.composer.clear()) return
+        handleInterrupt(binding)
+        return
+      case "composer.clear":
+        screen.composer.setValue("")
+        return
+      case "composer.external-editor":
+        void edit().catch((error: unknown) => {
+          screen.scrollback.append({ kind: "error", text: describeError(error) })
+        })
+        return
+      case "composer.newline":
+        screen.composer.newLine()
+        return
+      case "composer.paste-image":
+        screen.statusBar.setNotice("Pasting image…")
+        void screen.composer.pasteImage().then((pasted) => {
+          screen.statusBar.setNotice(pasted ? "Image attached" : "No image found in clipboard")
+          setTimeout(() => screen.statusBar.clearNotice(), QUIT_WINDOW_MS).unref()
+        })
+        return
+      case "display.toggle-details":
+        screen.scrollback.toggleExpanded()
+        return
+      case "display.toggle-todos": {
+        const visible = screen.taskList.toggleVisibility()
+        screen.statusBar.setNotice(`Todos ${visible ? "shown" : "hidden"}`)
+        setTimeout(() => screen.statusBar.clearNotice(), QUIT_WINDOW_MS).unref()
         return
       }
-      if (!screen.overlayVisible && screen.composer.clear()) return
-      handleInterrupt()
-      return
+      case "history.open":
+        screen.openHistory()
+        return
+      case "session.next-mode":
+        session.setMode(nextPermissionMode(session.currentMode))
+        return
+      case "thinking.decrease":
+        changeThinking(-1)
+        return
+      case "thinking.increase":
+        changeThinking(1)
+        return
     }
-    if (key.ctrl && key.name === "o") {
+  }
+
+  function handleShortcut(key: KeyEvent): boolean {
+    if (pending.length > 0 && key.repeated) {
+      clearPending()
       key.preventDefault()
-      screen.scrollback.toggleExpanded()
-      return
+      return true
     }
-    if (key.ctrl && key.name === "t") {
+    if (pending.length > 0 && Date.now() > pendingUntil) clearPending()
+
+    const stroke = shortcuts.stroke(key)
+    const now = Date.now()
+    const continuing = pending.length > 0
+    let startedAt = continuing ? pendingStartedAt : now
+    let strokes = [...pending, stroke]
+    let resolution = shortcuts.resolve(strokes, (action) => active(action, key, strokes[0]!), now - startedAt)
+    if (resolution.type === "none" && continuing) {
+      clearPending()
+      startedAt = now
+      strokes = [stroke]
+      resolution = shortcuts.resolve(strokes, (action) => active(action, key, stroke))
+    }
+    if (resolution.type === "none") {
+      if (screen.overlayVisible || !shortcuts.matchesDefault("composer.newline", [stroke])) return false
       key.preventDefault()
-      const visible = screen.taskList.toggleVisibility()
-      screen.statusBar.setNotice(`Todos ${visible ? "shown" : "hidden"}`)
-      const timer = setTimeout(() => screen.statusBar.clearNotice(), 2_000)
-      timer.unref()
-      return
+      return true
     }
-    if (key.ctrl && key.name === "g" && !key.repeated && !screen.overlayVisible) {
-      key.preventDefault()
-      void edit().catch((error: unknown) => {
-        screen.scrollback.append({ kind: "error", text: describeError(error) })
-      })
-      return
+
+    key.preventDefault()
+    if (resolution.type === "action") {
+      clearPending()
+      runAction(resolution.action, resolution.binding)
+      return true
     }
-    if (key.ctrl && key.name === "v" && !key.repeated && !screen.overlayVisible) {
-      key.preventDefault()
-      screen.statusBar.setNotice("Pasting image…")
-      void screen.composer.pasteImage().then((pasted) => {
-        screen.statusBar.setNotice(pasted ? "Image attached" : "No image found in clipboard")
-        const timer = setTimeout(() => screen.statusBar.clearNotice(), 2_000)
-        timer.unref()
-      })
-      return
-    }
-    if (key.ctrl && key.name === "u" && !screen.overlayVisible) {
-      key.preventDefault()
-      screen.composer.setValue("")
-      return
-    }
-    if (key.ctrl && key.name === "r" && !screen.overlayVisible) {
-      key.preventDefault()
-      lastEscape = 0
-      screen.openHistory()
-      return
-    }
+
+    clearPending()
+    pending = strokes
+    pendingStartedAt = startedAt
+    pendingUntil = now + resolution.timeoutMs
+    pendingNotice = resolution.notice !== undefined
+    if (resolution.notice) screen.statusBar.setNotice(resolution.notice)
+    pendingTimer = setTimeout(clearPending, resolution.timeoutMs)
+    pendingTimer.unref()
+    return true
+  }
+
+  renderer.keyInput.on("keypress", (key) => {
+    if (handleShortcut(key)) return
     if (screen.config.handleKey(key.name)) {
       key.preventDefault()
       screen.syncFooter()
@@ -165,19 +241,6 @@ export function bindKeys(renderer: CliRenderer, deps: KeymapDeps): void {
       screen.syncFooter()
       return
     }
-    const direction = thinkingDirection(key)
-    if (!screen.overlayVisible && direction) {
-      key.preventDefault()
-      thinkingChange = thinkingChange
-        .then(() => stepThinking(session, direction))
-        .then((message) => {
-          if (message) screen.scrollback.append({ kind: "info", text: message })
-        })
-        .catch((error: unknown) => {
-          screen.scrollback.append({ kind: "error", text: `thinking shortcut failed: ${describeError(error)}` })
-        })
-      return
-    }
     const unmodified = !key.ctrl && !key.meta && !key.shift
     if (!screen.overlayVisible && unmodified && screen.tasks.handleKey(key.name)) {
       key.preventDefault()
@@ -198,20 +261,6 @@ export function bindKeys(renderer: CliRenderer, deps: KeymapDeps): void {
       screen.syncFooter()
       return
     }
-    if (
-      !screen.overlayVisible &&
-      (key.shift || key.meta) &&
-      (key.name === "return" || key.name === "enter" || key.name === "kpenter" || key.name === "linefeed")
-    ) {
-      key.preventDefault()
-      screen.composer.newLine()
-      return
-    }
-    if (key.shift && key.name === "tab") {
-      key.preventDefault()
-      session.setMode(nextPermissionMode(session.currentMode))
-      return
-    }
     if (screen.palette.handleKey(key.name)) {
       key.preventDefault()
       return
@@ -227,29 +276,10 @@ export function bindKeys(renderer: CliRenderer, deps: KeymapDeps): void {
     }
     if (key.name === "escape" && !screen.overlayVisible && screen.tasks.closeViewer()) {
       key.preventDefault()
-      lastEscape = 0
       screen.syncFooter()
       return
     }
-    if (key.name === "escape" && !screen.overlayVisible && session.currentState === "idle") {
-      key.preventDefault()
-      if (key.repeated) {
-        lastEscape = 0
-        return
-      }
-      const now = Date.now()
-      if (now - lastEscape < 500) {
-        lastEscape = 0
-        screen.openHistory()
-        return
-      }
-      lastEscape = now
-      return
-    }
-    if (key.name === "escape" && session.currentState !== "idle") {
-      lastEscape = 0
-      session.interrupt("promote")
-    }
+    if (key.name === "escape" && session.currentState !== "idle") session.interrupt("promote")
   })
 
   renderer.keyInput.on("paste", (event) => {

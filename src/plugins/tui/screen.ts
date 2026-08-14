@@ -28,6 +28,7 @@ import { saveTuiConfig, type TuiConfig } from "./config"
 import { column } from "./lib/renderables"
 import type { MessageHistory } from "./message-history"
 import { Scrollback } from "./scrollback/scrollback"
+import type { ResolvedShortcuts } from "./shortcuts"
 import { sessionTerminalTitle } from "./terminal"
 
 export interface ScreenActions extends PermissionPopoverActions, ElicitationPopoverActions {
@@ -69,10 +70,17 @@ export class Screen {
     startRow: number,
     private readonly history: MessageHistory,
     preferences: TuiConfig,
+    shortcuts: ResolvedShortcuts,
     actions: ScreenActions,
   ) {
     this.cwd = redactText(session.currentWorkingDirectory)
-    this.scrollback = new Scrollback(renderer, startRow, (rows) => this.reclaim(rows), preferences)
+    this.scrollback = new Scrollback(
+      renderer,
+      startRow,
+      (rows) => this.reclaim(rows),
+      preferences,
+      shortcuts.help("display.toggle-details"),
+    )
     this.view = column(renderer, { width: "100%", height: "100%", justifyContent: "flex-end" })
     this.agentSummary = new AgentSummary(renderer, () => {
       if (this.agentSummary.height > 0) this.agentActivityDirty = true
@@ -91,18 +99,22 @@ export class Screen {
     )
     this.secret = new SecretInput(renderer, () => this.syncFooter())
     this.picker = new Picker(renderer, () => this.syncFooter())
-    this.config = new ConfigPopover(renderer, preferences, {
-      change: async (config, key) => {
-        await saveTuiConfig(config)
-        if (key === "showOutputs") {
-          this.scrollback.setExpanded(config.showOutputs)
-          return
-        }
-        this.scrollback.setReasoningVisible(config.showThinking)
+    this.config = new ConfigPopover(
+      renderer,
+      { showOutputs: preferences.showOutputs, showThinking: preferences.showThinking },
+      {
+        change: async (config, key) => {
+          await saveTuiConfig(config)
+          if (key === "showOutputs") {
+            this.scrollback.setExpanded(config.showOutputs)
+            return
+          }
+          this.scrollback.setReasoningVisible(config.showThinking)
+        },
+        changed: () => this.syncFooter(),
+        error: (message) => this.scrollback.append({ kind: "error", text: message }),
       },
-      changed: () => this.syncFooter(),
-      error: (message) => this.scrollback.append({ kind: "error", text: message }),
-    })
+    )
     this.palette = new CompletionPalette(
       renderer,
       session.currentWorkingDirectory,
@@ -116,7 +128,7 @@ export class Screen {
       () => this.syncFooter(),
     )
     this.statusBar = new StatusBar(renderer, session.currentModel, session.currentThinking, session.currentMode)
-    this.shortcutHelp = new ShortcutHelp(renderer, () => this.syncFooter())
+    this.shortcutHelp = new ShortcutHelp(renderer, shortcuts, () => this.syncFooter())
     this.composer = new Composer(renderer, history, {
       submit: (input) => {
         if (input.images.length === 0 || this.session.supportsImageInput) {
@@ -142,17 +154,21 @@ export class Screen {
       },
       resize: () => this.syncFooter(),
     })
-    this.tasks = new BackgroundTasks(renderer, {
-      changed: () => {
-        this.agentViewer.refresh()
-        this.syncFooter()
+    this.tasks = new BackgroundTasks(
+      renderer,
+      {
+        changed: () => {
+          this.agentViewer.refresh()
+          this.syncFooter()
+        },
+        released: () => {
+          if (!this.overlayVisible) this.composer.focus()
+        },
+        viewAgent: (task) => this.viewAgent(task),
+        error: (message) => this.scrollback.append({ kind: "error", text: message }),
       },
-      released: () => {
-        if (!this.overlayVisible) this.composer.focus()
-      },
-      viewAgent: (task) => this.viewAgent(task),
-      error: (message) => this.scrollback.append({ kind: "error", text: message }),
-    })
+      shortcuts.help("agents.stop-all"),
+    )
 
     this.mainPanel = column(renderer, { paddingLeft: 2, paddingRight: 2 })
     this.mainPanel.add(this.agentSummary.view)

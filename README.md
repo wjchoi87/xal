@@ -18,4 +18,4 @@ bun release:local
 
 ## Run with Profiler
 
-To run with profiler, use `--profile`. this will store annomouys session info for debugging purpose and will print the file path when exiting the app via `Ctrl+C`
+Run with `--profile` to store anonymous session diagnostics and print the profile path when the app exits.

@@ -82,7 +82,9 @@ function commandCompletions(value: string, cursor: number): Completion[] | undef
   return listCommands()
     .filter(
       (command) =>
-        !command.hidden && redactText(command.name) === command.name && command.name.toLowerCase().includes(needle),
+        !command.hidden &&
+        redactText(command.name) === command.name &&
+        [command.name, ...(command.aliases ?? [])].some((name) => name.toLowerCase().includes(needle)),
     )
     .map((command) => ({ kind: "command", command }))
 }

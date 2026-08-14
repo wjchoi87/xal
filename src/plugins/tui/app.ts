@@ -26,6 +26,7 @@ import { editInExternalEditor, externalEditorCommand } from "./external-editor"
 import { cursorRow } from "./lib/cursor"
 import { MessageHistory } from "./message-history"
 import { Screen } from "./screen"
+import { ResolvedShortcuts } from "./shortcuts"
 import { describeTerminal, sessionTerminalTitle, terminalBackground } from "./terminal"
 import { TerminalOutput } from "./terminal-output"
 import { COLORS } from "./theme/colors"
@@ -90,7 +91,8 @@ export async function startTui(events: EventService, config: TuiConfig, options:
   renderer.setTerminalTitle(sessionTerminalTitle())
 
   const input = new InputQueue((submission) => session.send(submission))
-  const screen = new Screen(renderer, session, startRow, history, config, {
+  const shortcuts = new ResolvedShortcuts(config.keybindings)
+  const screen = new Screen(renderer, session, startRow, history, config, shortcuts, {
     submit: (submission) => input.submit(submission),
     approve: (scope, pattern) => session.approve(scope, pattern),
     deny: () => session.deny(),
@@ -194,7 +196,7 @@ export async function startTui(events: EventService, config: TuiConfig, options:
     stopAttention()
   })
 
-  const appEvents = new AppEventController(screen, input)
+  const appEvents = new AppEventController(screen, input, shortcuts.help("display.toggle-details"))
   const unsubscribe = events.subscribe((event) => appEvents.handle(event), true)
   screen.view.on(RenderableEvents.DESTROYED, unsubscribe)
 
@@ -246,7 +248,7 @@ export async function startTui(events: EventService, config: TuiConfig, options:
     }
   }
 
-  bindKeys(renderer, { session, screen, edit, quit })
+  bindKeys(renderer, { session, screen, shortcuts, edit, quit })
 
   screen.composer.focus()
   await destroyed

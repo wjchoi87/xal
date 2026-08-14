@@ -31,6 +31,44 @@ Malformed `permissions`, `modes`, or `redaction` configuration fails startup ins
 
 Built-in provider IDs are `openai-chatgpt`, `deepseek`, and `alibaba-cloud`. `chatgpt` is an alias for `openai-chatgpt`, and `dashscope` is an alias for `alibaba-cloud`. The only built-in UI ID is `tui`. Plugins may register more providers, aliases, and UIs.
 
+### TUI keybindings
+
+Application shortcuts can be replaced under `pluginConfig.tui.keybindings`. Each action accepts an ordered array of bindings. The array replaces that action's defaults, and an empty array disables the action. Restart Tack after changing the configuration.
+
+```json
+{
+  "pluginConfig": {
+    "tui": {
+      "keybindings": {
+        "composer.external-editor": ["ctrl+e"],
+        "composer.clear": ["ctrl+u", "ctrl+l"],
+        "display.toggle-todos": [],
+        "agents.stop-all": ["ctrl+x ctrl+s"]
+      }
+    }
+  }
+}
+```
+
+A binding is a key with optional `ctrl`, `alt`, `shift`, or `super` modifiers joined by `+`. Separate strokes with a space to form a sequence. `control`, `meta`, `option`, `cmd`, and `command` are accepted aliases. Key and modifier names are case-insensitive.
+
+| Action                     | Default bindings                     |
+| -------------------------- | ------------------------------------ |
+| `agents.stop-all`          | `ctrl+x ctrl+k`                      |
+| `app.cancel`               | `ctrl+c`                             |
+| `composer.clear`           | `ctrl+u`                             |
+| `composer.external-editor` | `ctrl+g`                             |
+| `composer.newline`         | `shift+enter`, `alt+enter`, `ctrl+j` |
+| `composer.paste-image`     | `ctrl+v`                             |
+| `display.toggle-details`   | `ctrl+o`                             |
+| `display.toggle-todos`     | `ctrl+t`                             |
+| `history.open`             | `escape escape`, `ctrl+r`            |
+| `session.next-mode`        | `shift+tab`                          |
+| `thinking.decrease`        | `alt+,`                              |
+| `thinking.increase`        | `alt+.`                              |
+
+Malformed bindings, unknown actions, duplicate assignments, and bindings that are prefixes of other bindings fail startup. Popover navigation, completion selection, task-list navigation, and ordinary text editing remain component-owned and are not remapped by this setting.
+
 ### Plugins
 
 The `plugins` array tells Tack what to load; it does not install or download anything. Every referenced plugin must already exist and be resolvable when Tack starts. Plugin registration is transactional: if importing, validating, or registering a plugin fails, Tack records a plugin registration failure and keeps none of that plugin's contributions.
@@ -131,7 +169,7 @@ Supported effort values are `none`, `low`, `medium`, `high`, `xhigh`, and `max`.
 
 ### Permission modes
 
-Tack ships three modes, cycled in the TUI with Shift+Tab:
+Tack ships three modes, cycled in the TUI with the `session.next-mode` shortcut (Shift+Tab by default):
 
 - `normal` is the default. Actions run without confirmation unless they are risky: shell commands whose file arguments, redirect targets, or `cd` destinations leave the workspace, destructive commands aimed at the workspace root or `.git`, file writes and edits outside the workspace, privileged or system-level commands such as `sudo` and `dd`, network fetches with `curl` or `wget`, force pushes, package publishes, remote MCP calls, and reads of `.env` files or key material ask first. Deletes and other file operations inside the workspace run without prompting because workspace undo can restore them. Writes to the system temporary directory are also allowed.
 - `plan` is read-only. Tools that mutate anything are refused before they run.
@@ -139,7 +177,7 @@ Tack ships three modes, cycled in the TUI with Shift+Tab:
 
 Chained commands are evaluated per segment, so `git status && rm /etc/hosts` asks even though `git status` alone would not. Commands using substitution or grouping that cannot be split safely always ask. The built-in risky-command rules are ordinary rules, so configuration can override them: `"allow": ["bash(curl *)"]` stops `curl` from asking.
 
-Custom modes are defined under `modes` and appear in the Shift+Tab cycle and `--mode`:
+Custom modes are defined under `modes` and appear in the TUI mode cycle and `--mode`:
 
 ```json
 {
@@ -240,7 +278,7 @@ Run `/config` in the TUI to change display preferences. Changes save immediately
 
 The TUI always emits OSC 9;4 progress while Tack is working and an OSC 777 notification when a turn completes, fails, or is interrupted. Notifications include the trailing 200 characters of visible assistant output, are not gated by terminal focus, and use tmux passthrough automatically. OSC lifecycle signaling is built in and has no configuration.
 
-`Ctrl+O` temporarily toggles transcript details for the current session without changing `showOutputs`.
+The `display.toggle-details` shortcut (Ctrl+O by default) temporarily toggles transcript details for the current session without changing `showOutputs`.
 
 ### `lsp`
 

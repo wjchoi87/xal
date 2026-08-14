@@ -1,26 +1,42 @@
 import { StyledText, type BoxRenderable, type RenderContext, type TextRenderable } from "@opentui/core"
+import type { ResolvedShortcuts, ShortcutAction } from "../shortcuts"
 import { label, row } from "../lib/renderables"
 import { COLORS } from "../theme/colors"
 import { muted, paint } from "../theme/styles"
 
 const WIDE = 80
 const KEY_WIDTH = 18
-const SHORTCUTS = [
-  { key: "/", description: "commands" },
-  { key: "$", description: "skills" },
-  { key: "Shift+Enter", description: "new line" },
-  { key: "Tab", description: "complete selection" },
-  { key: "Ctrl+G", description: "external editor" },
-  { key: "Ctrl+V", description: "paste image" },
-  { key: "Ctrl+U", description: "clear input" },
-  { key: "Esc Esc / Ctrl+R", description: "jump history" },
-  { key: "↑ / ↓", description: "browse history" },
-  { key: "Shift+Tab", description: "change mode" },
-  { key: "Alt+, / Alt+.", description: "decrease / increase thinking" },
-  { key: "Ctrl+O", description: "toggle details" },
-  { key: "Ctrl+T", description: "toggle todos" },
-  { key: "Ctrl+C", description: "clear / interrupt / quit" },
-]
+
+interface ShortcutEntry {
+  key: string
+  description: string
+}
+
+function actionEntry(shortcuts: ResolvedShortcuts, action: ShortcutAction): ShortcutEntry | undefined {
+  const key = shortcuts.help(action)
+  return key ? { key, description: shortcuts.description(action) } : undefined
+}
+
+function shortcutEntries(shortcuts: ResolvedShortcuts): ShortcutEntry[] {
+  const entries: Array<ShortcutEntry | undefined> = [
+    { key: "/", description: "commands" },
+    { key: "$", description: "skills" },
+    actionEntry(shortcuts, "composer.newline"),
+    { key: "Tab", description: "complete selection" },
+    actionEntry(shortcuts, "composer.external-editor"),
+    actionEntry(shortcuts, "composer.paste-image"),
+    actionEntry(shortcuts, "composer.clear"),
+    actionEntry(shortcuts, "history.open"),
+    { key: "↑ / ↓", description: "browse history" },
+    actionEntry(shortcuts, "session.next-mode"),
+    actionEntry(shortcuts, "thinking.decrease"),
+    actionEntry(shortcuts, "thinking.increase"),
+    actionEntry(shortcuts, "display.toggle-details"),
+    actionEntry(shortcuts, "display.toggle-todos"),
+    actionEntry(shortcuts, "app.cancel"),
+  ]
+  return entries.filter((entry) => entry !== undefined)
+}
 
 function shortcut(key: string, description: string): StyledText {
   return new StyledText([paint(COLORS.accent, key.padEnd(KEY_WIDTH)), muted(description)])
@@ -29,14 +45,17 @@ function shortcut(key: string, description: string): StyledText {
 export class ShortcutHelp {
   readonly view: BoxRenderable
   private readonly entries: TextRenderable[] = []
+  private readonly shortcuts: ShortcutEntry[]
   private active = false
   private covered = false
   private wide: boolean
 
   constructor(
     private readonly ctx: RenderContext,
+    resolved: ResolvedShortcuts,
     onResize: () => void,
   ) {
+    this.shortcuts = shortcutEntries(resolved)
     this.wide = ctx.width >= WIDE
     this.view = row(ctx, {
       visible: false,
@@ -45,7 +64,7 @@ export class ShortcutHelp {
       paddingLeft: 2,
       paddingRight: 2,
     })
-    for (const entry of SHORTCUTS) {
+    for (const entry of this.shortcuts) {
       const item = label(ctx, {
         content: shortcut(entry.key, entry.description),
         width: this.itemWidth,
@@ -78,7 +97,7 @@ export class ShortcutHelp {
   }
 
   private get rows(): number {
-    return this.wide ? Math.ceil(SHORTCUTS.length / 2) : SHORTCUTS.length
+    return this.wide ? Math.ceil(this.shortcuts.length / 2) : this.shortcuts.length
   }
 
   private get itemWidth(): "50%" | "100%" {

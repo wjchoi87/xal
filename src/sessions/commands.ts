@@ -8,6 +8,7 @@ import { listSessions } from "./store"
 
 const clearCommand: Command = {
   name: "clear",
+  aliases: ["new"],
   describe: "start a new session",
   async run(_args, ctx) {
     if (!ctx.session.reset()) ctx.print("cannot start a new session while a turn or background job is unsettled")

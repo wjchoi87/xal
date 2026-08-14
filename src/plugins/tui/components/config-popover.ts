@@ -1,6 +1,6 @@
 import { StyledText, TextAttributes, type BoxRenderable, type RenderContext, type TextRenderable } from "@opentui/core"
 import { describeError } from "../../../lib/error"
-import type { TuiConfig, TuiConfigKey } from "../config"
+import type { TuiConfigKey, TuiPreferences } from "../config"
 import { column, label, row } from "../lib/renderables"
 import { terminalGlyph } from "../lib/text"
 import { COLORS } from "../theme/colors"
@@ -27,7 +27,7 @@ interface SettingRow {
 }
 
 interface ConfigPopoverActions {
-  change(config: TuiConfig, key: TuiConfigKey): Promise<void>
+  change(config: TuiPreferences, key: TuiConfigKey): Promise<void>
   changed(): void
   error(message: string): void
 }
@@ -49,7 +49,7 @@ export class ConfigPopover {
 
   constructor(
     ctx: RenderContext,
-    private config: TuiConfig,
+    private config: TuiPreferences,
     private readonly actions: ConfigPopoverActions,
   ) {
     this.view = column(ctx, {
