@@ -413,6 +413,7 @@ describe("AgentSession control flow", () => {
 
   test("validates and normalizes interactive elicitation answers", async () => {
     const toolName = `interactive_answer_${crypto.randomUUID().replaceAll("-", "_")}`
+    const longAnswer = "x".repeat(501)
     let received: ElicitationResult | undefined
     const tool: InteractiveTool = {
       name: toolName,
@@ -482,24 +483,18 @@ describe("AgentSession control flow", () => {
         )
         answerResults.push(
           session.answerElicitation(event.requestId, [
-            { questionId: "editor", value: "x".repeat(501) },
-            { questionId: "theme", value: "Dark" },
-          ]),
-        )
-        answerResults.push(
-          session.answerElicitation(event.requestId, [
             { questionId: "theme", value: " Dark " },
-            { questionId: "editor", value: " Vim " },
+            { questionId: "editor", value: ` ${longAnswer} ` },
           ]),
         )
       })
 
       expect(outcome.status).toBe("completed")
-      expect(answerResults).toEqual([false, false, false, false, false, false, true])
+      expect(answerResults).toEqual([false, false, false, false, false, true])
       expect(received).toEqual({
         status: "answered",
         answers: [
-          { questionId: "editor", value: "Vim" },
+          { questionId: "editor", value: longAnswer },
           { questionId: "theme", value: "Dark" },
         ],
       })
@@ -510,8 +505,13 @@ describe("AgentSession control flow", () => {
       expect(provider.requests[1]?.input.at(-1)).toEqual({
         type: "tool_result",
         callId: "answer-call",
-        output:
-          '{"status":"answered","answers":[{"questionId":"editor","value":"Vim"},{"questionId":"theme","value":"Dark"}]}',
+        output: JSON.stringify({
+          status: "answered",
+          answers: [
+            { questionId: "editor", value: longAnswer },
+            { questionId: "theme", value: "Dark" },
+          ],
+        }),
       })
     } finally {
       unregisterTool(tool)

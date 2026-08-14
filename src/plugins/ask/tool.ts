@@ -1,43 +1,28 @@
 import { asString, isRecord } from "../../lib/json"
 import type { ElicitationOption, ElicitationQuestion, InteractiveTool } from "../../tools/types"
 
-const MAX_QUESTIONS = 3
-const MIN_OPTIONS = 2
-const MAX_OPTIONS = 3
-const MAX_HEADER_LENGTH = 12
-const MAX_LABEL_LENGTH = 40
-const MAX_QUESTION_LENGTH = 200
-const MAX_DESCRIPTION_LENGTH = 120
-
-function text(value: unknown, field: string, maximum: number): string {
+function text(value: unknown, field: string): string {
   const parsed = asString(value)?.trim()
   if (!parsed) throw new Error(`${field} is required`)
-  if (parsed.length > maximum) throw new Error(`${field} must be at most ${maximum} characters`)
   return parsed
 }
 
 function parseOption(value: unknown, question: number, option: number): ElicitationOption {
   if (!isRecord(value)) throw new Error(`questions[${question}].options[${option}] must be an object`)
   return {
-    label: text(value.label, `questions[${question}].options[${option}].label`, MAX_LABEL_LENGTH),
-    description: text(
-      value.description,
-      `questions[${question}].options[${option}].description`,
-      MAX_DESCRIPTION_LENGTH,
-    ),
+    label: text(value.label, `questions[${question}].options[${option}].label`),
+    description: text(value.description, `questions[${question}].options[${option}].description`),
   }
 }
 
 function parseQuestion(value: unknown, index: number): ElicitationQuestion {
   if (!isRecord(value)) throw new Error(`questions[${index}] must be an object`)
 
-  const id = text(value.id, `questions[${index}].id`, MAX_LABEL_LENGTH)
+  const id = text(value.id, `questions[${index}].id`)
   if (!/^[a-z][a-z0-9_]*$/.test(id)) {
     throw new Error(`questions[${index}].id must use lower-case letters, numbers, and underscores`)
   }
-  if (!Array.isArray(value.options) || value.options.length < MIN_OPTIONS || value.options.length > MAX_OPTIONS) {
-    throw new Error(`questions[${index}].options must contain ${MIN_OPTIONS} to ${MAX_OPTIONS} choices`)
-  }
+  if (!Array.isArray(value.options)) throw new Error(`questions[${index}].options must be an array`)
 
   const options = value.options.map((option, optionIndex) => parseOption(option, index, optionIndex))
   if (new Set(options.map((option) => option.label.toLowerCase())).size !== options.length) {
@@ -46,15 +31,15 @@ function parseQuestion(value: unknown, index: number): ElicitationQuestion {
 
   return {
     id,
-    header: text(value.header, `questions[${index}].header`, MAX_HEADER_LENGTH),
-    question: text(value.question, `questions[${index}].question`, MAX_QUESTION_LENGTH),
+    header: text(value.header, `questions[${index}].header`),
+    question: text(value.question, `questions[${index}].question`),
     options,
   }
 }
 
 function parseQuestions(args: Record<string, unknown>): ElicitationQuestion[] {
-  if (!Array.isArray(args.questions) || args.questions.length < 1 || args.questions.length > MAX_QUESTIONS) {
-    throw new Error(`questions must contain 1 to ${MAX_QUESTIONS} entries`)
+  if (!Array.isArray(args.questions) || args.questions.length === 0) {
+    throw new Error("questions must contain at least one entry")
   }
   const questions = args.questions.map(parseQuestion)
   if (new Set(questions.map((question) => question.id)).size !== questions.length) {
@@ -66,51 +51,43 @@ function parseQuestions(args: Record<string, unknown>): ElicitationQuestion[] {
 export const requestUserInputTool: InteractiveTool = {
   name: "request_user_input",
   description:
-    "Ask the user up to three structured questions and wait for the answers. Each question offers two or three exclusive choices; the interface adds a free-form alternative automatically.",
+    "Ask the user structured questions and wait for the answers. Prefer one question with two or three exclusive choices; the interface adds a free-form alternative automatically.",
   parameters: {
     type: "object",
     properties: {
       questions: {
         type: "array",
         minItems: 1,
-        maxItems: MAX_QUESTIONS,
-        description: `Questions to show the user. Prefer one; never more than ${MAX_QUESTIONS}`,
+        description: "Questions to show the user. Prefer one focused question when possible",
         items: {
           type: "object",
           properties: {
             id: {
               type: "string",
               pattern: "^[a-z][a-z0-9_]*$",
-              maxLength: MAX_LABEL_LENGTH,
               description: "Stable snake_case identifier used to associate the answer with this question",
             },
             header: {
               type: "string",
-              maxLength: MAX_HEADER_LENGTH,
-              description: `Short label shown for the question (${MAX_HEADER_LENGTH} characters or fewer)`,
+              description: "Short label shown for the question",
             },
             question: {
               type: "string",
-              maxLength: MAX_QUESTION_LENGTH,
               description: "Single-sentence decision the user needs to make",
             },
             options: {
               type: "array",
-              minItems: MIN_OPTIONS,
-              maxItems: MAX_OPTIONS,
               description:
-                'Two or three mutually exclusive choices. Put the recommended option first and end its label with "(Recommended)"; never include a catch-all option, since a free-form answer is offered automatically',
+                'Choices for the user. Prefer two or three mutually exclusive choices, put the recommended option first, and end its label with "(Recommended)"; never include a catch-all option, since a free-form answer is offered automatically',
               items: {
                 type: "object",
                 properties: {
                   label: {
                     type: "string",
-                    maxLength: MAX_LABEL_LENGTH,
                     description: "User-facing label of one to five words",
                   },
                   description: {
                     type: "string",
-                    maxLength: MAX_DESCRIPTION_LENGTH,
                     description: "One short sentence on the impact or tradeoff of choosing this option",
                   },
                 },

@@ -5,8 +5,6 @@ import type { ModelInputModality, Provider, ThinkingEffort, ToolDefinition } fro
 import type { TaskListUpdatedEvent } from "../tasks/types"
 import type { WorkspaceUndo } from "./undo"
 
-export const MAX_ELICITATION_ANSWER_LENGTH = 500
-
 export type ProcessSandbox = "read" | "workspace"
 
 export type ProcessExecution = (

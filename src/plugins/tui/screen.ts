@@ -83,7 +83,12 @@ export class Screen {
     this.queued = new QueuedInputs(renderer, () => this.syncFooter())
     this.taskList = new TaskList(renderer, () => this.syncFooter())
     this.permission = new PermissionPopover(renderer, actions)
-    this.elicitation = new ElicitationPopover(renderer, actions, () => this.syncFooter())
+    this.elicitation = new ElicitationPopover(
+      renderer,
+      actions,
+      () => this.syncFooter(),
+      () => this.elicitationAvailableHeight(),
+    )
     this.secret = new SecretInput(renderer, () => this.syncFooter())
     this.picker = new Picker(renderer, () => this.syncFooter())
     this.config = new ConfigPopover(renderer, preferences, {
@@ -287,6 +292,18 @@ export class Screen {
     })
   }
 
+  private elicitationAvailableHeight(): number {
+    const siblingRows = this.agentViewer.visible
+      ? STATUS_ROWS + this.tasks.height
+      : this.agentSummary.height +
+        this.live.height +
+        this.queued.height +
+        this.taskList.height +
+        STATUS_ROWS +
+        this.tasks.height
+    return Math.max(1, this.renderer.terminalHeight - siblingRows)
+  }
+
   syncFooter(): void {
     const overlaid = this.overlayVisible
     this.shortcutHelp.setCovered(overlaid)
@@ -306,6 +323,7 @@ export class Screen {
     }
     if (overlaid) this.palette.hide()
     this.statusBar.setHint(this.palette.visible ? "↑↓ · Tab · Enter · Esc" : undefined)
+    this.elicitation.fit()
     const overlayRows = this.permission.visible
       ? this.permission.height
       : this.elicitation.visible

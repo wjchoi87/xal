@@ -39,7 +39,7 @@ import type { SessionMeta } from "../sessions/types"
 import { expandSkillInvocation } from "../skills/invoke"
 import { getTool, listTools } from "../tools/registry"
 import { TOOL_FAILED_PREFIX, toolOutputDirectory } from "../tools/output"
-import { isInteractiveTool, MAX_ELICITATION_ANSWER_LENGTH } from "../tools/types"
+import { isInteractiveTool } from "../tools/types"
 import { disposeToolSession } from "../tools/session"
 import { WorkspaceUndo } from "../tools/undo"
 import type {
@@ -1002,7 +1002,7 @@ export class AgentSession {
 
     const byQuestion = new Map(answers.map((answer) => [answer.questionId, answer.value.trim()]))
     if (byQuestion.size !== answers.length || byQuestion.size !== pending.request.questions.length) return false
-    if ([...byQuestion.values()].some((value) => !value || value.length > MAX_ELICITATION_ANSWER_LENGTH)) return false
+    if ([...byQuestion.values()].some((value) => !value)) return false
 
     const normalized = pending.request.questions.flatMap((question): ElicitationAnswer[] => {
       const value = byQuestion.get(question.id)
@@ -1053,6 +1053,7 @@ export class AgentSession {
     signal: AbortSignal,
   ): Promise<ElicitationResult> {
     if (!this.interactive) throw new Error("user input is unavailable without an interactive client")
+    if (request.questions.length === 0) throw new Error("user input requires at least one question")
     if (this.pendingElicitation) throw new Error("another user input request is already pending")
     if (signal.aborted) return { status: "rejected" }
 
