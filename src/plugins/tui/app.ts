@@ -3,10 +3,11 @@ import {
   CliRenderEvents,
   createCliRenderer,
   RenderableEvents,
-  RGBA,
+  buildTerminalPaletteSignature,
   type CliRenderer,
   type KittyKeyboardOptions,
   type TerminalCapabilities,
+  type TerminalColors,
 } from "@opentui/core"
 import { createSession, resumeSession } from "../../agent/compose"
 import type { EventService } from "../../events"
@@ -29,7 +30,7 @@ import { Screen } from "./screen"
 import { ResolvedShortcuts } from "./shortcuts"
 import { describeTerminal, sessionTerminalTitle, terminalBackground } from "./terminal"
 import { TerminalOutput } from "./terminal-output"
-import { COLORS } from "./theme/colors"
+import { applyTerminalPalette, COLORS } from "./theme/colors"
 
 const RESIZE_DEBOUNCE_MS = 60
 const TERMINAL_RESET = "\u001b[r\u001b[<u\u001b[?25h"
@@ -77,6 +78,15 @@ export async function startTui(events: EventService, config: TuiConfig, options:
       process.stdout.write(TERMINAL_RESET, () => finishDestroy())
     },
   })
+  let initialPalette: TerminalColors | undefined
+  let paletteError: string | undefined
+  try {
+    initialPalette = await renderer.getPalette({ size: 16, timeout: 300 })
+    applyTerminalPalette(initialPalette)
+    renderer.setBackgroundColor(COLORS.background)
+  } catch (error) {
+    paletteError = describeError(error)
+  }
   const terminalOutput = new TerminalOutput(renderer, (sequence) => {
     writeTerminal(sequence)
   })
@@ -106,18 +116,22 @@ export async function startTui(events: EventService, config: TuiConfig, options:
   })
   const unsubscribeTerminalBackground = renderer.subscribeOsc((sequence) => {
     const background = terminalBackground(sequence)
-    if (background) screen.scrollback.setTerminalBackground(background)
+    if (background && screen.scrollback.setTerminalBackground(background)) screen.scrollback.replay()
   })
-  void renderer.getPalette({ size: 1, timeout: 300 }).then(
-    (palette) => {
-      if (renderer.isDestroyed) return
-      if (palette.defaultBackground) screen.scrollback.setTerminalBackground(RGBA.fromHex(palette.defaultBackground))
-    },
-    (error: unknown) => {
-      if (renderer.isDestroyed) return
-      screen.scrollback.append({ kind: "error", text: `terminal background detection failed: ${describeError(error)}` })
-    },
-  )
+  let paletteSignature = initialPalette ? buildTerminalPaletteSignature(initialPalette) : undefined
+  const applyPalette = (palette: TerminalColors): void => {
+    const signature = buildTerminalPaletteSignature(palette)
+    if (signature === paletteSignature) return
+    paletteSignature = signature
+    applyTerminalPalette(palette)
+    renderer.setBackgroundColor(COLORS.background)
+    screen.scrollback.setTerminalBackground(COLORS.background)
+    screen.scrollback.replay()
+  }
+  renderer.on(CliRenderEvents.PALETTE, applyPalette)
+  if (paletteError) {
+    screen.scrollback.append({ kind: "error", text: `terminal palette detection failed: ${paletteError}` })
+  }
   const attentionController = new AttentionController(
     (sequence) => terminalOutput.write(sequence),
     (message) => {
@@ -190,6 +204,7 @@ export async function startTui(events: EventService, config: TuiConfig, options:
   }
 
   screen.view.on(RenderableEvents.DESTROYED, () => {
+    renderer.off(CliRenderEvents.PALETTE, applyPalette)
     unsubscribeTerminalBackground()
     unsubscribeSession()
     unsubscribeAttention()

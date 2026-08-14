@@ -66,11 +66,11 @@ export class Scrollback {
     return this.origin + this.committed
   }
 
-  setTerminalBackground(background: RGBA): void {
+  setTerminalBackground(background: RGBA): boolean {
     const next = userMessageBackground(background)
-    if (this.userBackground.equals(next)) return
+    if (this.userBackground.equals(next)) return false
     this.userBackground = next
-    if (this.blocks.some((block) => block.kind === "user")) this.replay()
+    return this.blocks.some((block) => block.kind === "user")
   }
 
   append(block: Block): void {
