@@ -105,10 +105,13 @@ export class Screen {
     })
     this.palette = new CompletionPalette(
       renderer,
+      session.currentWorkingDirectory,
       {
         completeCommand: (line) => this.composer.setValue(line),
         completeSkill: (query, name, trailingSpace) => this.composer.completeSkill(query, name, trailingSpace),
+        completeFile: (query, path) => this.composer.completeFile(query, path),
         runCommand: (line) => this.runCommand(line),
+        error: (message) => this.scrollback.append({ kind: "error", text: message }),
       },
       () => this.syncFooter(),
     )
@@ -131,7 +134,7 @@ export class Screen {
         const help = value.startsWith("?")
         if (this.shortcutHelp.setActive(help)) this.syncFooter()
         if (help) {
-          this.palette.hide()
+          this.palette.dismiss()
           return
         }
         this.placePalette()
@@ -213,6 +216,8 @@ export class Screen {
     mode: PermissionMode,
   ): void {
     this.cwd = redactText(cwd)
+    this.palette.setWorkingDirectory(cwd)
+    this.composer.refreshCompletion()
     this.setSessionTitle(title)
     this.statusBar.setModel(model)
     this.statusBar.setThinking(thinking)
@@ -234,6 +239,8 @@ export class Screen {
 
   setWorkingDirectory(cwd: string): void {
     this.cwd = redactText(cwd)
+    this.palette.setWorkingDirectory(cwd)
+    this.composer.refreshCompletion()
     this.renderer.setTerminalTitle(sessionTerminalTitle(this.sessionTitle, this.cwd))
   }
 
@@ -260,7 +267,7 @@ export class Screen {
   }
 
   openHistory(): void {
-    this.palette.hide()
+    this.palette.dismiss()
     this.executeCommand("/history")
     this.syncFooter()
   }
@@ -321,7 +328,7 @@ export class Screen {
         this.composer.focus()
       }
     }
-    if (overlaid) this.palette.hide()
+    if (overlaid) this.palette.dismiss()
     this.statusBar.setHint(this.palette.visible ? "↑↓ · Tab · Enter · Esc" : undefined)
     this.elicitation.fit()
     const overlayRows = this.permission.visible
@@ -334,7 +341,7 @@ export class Screen {
             ? this.picker.height
             : this.config.height
     if (this.agentViewer.visible) {
-      this.palette.hide()
+      this.palette.dismiss()
       this.reserved = 0
       const chrome =
         (overlaid ? overlayRows : this.composer.rows + this.shortcutHelp.height) + STATUS_ROWS + this.tasks.height
@@ -415,7 +422,7 @@ export class Screen {
   }
 
   private runCommand(line: string): void {
-    this.palette.hide()
+    this.palette.dismiss()
     this.composer.setValue("")
     this.executeCommand(line)
     this.syncFooter()
@@ -434,7 +441,7 @@ export class Screen {
     else this.agentViewer.hide()
     const mainVisible = task === undefined
     this.mainPanel.visible = mainVisible
-    if (!mainVisible) this.palette.hide()
+    if (!mainVisible) this.palette.dismiss()
     this.syncFooter()
     if (mainVisible && wasVisible) {
       this.agentReplayPending = false

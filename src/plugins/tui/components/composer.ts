@@ -14,6 +14,7 @@ import { describeError } from "../../../lib/error"
 import { asNumber, asString, isRecord } from "../../../lib/json"
 import type { ImageInput, UserInput } from "../../../providers/types"
 import { findSkillReferences, type SkillQuery } from "../../../skills/references"
+import { fileMention, type FileQuery } from "../file-search"
 import { label, row } from "../lib/renderables"
 import type { MessageHistory } from "../message-history"
 import { COLORS, resolveColor } from "../theme/colors"
@@ -62,9 +63,17 @@ function isPastedImage(value: unknown): value is PastedImage {
   )
 }
 
-function editorOffset(text: string, index: number): number {
-  const prefix = text.slice(0, index)
-  return Bun.stringWidth(prefix) + (prefix.match(/\n/g)?.length ?? 0) + (prefix.match(/\t/g)?.length ?? 0) * 2
+function editorOffset(input: TextareaRenderable, index: number): number {
+  const target = Math.max(0, Math.min(index, input.plainText.length))
+  let low = 0
+  let high = Math.max(1, input.plainText.length)
+  while (input.getTextRange(0, high).length < target) high *= 2
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2)
+    if (input.getTextRange(0, middle).length < target) low = middle + 1
+    else high = middle
+  }
+  return low
 }
 
 async function linuxClipboardImage(): Promise<Bun.Image | undefined> {
@@ -89,9 +98,11 @@ export class Composer {
   private readonly pastedContentType: number
   private readonly pastedImageType: number
   private readonly skillHighlightType: number
+  private readonly fileHighlightType: number
   private readonly syntaxStyle: SyntaxStyle
   private readonly imageStyleId: number
   private readonly skillStyleId: number
+  private readonly fileStyleId: number
   private currentRows = COMPOSER_ROWS
   private readingImage = false
 
@@ -121,6 +132,7 @@ export class Composer {
       fg: resolveColor(COLORS.accent),
       bold: true,
     })
+    this.fileStyleId = this.syntaxStyle.registerStyle("composer-file", { fg: resolveColor(COLORS.accent) })
     this.input = new TextareaRenderable(ctx, {
       height: 1,
       flexGrow: 1,
@@ -148,6 +160,7 @@ export class Composer {
     this.pastedContentType = this.input.extmarks.registerType("composer-pasted-content")
     this.pastedImageType = this.input.extmarks.registerType("composer-pasted-image")
     this.skillHighlightType = this.input.extmarks.registerType("composer-skill-highlight")
+    this.fileHighlightType = this.input.extmarks.registerType("composer-file-highlight")
     this.view.add(this.input)
     this.view.on(RenderableEvents.DESTROYED, () => this.syntaxStyle.destroy())
   }
@@ -182,9 +195,32 @@ export class Composer {
     if (!text.slice(query.start, query.end).startsWith("$")) return
     const next = text.slice(query.end).match(/^./u)?.[0]
     const suffix = trailingSpace && (next === undefined || !/\s/.test(next)) ? " " : ""
-    this.input.setSelection(editorOffset(text, query.start), editorOffset(text, query.end))
+    this.input.setSelection(editorOffset(this.input, query.start), editorOffset(this.input, query.end))
     this.input.deleteSelection()
     this.input.insertText(`$${name}${suffix}`)
+  }
+
+  completeFile(query: FileQuery, path: string): void {
+    const text = this.input.plainText
+    if (!text.slice(query.start, query.end).startsWith("@")) return
+    const mention = fileMention(path, query.quoted)
+    const next = text.slice(query.end).match(/^./u)?.[0]
+    const suffix = next === undefined || !/\s/.test(next) ? " " : ""
+    const start = editorOffset(this.input, query.start)
+    this.input.setSelection(start, editorOffset(this.input, query.end))
+    this.input.deleteSelection()
+    this.input.insertText(`${mention}${suffix}`)
+    this.input.extmarks.create({
+      start,
+      end: editorOffset(this.input, query.start + mention.length),
+      virtual: true,
+      styleId: this.fileStyleId,
+      typeId: this.fileHighlightType,
+    })
+  }
+
+  refreshCompletion(): void {
+    this.notifyCompletion()
   }
 
   clear(): boolean {
@@ -309,8 +345,8 @@ export class Composer {
     const text = this.input.plainText
     for (const reference of findSkillReferences(text)) {
       this.input.extmarks.create({
-        start: editorOffset(text, reference.start),
-        end: editorOffset(text, reference.end),
+        start: editorOffset(this.input, reference.start),
+        end: editorOffset(this.input, reference.end),
         styleId: this.skillStyleId,
         typeId: this.skillHighlightType,
       })
