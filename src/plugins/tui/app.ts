@@ -137,6 +137,30 @@ export async function startTui(events: EventService, config: TuiConfig, options:
     renderer.destroy()
   }
   renderer.root.add(screen.view)
+  let lastWidth = renderer.terminalWidth
+  let lastHeight = renderer.terminalHeight
+  let replayTimer: ReturnType<typeof setTimeout> | undefined
+  let replayPending = false
+  let editing = false
+  const replayLayout = (): void => {
+    screen.composer.reflow()
+    screen.syncFooter()
+    screen.scrollback.replay()
+  }
+  renderer.on(CliRenderEvents.RESIZE, () => {
+    if (renderer.terminalWidth === lastWidth && renderer.terminalHeight === lastHeight) return
+    lastWidth = renderer.terminalWidth
+    lastHeight = renderer.terminalHeight
+    if (editing) {
+      replayPending = true
+      return
+    }
+    clearTimeout(replayTimer)
+    replayTimer = setTimeout(() => {
+      replayTimer = undefined
+      replayLayout()
+    }, RESIZE_DEBOUNCE_MS)
+  })
   const resetCommands = setTuiCommandActions({
     config: () => screen.openConfig(),
     terminal: () => describeTerminal(renderer.capabilities),
@@ -173,31 +197,6 @@ export async function startTui(events: EventService, config: TuiConfig, options:
   const appEvents = new AppEventController(screen, input)
   const unsubscribe = events.subscribe((event) => appEvents.handle(event), true)
   screen.view.on(RenderableEvents.DESTROYED, unsubscribe)
-
-  let lastWidth = renderer.terminalWidth
-  let lastHeight = renderer.terminalHeight
-  let replayTimer: ReturnType<typeof setTimeout> | undefined
-  let replayPending = false
-  let editing = false
-  const replayLayout = (): void => {
-    screen.composer.reflow()
-    screen.syncFooter()
-    screen.scrollback.replay()
-  }
-  renderer.on(CliRenderEvents.RESIZE, () => {
-    if (renderer.terminalWidth === lastWidth && renderer.terminalHeight === lastHeight) return
-    lastWidth = renderer.terminalWidth
-    lastHeight = renderer.terminalHeight
-    if (editing) {
-      replayPending = true
-      return
-    }
-    clearTimeout(replayTimer)
-    replayTimer = setTimeout(() => {
-      replayTimer = undefined
-      replayLayout()
-    }, RESIZE_DEBOUNCE_MS)
-  })
 
   const edit = async (): Promise<void> => {
     if (editing) return
