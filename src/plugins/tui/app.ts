@@ -68,7 +68,7 @@ export async function startTui(events: EventService, config: TuiConfig, options:
   const renderer = await createCliRenderer({
     exitOnCtrlC: false,
     useMouse: false,
-    clearOnShutdown: false,
+    clearOnShutdown: true,
     screenMode: "split-footer",
     footerHeight: COMPOSER_ROWS + STATUS_ROWS,
     useKittyKeyboard: KITTY_KEYBOARD,
@@ -148,8 +148,6 @@ export async function startTui(events: EventService, config: TuiConfig, options:
   }
   const quit = (): void => {
     stopAttention()
-    renderer.externalOutputMode = "passthrough"
-    renderer.screenMode = "main-screen"
     renderer.destroy()
   }
   renderer.root.add(screen.view)
