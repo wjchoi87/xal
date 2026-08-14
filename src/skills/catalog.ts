@@ -50,13 +50,13 @@ async function walkFiles(directory: string, visited = new Set<string>()): Promis
   const found: string[] = []
   const children = (await entries(canonical)).sort((left, right) => left.name.localeCompare(right.name))
   for (const child of children) {
-    const path = resolve(canonical, child.name)
+    const path = resolve(directory, child.name)
     const info = child.isSymbolicLink() ? await existingStats(path) : undefined
     if (child.isDirectory() || info?.isDirectory()) {
       found.push(...(await walkFiles(path, visited)))
       continue
     }
-    if (child.isFile() || info?.isFile()) found.push(await realpath(path))
+    if (child.isFile() || info?.isFile()) found.push(path)
   }
   return found
 }
@@ -126,10 +126,15 @@ export async function loadSkills(roots: SkillRoot[]): Promise<Skill[]> {
 }
 
 export async function listSkillFiles(skill: Skill): Promise<string[]> {
-  return (await walkFiles(skill.directory))
-    .filter((path) => path !== skill.path)
-    .map((path) => relative(skill.directory, path))
-    .filter((path) => path !== ".." && !path.startsWith(`..${sep}`))
+  const root = await realpath(skill.directory)
+  const files: string[] = []
+  for (const path of await walkFiles(skill.directory)) {
+    if (path === skill.path) continue
+    const canonical = await realpath(path)
+    if (canonical !== root && !canonical.startsWith(`${root}${sep}`)) continue
+    files.push(relative(skill.directory, path))
+  }
+  return files
 }
 
 export async function readSkillResource(skill: Skill, resource: string): Promise<string> {
