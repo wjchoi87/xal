@@ -1,4 +1,4 @@
-import type { AgentSession } from "../../../agent/agent-session"
+import type { AgentSession } from "../../../agent/session/session"
 import type { AgentEvent } from "../../../agent/events"
 import { historyMoveNotice } from "../../../agent/history"
 import { describeError } from "../../../lib/error"

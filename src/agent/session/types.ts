@@ -1,11 +1,11 @@
-import type { PermissionMode } from "../permissions/types"
-import type { ModelInputModality, Provider, ThinkingEffort, Usage, UserInput } from "../providers/types"
-import type { LoadedSession } from "../sessions/types"
-import type { CodeRedo, WorkspaceUndo } from "../tools/undo"
-import type { AgentState } from "./events"
-import type { ConversationState } from "./history"
+import type { PermissionMode } from "../../permissions/types"
+import type { ModelInputModality, Provider, ThinkingEffort, Usage, UserInput } from "../../providers/types"
+import type { LoadedSession } from "../../sessions/types"
+import type { CodeRedo, WorkspaceUndo } from "../../tools/undo"
+import type { AgentState } from "../events"
+import type { ConversationState } from "../history"
 import type { OutputSchema } from "./output-contract"
-import type { SessionKind } from "./types"
+import type { SessionKind } from "../types"
 
 export interface AgentSessionDeps {
   kind?: SessionKind

@@ -9,7 +9,7 @@ import {
   type TerminalCapabilities,
   type TerminalColors,
 } from "@opentui/core"
-import { createSession, resumeSession } from "../../agent/compose"
+import { createSession, resumeSession } from "../../agent/session/compose"
 import type { EventService } from "../../events"
 import { describeError } from "../../lib/error"
 import { compactPath } from "../../lib/path"

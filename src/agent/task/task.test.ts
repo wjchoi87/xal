@@ -1,12 +1,12 @@
 import { afterAll, beforeAll, expect, test } from "bun:test"
 import { readFile } from "node:fs/promises"
-import { getJob, stopJob } from "../background/jobs"
-import { configureModes } from "../permissions/modes"
-import type { ModelCatalog, Provider, StreamRequest } from "../providers/types"
-import { bashTool } from "../tools/bash/tool"
-import { registerTool, unregisterTool } from "../tools/registry"
-import type { Tool } from "../tools/types"
-import type { AgentEvent, BackgroundResult } from "./events"
+import { getJob, stopJob } from "../../background/jobs"
+import { configureModes } from "../../permissions/modes"
+import type { ModelCatalog, Provider, StreamRequest } from "../../providers/types"
+import { bashTool } from "../../tools/bash/tool"
+import { registerTool, unregisterTool } from "../../tools/registry"
+import type { Tool } from "../../tools/types"
+import type { AgentEvent, BackgroundResult } from "../events"
 import {
   completedRound,
   runSettledTurn,
@@ -14,8 +14,8 @@ import {
   toolRound,
   type AgentSessionTestHarness,
   type ProviderRound,
-} from "./agent-session-test-support"
-import { registerTaskAgents } from "./sub-agent"
+} from "../session/test-support"
+import { registerTaskAgents } from "./tool"
 
 let harness: AgentSessionTestHarness
 

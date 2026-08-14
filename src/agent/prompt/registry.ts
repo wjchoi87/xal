@@ -1,7 +1,7 @@
-import type { SessionKind } from "./types"
-import type { PermissionMode } from "../permissions/types"
-import type { SessionPlan } from "../plans/types"
-import type { RegisteredTool } from "../tools/types"
+import type { SessionKind } from "../types"
+import type { PermissionMode } from "../../permissions/types"
+import type { SessionPlan } from "../../plans/types"
+import type { RegisteredTool } from "../../tools/types"
 
 export interface PromptContext {
   appName: string

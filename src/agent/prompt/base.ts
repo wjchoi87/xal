@@ -1,4 +1,4 @@
-import { registerPrompt } from "./prompt"
+import { registerPrompt } from "./registry"
 
 export function registerBasePrompt(): void {
   registerPrompt({

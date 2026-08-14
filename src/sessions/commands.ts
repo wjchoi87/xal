@@ -1,5 +1,5 @@
-import { resumeSession } from "../agent/compose"
-import type { UndoCheckpoint } from "../agent/session-types"
+import { resumeSession } from "../agent/session/compose"
+import type { UndoCheckpoint } from "../agent/session/types"
 import { registerCommand } from "../commands/registry"
 import type { Command, CommandContext } from "../commands/types"
 import { writeNewSecureText } from "../lib/fs"

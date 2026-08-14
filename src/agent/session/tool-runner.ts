@@ -1,14 +1,14 @@
-import { runAfterToolHooks, runBeforeToolHooks, type HookReporter } from "../hooks/registry"
-import type { HookContext } from "../hooks/types"
-import { describeError } from "../lib/error"
-import { modeDefinition } from "../permissions/modes"
-import { evaluatePolicy } from "../permissions/service"
-import type { PermissionMode, PermissionScope } from "../permissions/types"
-import { profileToolBatchFinished, profileToolBatchStarted } from "../profiler/profiler"
-import type { ModelInputModality, Provider, ThinkingEffort, ToolCallItem } from "../providers/types"
-import { createRedactedStream, redactJsonObject, redactText } from "../secrets/redactor"
-import { boundToolOutput, TOOL_FAILED_PREFIX, TOOL_OUTPUT_UNSAVED_PREFIX } from "../tools/output"
-import { isInteractiveTool, isSessionTool } from "../tools/types"
+import { runAfterToolHooks, runBeforeToolHooks, type HookReporter } from "../../hooks/registry"
+import type { HookContext } from "../../hooks/types"
+import { describeError } from "../../lib/error"
+import { modeDefinition } from "../../permissions/modes"
+import { evaluatePolicy } from "../../permissions/service"
+import type { PermissionMode, PermissionScope } from "../../permissions/types"
+import { profileToolBatchFinished, profileToolBatchStarted } from "../../profiler/profiler"
+import type { ModelInputModality, Provider, ThinkingEffort, ToolCallItem } from "../../providers/types"
+import { createRedactedStream, redactJsonObject, redactText } from "../../secrets/redactor"
+import { boundToolOutput, TOOL_FAILED_PREFIX, TOOL_OUTPUT_UNSAVED_PREFIX } from "../../tools/output"
+import { isInteractiveTool, isSessionTool } from "../../tools/types"
 import type {
   ElicitationRequest,
   ElicitationResult,
@@ -18,13 +18,13 @@ import type {
   ToolEvent,
   ToolResult,
   UndoAction,
-} from "../tools/types"
-import type { WorkspaceUndo } from "../tools/undo"
-import type { AgentEvent, AgentState, DenialCause } from "./events"
+} from "../../tools/types"
+import type { WorkspaceUndo } from "../../tools/undo"
+import type { AgentEvent, AgentState, DenialCause } from "../events"
 import type { ToolLoopDetector, ToolLoopAction } from "./loop-detection"
 import type { OutputContract } from "./output-contract"
-import { isAbortError } from "./session-types"
-import type { SessionKind } from "./types"
+import { isAbortError } from "./types"
+import type { SessionKind } from "../types"
 
 export interface ApprovalResult {
   decision: "allow" | "deny"

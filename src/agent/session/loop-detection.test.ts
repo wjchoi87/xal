@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { ToolCallItem } from "../providers/types"
+import type { ToolCallItem } from "../../providers/types"
 import { OutputLoopDetector, ToolLoopDetector, type OutputLoop } from "./loop-detection"
 
 function detectOutputLoop(text: string, chunkSizes: number[]): OutputLoop | undefined {

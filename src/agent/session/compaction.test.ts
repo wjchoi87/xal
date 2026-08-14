@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test"
-import type { ConversationItem } from "../providers/types"
-import { round, ScriptedProvider } from "./agent-session-test-support"
-import type { HistoryItem } from "./history"
-import { activeHistory, summaryMessage } from "./history"
+import type { ConversationItem } from "../../providers/types"
+import { round, ScriptedProvider } from "./test-support"
+import type { HistoryItem } from "../history"
+import { activeHistory, summaryMessage } from "../history"
 import { estimateHistoryTokens, splitForCompaction, summarizeHistory } from "./compaction"
 
 test("keeps a tool round whole when the tail budget lands inside it", () => {

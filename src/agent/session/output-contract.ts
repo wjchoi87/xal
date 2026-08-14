@@ -1,7 +1,7 @@
 import Ajv, { type SchemaObject, type ValidateFunction } from "ajv"
 import addFormats from "ajv-formats"
-import { isJsonObject, type JsonObject } from "../lib/json"
-import type { RegisteredTool, ToolResult } from "../tools/types"
+import { isJsonObject, type JsonObject } from "../../lib/json"
+import type { RegisteredTool, ToolResult } from "../../tools/types"
 
 const MAX_ATTEMPTS = 3
 

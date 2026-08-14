@@ -1,11 +1,12 @@
-import { resolveThinking } from "../config/thinking"
+import { resolveThinking } from "../../config/thinking"
+import { describeError } from "../../lib/error"
 import {
   profileProviderFirstEvent,
   profileProviderRequestFinished,
   profileProviderRequestStarted,
-} from "../profiler/profiler"
-import { findModel } from "../providers/catalog"
-import { prepareConversation } from "../providers/conversation"
+} from "../../profiler/profiler"
+import { contextWindow, findModel } from "../../providers/catalog"
+import { prepareConversation } from "../../providers/conversation"
 import type {
   ConversationItem,
   Provider,
@@ -13,11 +14,13 @@ import type {
   ThinkingEffort,
   Usage,
   UserMessageItem,
-} from "../providers/types"
-import { redactStreamRequest } from "../secrets/data"
-import { redactText } from "../secrets/redactor"
-import { activeHistory, conversationOnly, directShellMessage, type HistoryItem } from "./history"
-import type { SessionKind } from "./types"
+} from "../../providers/types"
+import { redactStreamRequest } from "../../secrets/data"
+import { redactText } from "../../secrets/redactor"
+import type { AgentEvent, AgentState } from "../events"
+import { activeHistory, conversationOnly, directShellMessage, type CompactionItem, type HistoryItem } from "../history"
+import type { SessionKind } from "../types"
+import { isAbortError } from "./types"
 
 export const COMPACTION_TRIGGER_RATIO = 0.85
 
@@ -208,5 +211,74 @@ export async function summarizeHistory(request: SummaryRequest): Promise<string>
       usage,
     )
     throw error
+  }
+}
+
+const MAX_COMPACTION_FAILURES = 2
+
+export interface CompactionHost {
+  readonly kind: SessionKind
+  sessionId(): string
+  history(): HistoryItem[]
+  contextTokens(): number | undefined
+  compactionFailures(): number
+  recordFailure(): void
+  replaceHistory(item: CompactionItem): void
+  setState(state: AgentState): void
+  emit(event: AgentEvent): void
+}
+
+export async function runCompaction(
+  host: CompactionHost,
+  signal: AbortSignal,
+  provider: Provider,
+  model: string,
+  trigger: CompactionTrigger,
+  instructions?: string,
+): Promise<boolean> {
+  const budget = tailBudget(await contextWindow(provider, model), trigger)
+  const { head, tail, replaced } = splitForCompaction(host.history(), budget)
+  if (head.length === 0) return false
+
+  host.setState("compacting")
+  const target = await resolveCompactionTarget(provider, model)
+  const summary = await summarizeHistory({
+    provider,
+    model: target.model,
+    historyModel: model,
+    thinking: target.thinking,
+    sessionId: host.sessionId(),
+    kind: host.kind,
+    history: head,
+    instructions,
+    signal,
+  })
+
+  const tokensBefore = host.contextTokens()
+  host.replaceHistory({ type: "compaction", summary, replaced, tokensBefore, retained: tail })
+  host.emit({ type: "compacted", summary, replaced, tokensBefore })
+  return true
+}
+
+export async function autoCompact(
+  host: CompactionHost,
+  signal: AbortSignal,
+  provider: Provider,
+  model: string,
+): Promise<void> {
+  if (host.compactionFailures() >= MAX_COMPACTION_FAILURES) return
+  const tokens = host.contextTokens() ?? estimateHistoryTokens(activeHistory(host.history()))
+  const window = await contextWindow(provider, model)
+  if (window === undefined || tokens < window * COMPACTION_TRIGGER_RATIO) return
+
+  try {
+    await runCompaction(host, signal, provider, model, "auto")
+  } catch (error) {
+    if (isAbortError(error) || signal.aborted) return
+    host.recordFailure()
+    host.emit({
+      type: "error",
+      message: `context compaction failed: ${describeError(error)} — run /compact to retry`,
+    })
   }
 }

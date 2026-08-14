@@ -1,4 +1,4 @@
-import type { PromptSection } from "../agent/prompt"
+import type { PromptSection } from "../agent/prompt/registry"
 import type { Cli } from "../cli/types"
 import type { Command } from "../commands/types"
 import type { EventService } from "../events"

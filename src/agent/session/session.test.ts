@@ -1,10 +1,10 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
-import { contributeRules } from "../permissions/rules"
-import { registerTool, unregisterTool } from "../tools/registry"
-import type { Tool } from "../tools/types"
-import { ProviderError } from "../providers/errors"
-import type { Usage } from "../providers/types"
-import type { AgentEvent } from "./events"
+import { contributeRules } from "../../permissions/rules"
+import { registerTool, unregisterTool } from "../../tools/registry"
+import type { Tool } from "../../tools/types"
+import { ProviderError } from "../../providers/errors"
+import type { Usage } from "../../providers/types"
+import type { AgentEvent } from "../events"
 import {
   completedRound,
   round,
@@ -12,7 +12,7 @@ import {
   ScriptedProvider,
   setupAgentSessionTests,
   type AgentSessionTestHarness,
-} from "./agent-session-test-support"
+} from "./test-support"
 
 let harness: AgentSessionTestHarness
 

@@ -1,6 +1,6 @@
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
-import { registerPrompt } from "../agent/prompt"
+import { registerPrompt } from "../agent/prompt/registry"
 import { agentHome, projectConfigPath } from "../config/paths"
 import { findProjectRoot } from "../project/root"
 import { registerTool } from "../tools/registry"

@@ -1,20 +1,17 @@
 import { release } from "node:os"
 import { dirname, resolve } from "node:path"
-import { appInfo } from "../app-info"
-import { discardSettledAgentJobs, unsettledJobs } from "../background/jobs"
-import { projectSessionsDir } from "../config/paths"
-import { describeError } from "../lib/error"
-import type { JsonObject } from "../lib/json"
-import { runPromptHooks, runTurnEndHooks, type HookReporter } from "../hooks/registry"
-import type { HookContext } from "../hooks/types"
-import { defaultPermissionMode } from "../permissions/modes"
-import { rememberRule } from "../permissions/rules"
-import type { PermissionMode, PermissionScope } from "../permissions/types"
-import type { SessionPlan } from "../plans/types"
-import { profileAgentEvent, profileSessionCreated } from "../profiler/profiler"
-import { contextWindow } from "../providers/catalog"
-import { prepareConversation } from "../providers/conversation"
-import { occupiedContext } from "../providers/types"
+import { appInfo } from "../../app-info"
+import { discardSettledAgentJobs, unsettledJobs } from "../../background/jobs"
+import { projectSessionsDir } from "../../config/paths"
+import { describeError } from "../../lib/error"
+import { runPromptHooks, type HookReporter } from "../../hooks/registry"
+import type { HookContext } from "../../hooks/types"
+import { defaultPermissionMode } from "../../permissions/modes"
+import type { PermissionMode, PermissionScope } from "../../permissions/types"
+import type { SessionPlan } from "../../plans/types"
+import { profileAgentEvent, profileSessionCreated } from "../../profiler/profiler"
+import { prepareConversation } from "../../providers/conversation"
+import { occupiedContext } from "../../providers/types"
 import type {
   ModelInputModality,
   Provider,
@@ -23,7 +20,7 @@ import type {
   ToolCallItem,
   UserInput,
   UserMessageItem,
-} from "../providers/types"
+} from "../../providers/types"
 import {
   redactAgentEvent,
   redactHistoryItem,
@@ -31,43 +28,34 @@ import {
   redactSessionStartedEvent,
   redactStreamRequest,
   redactUserInput,
-} from "../secrets/data"
-import { redactJsonObject, redactText } from "../secrets/redactor"
-import type { SessionExport } from "../sessions/export"
-import { SessionRecorder } from "../sessions/recorder"
-import { isPersistable } from "../sessions/records"
-import { normalizeSessionTitle, titleFromInput } from "../sessions/title"
-import type { SessionMeta } from "../sessions/types"
-import { expandSkillInvocation } from "../skills/invoke"
-import { getTool, listTools } from "../tools/registry"
-import { TOOL_FAILED_PREFIX, toolOutputDirectory } from "../tools/output"
-import { isInteractiveTool } from "../tools/types"
-import { disposeToolSession } from "../tools/session"
-import { WorkspaceUndo } from "../tools/undo"
-import type {
-  ElicitationAnswer,
-  ElicitationRequest,
-  ElicitationResult,
-  RegisteredTool,
-  ToolEvent,
-} from "../tools/types"
-import {
-  COMPACTION_TRIGGER_RATIO,
-  estimateHistoryTokens,
-  resolveCompactionTarget,
-  splitForCompaction,
-  summarizeHistory,
-  tailBudget,
-} from "./compaction"
-import type { CompactionTrigger } from "./compaction"
-import type { AgentEvent, AgentState, DenialCause, QueuedEntry, SessionStartedEvent } from "./events"
-import { activeHistory, rewindConversation, type ConversationCheckpoint, type HistoryItem } from "./history"
-import { isMessageId } from "./message-id"
-import { ToolLoopDetector } from "./loop-detection"
+} from "../../secrets/data"
+import { redactJsonObject, redactText } from "../../secrets/redactor"
+import type { SessionExport } from "../../sessions/export"
+import { SessionRecorder } from "../../sessions/recorder"
+import { isPersistable } from "../../sessions/records"
+import { normalizeSessionTitle, titleFromInput } from "../../sessions/title"
+import type { SessionMeta } from "../../sessions/types"
+import { expandSkillInvocation } from "../../skills/invoke"
+import { getTool, listTools } from "../../tools/registry"
+import { toolOutputDirectory } from "../../tools/output"
+import { isInteractiveTool } from "../../tools/types"
+import { disposeToolSession } from "../../tools/session"
+import { WorkspaceUndo } from "../../tools/undo"
+import type { ElicitationAnswer, RegisteredTool, ToolEvent } from "../../tools/types"
+import type { AgentEvent, AgentState, DenialCause, SessionStartedEvent } from "../events"
+import { activeHistory, type ConversationCheckpoint, type HistoryItem } from "../history"
+import { isMessageId } from "../message-id"
+import { composeSystemPrompt } from "../prompt/registry"
+import type { SessionKind } from "../types"
+import { backgroundResultsMessage, SessionAsyncState } from "./async"
+import { autoCompact, runCompaction, type CompactionHost } from "./compaction"
+import { performRedo, performUndo, RedoStack, type HistoryMoveHost } from "./history-moves"
+import { PendingInteractions } from "./interactions"
 import { OutputContract, parseOutputSchema } from "./output-contract"
-import { composeSystemPrompt } from "./prompt"
-import { backgroundResultsMessage, SessionAsyncState } from "./session-async"
-import { StreamBuffer, streamProviderTurn, type StreamRoundHost } from "./session-stream"
+import { InputQueue, isDirectShellInput } from "./queue"
+import { StreamBuffer, type StreamRoundHost } from "./stream"
+import { runDirectShell, runTurn, type TurnHost } from "./turn"
+import { ToolCallRunner, type ToolRunnerHost } from "./tool-runner"
 import {
   addUsage,
   isAbortError,
@@ -75,41 +63,12 @@ import {
   type AgentSessionState,
   type CompactionOutcome,
   type ForkOutcome,
-  type RedoEntry,
   type RedoOutcome,
   type ResumeTarget,
   type TurnUsage,
   type UndoCheckpoint,
   type UndoOutcome,
-} from "./session-types"
-import {
-  ToolCallRunner,
-  type ApprovalResult,
-  type PreparedToolCall,
-  type ToolCallEntry,
-  type ToolCallOutcome,
-  type ToolRunnerHost,
-} from "./tool-runner"
-import type { SessionKind } from "./types"
-
-const MAX_COMPACTION_FAILURES = 2
-
-interface PendingElicitation {
-  requestId: string
-  callId: string
-  request: ElicitationRequest
-  resolve(result: ElicitationResult): void
-}
-
-function directShellCommand(input: UserInput): string | undefined {
-  if (input.images.length > 0) return undefined
-  const text = input.text.trimStart()
-  return text.startsWith("!") ? text.slice(1).trim() : undefined
-}
-
-function isDirectShellInput(input: UserInput): boolean {
-  return directShellCommand(input) !== undefined
-}
+} from "./types"
 
 function recordedContext(events: AgentEvent[]): number | undefined {
   for (let index = events.length - 1; index >= 0; index--) {
@@ -133,8 +92,7 @@ export class AgentSession {
   private items: HistoryItem[] = []
   private events: AgentEvent[] = []
   private checkpoints: ConversationCheckpoint[] = []
-  private redos: RedoEntry[] = []
-  private redoInvalidated: string | undefined
+  private readonly redoStack = new RedoStack()
   private contextTokens: number | undefined
   private compactionFailures = 0
   private readonly turnEndToolEvents = new Map<string, ToolEvent[]>()
@@ -147,7 +105,9 @@ export class AgentSession {
   private readonly inheritedDenyMode: PermissionMode | undefined
   private readonly asyncState: SessionAsyncState
   private readonly toolRunner: ToolCallRunner
+  private readonly interactions: PendingInteractions
   private readonly buffer = new StreamBuffer((event) => this.emit(event))
+  private readonly queue = new InputQueue((event) => this.emit(event))
   private outputDirectory: string
   private cwd: string
   private workspaceUndo: WorkspaceUndo
@@ -161,9 +121,6 @@ export class AgentSession {
   private plan: SessionPlan | undefined
   private planHandoffActive = false
   private abortController: AbortController | undefined
-  private pendingApproval: ((result: ApprovalResult) => void) | undefined
-  private pendingElicitation: PendingElicitation | undefined
-  private queued: UserInput[] = []
   private turnActive = false
   private acceptingQueuedInput = false
   private promoteOnAbort = false
@@ -201,6 +158,13 @@ export class AgentSession {
       onResultsQueued: () => queueMicrotask(() => this.startBackgroundResultTurn()),
     })
     this.asyncState.register()
+    this.interactions = new PendingInteractions({
+      interactive: this.interactive,
+      cwd: () => this.cwd,
+      permissionSessionKey: () => this.sessionPermissionKey,
+      emit: (event) => this.emit(event),
+      setState: (state) => this.setState(state),
+    })
     this.toolRunner = new ToolCallRunner(this.toolRunnerHost())
     profileSessionCreated(this.sessionId, this.kind, this.provider.id, this.model, this.thinking)
   }
@@ -230,11 +194,73 @@ export class AgentSession {
       updateToolCall: (call) => this.updateToolCall(call),
       publishToolEvent: (event) => this.publishToolEvent(event),
       setTurnEndToolEvents: (tool, events) => this.turnEndToolEvents.set(tool, events),
-      requestInput: (callId, request, signal) => this.requestInput(callId, request, signal),
-      requestApproval: (resolve) => {
-        this.pendingApproval = resolve
-      },
+      requestInput: (callId, request, signal) => this.interactions.requestInput(callId, request, signal),
+      requestApproval: (resolve) => this.interactions.awaitApproval(resolve),
       changeWorkspace: (cwd) => this.changeWorkspace(cwd),
+    }
+  }
+
+  private turnHost(): TurnHost {
+    return {
+      toolRunner: this.toolRunner,
+      hookReporter: this.hookReporter,
+      outputContract: () => this.outputContract,
+      queuedPromptNext: () => this.queue.promptFirst,
+      asyncResultsQueued: () => this.asyncState.hasQueued(),
+      emit: (event) => this.emit(event),
+      setState: (state) => this.setState(state),
+      pushItem: (item) => this.pushItem(item),
+      publishToolEvent: (event) => this.publishToolEvent(event),
+      hookContext: (signal) => this.hookContext(signal),
+      streamRound: (usage) => this.streamHost(usage),
+      drainBackgroundResults: () => this.drainBackgroundResults(),
+      drainQueue: (signal) => this.drainQueue(signal),
+      autoCompact: (signal, provider, model) => autoCompact(this.compactionHost(), signal, provider, model),
+      beginCheckpoint: async (messageId, input) => {
+        this.ensureTitle(input)
+        await this.checkpoint(messageId, input)
+      },
+      stopAcceptingInput: () => {
+        this.acceptingQueuedInput = false
+      },
+      drainTurnEndEvents: () => this.drainTurnEndEvents(),
+    }
+  }
+
+  private compactionHost(): CompactionHost {
+    return {
+      kind: this.kind,
+      sessionId: () => this.sessionId,
+      history: () => this.items,
+      contextTokens: () => this.contextTokens,
+      compactionFailures: () => this.compactionFailures,
+      recordFailure: () => {
+        this.compactionFailures += 1
+      },
+      replaceHistory: (item) => {
+        this.items = []
+        this.pushItem(item)
+        this.contextTokens = undefined
+        this.compactionFailures = 0
+      },
+      setState: (state) => this.setState(state),
+      emit: (event) => this.emit(event),
+    }
+  }
+
+  private historyMoveHost(): HistoryMoveHost {
+    return {
+      redoStack: this.redoStack,
+      workspaceUndo: () => this.workspaceUndo,
+      conversation: () => ({ items: this.items, checkpoints: this.checkpoints }),
+      restoreConversation: (state) => {
+        this.items = state.items
+        this.checkpoints = state.checkpoints
+        this.contextTokens = undefined
+        this.compactionFailures = 0
+      },
+      recordEvent: (event) => this.recordEvent(event),
+      notify: (event) => this.notifyRedacted(event),
     }
   }
 
@@ -359,8 +385,7 @@ export class AgentSession {
     this.items = []
     this.events = []
     this.checkpoints = []
-    this.redos = []
-    this.redoInvalidated = undefined
+    this.redoStack.reset()
     this.workspaceUndo = new WorkspaceUndo(this.cwd)
     this.contextTokens = undefined
     this.compactionFailures = 0
@@ -443,8 +468,7 @@ export class AgentSession {
       input: redactUserInput(checkpoint.input),
       before: checkpoint.before.map(redactHistoryItem),
     }))
-    this.redos = []
-    this.redoInvalidated = undefined
+    this.redoStack.reset()
     this.workspaceUndo = new WorkspaceUndo(this.cwd)
     this.workspaceUndo.seed(
       this.checkpoints.map((checkpoint) => ({ messageId: checkpoint.messageId, prompt: checkpoint.input.text })),
@@ -530,7 +554,7 @@ export class AgentSession {
     this.workspaceUndo.seed(
       this.checkpoints.map((checkpoint) => ({ messageId: checkpoint.messageId, prompt: checkpoint.input.text })),
     )
-    this.invalidateRedos("Redo is unavailable because the workspace changed.")
+    this.redoStack.invalidate("Redo is unavailable because the workspace changed.")
     this.emit({ type: "workspace_changed", cwd: next, previous })
   }
 
@@ -556,8 +580,7 @@ export class AgentSession {
     }
     if (this.movingHistory) return false
     if (this.turnActive) {
-      this.queued.push(redacted)
-      this.emit({ type: "queue_changed", entries: this.queueEntries() })
+      this.queue.push(redacted)
       return true
     }
     if (this.state !== "idle") return false
@@ -571,8 +594,7 @@ export class AgentSession {
 
   steer(text: string): boolean {
     if (this.movingHistory || !this.turnActive || !this.acceptingQueuedInput) return false
-    this.queued.push(redactUserInput({ text, images: [] }))
-    this.emit({ type: "queue_changed", entries: this.queueEntries() })
+    this.queue.push(redactUserInput({ text, images: [] }))
     return true
   }
 
@@ -603,7 +625,7 @@ export class AgentSession {
     let errored = false
     const usage: TurnUsage = {}
     void prepare(controller.signal)
-      .then(() => this.runTurn(controller.signal, provider, model, thinking, usage))
+      .then(() => runTurn(this.turnHost(), controller.signal, provider, model, thinking, usage))
       .catch((error) => {
         if (isAbortError(error) || controller.signal.aborted) {
           this.emit({ type: "turn_interrupted" })
@@ -618,20 +640,21 @@ export class AgentSession {
         this.acceptingQueuedInput = false
         this.abortController = undefined
         this.setState("idle")
-        if (!errored && controller.signal.aborted && this.promoteOnAbort && this.queued.length > 0) {
+        if (!errored && controller.signal.aborted && this.promoteOnAbort && this.queue.first !== undefined) {
           this.startNextQueued()
           return
         }
         if (controller.signal.aborted) {
-          this.flushQueue()
+          this.queue.flush()
           this.startBackgroundResultTurn()
           return
         }
-        if (!errored && this.queued[0] !== undefined && isDirectShellInput(this.queued[0]) && this.startNextQueued()) {
+        const first = this.queue.first
+        if (!errored && first !== undefined && isDirectShellInput(first) && this.startNextQueued()) {
           return
         }
         if (this.startBackgroundResultTurn()) return
-        this.flushQueue()
+        this.queue.flush()
       })
   }
 
@@ -644,7 +667,7 @@ export class AgentSession {
     this.promoteOnAbort = false
     this.setState("running_tool")
     let errored = false
-    void this.runDirectShell(input, controller.signal)
+    void runDirectShell(this.turnHost(), input, controller.signal)
       .catch((error) => {
         if (isAbortError(error) || controller.signal.aborted) {
           this.emit({ type: "turn_interrupted" })
@@ -660,41 +683,30 @@ export class AgentSession {
         this.setState("idle")
         if (!errored && (!controller.signal.aborted || this.promoteOnAbort) && this.startNextQueued()) return
         if (controller.signal.aborted) {
-          this.flushQueue()
+          this.queue.flush()
           this.startBackgroundResultTurn()
           return
         }
         if (this.startBackgroundResultTurn()) return
-        this.flushQueue()
+        this.queue.flush()
       })
   }
 
   private startNextQueued(): boolean {
-    const first = this.queued[0]
-    if (!first) return false
-    if (isDirectShellInput(first)) {
-      this.queued.shift()
-      this.emit({ type: "queue_changed", entries: this.queueEntries() })
-      this.startDirectShell(first)
+    const shell = this.queue.takeDirectShell()
+    if (shell) {
+      this.startDirectShell(shell)
       return true
     }
-    const boundary = this.queued.findIndex(isDirectShellInput)
-    const inputs = this.queued.splice(0, boundary < 0 ? this.queued.length : boundary)
-    this.emit({ type: "queue_changed", entries: this.queueEntries() })
+    const inputs = this.queue.takePrompts()
+    if (inputs.length === 0) return false
     this.startTurn(inputs)
     return true
   }
 
-  private queueEntries(): QueuedEntry[] {
-    return this.queued.map((input) => ({ text: input.text, imageCount: input.images.length }))
-  }
-
   private async drainQueue(signal: AbortSignal): Promise<boolean> {
-    if (this.queued.length === 0) return false
-    const boundary = this.queued.findIndex(isDirectShellInput)
-    if (boundary === 0) return false
-    const inputs = this.queued.splice(0, boundary < 0 ? this.queued.length : boundary)
-    this.emit({ type: "queue_changed", entries: this.queueEntries() })
+    const inputs = this.queue.takePrompts()
+    if (inputs.length === 0) return false
     await this.acceptInputs(inputs, signal)
     return true
   }
@@ -712,11 +724,7 @@ export class AgentSession {
       try {
         await this.acceptInput(input, signal)
       } catch (error) {
-        const remaining = inputs.slice(index + 1)
-        if (remaining.length > 0) {
-          this.queued.unshift(...remaining)
-          this.emit({ type: "queue_changed", entries: this.queueEntries() })
-        }
+        this.queue.restore(inputs.slice(index + 1))
         throw error
       }
     }
@@ -735,9 +743,7 @@ export class AgentSession {
     }
 
     const messageId = crypto.randomUUID()
-    this.invalidateRedos("Redo is unavailable because a new prompt created a divergent branch.")
-    if (this.trackUndoPrompts) await this.workspaceUndo.markPromptAfterCaptures(messageId, input.text)
-    this.checkpoints.push({ messageId, input: redactUserInput(input), before: [...this.items] })
+    await this.checkpoint(messageId, input)
     this.emit({
       type: "user_message",
       messageId,
@@ -748,71 +754,10 @@ export class AgentSession {
     this.pushItem(this.userMessage(input, redactText(outcome.text), messageId))
   }
 
-  private async runDirectShell(input: UserInput, signal: AbortSignal): Promise<void> {
-    const command = directShellCommand(input)
-    if (command === undefined) throw new Error("direct shell received a regular prompt")
-    const messageId = crypto.randomUUID()
-    const requestedCall: ToolCallItem = {
-      type: "tool_call",
-      callId: `direct-shell-${crypto.randomUUID()}`,
-      name: "bash",
-      args: { command },
-    }
-
-    let outcome: ToolCallOutcome | undefined
-    let prepared: PreparedToolCall | undefined
-    if (!command) {
-      outcome = this.toolRunner.outcome(requestedCall, "", false, `${TOOL_FAILED_PREFIX}shell command is empty`)
-    } else {
-      const entry = await this.toolRunner.applyBeforeToolHook(requestedCall, signal, false)
-      if (entry.type === "outcome") {
-        outcome = entry.outcome
-      } else {
-        const preparation = await this.toolRunner.prepare(entry.call, signal)
-        if (preparation.type === "outcome") outcome = preparation.outcome
-        else prepared = preparation.prepared
-      }
-    }
-
-    this.ensureTitle(input)
-    this.invalidateRedos("Redo is unavailable because a new prompt created a divergent branch.")
+  private async checkpoint(messageId: string, input: UserInput): Promise<void> {
+    this.redoStack.invalidate("Redo is unavailable because a new prompt created a divergent branch.")
     if (this.trackUndoPrompts) await this.workspaceUndo.markPromptAfterCaptures(messageId, input.text)
-    this.checkpoints.push({ messageId, input, before: [...this.items] })
-    if (prepared) outcome = await this.toolRunner.execute(prepared, signal)
-    if (!outcome) throw new Error("direct shell did not produce an outcome")
-
-    const executed = outcome.call.args.command
-    const executedCommand = typeof executed === "string" ? executed.trim() : command
-
-    const finished: Extract<AgentEvent, { type: "shell_finished" }> = {
-      type: "shell_finished",
-      messageId,
-      callId: outcome.call.callId,
-      input: input.text,
-      command: executedCommand,
-      output: outcome.output,
-      readOnly: outcome.readOnly,
-      ...(outcome.execution ? { execution: outcome.execution } : {}),
-      ...(outcome.denial ? { denial: outcome.denial } : {}),
-    }
-    this.emit(finished)
-    this.pushItem({
-      type: "direct_shell",
-      messageId: finished.messageId,
-      callId: finished.callId,
-      input: finished.input,
-      command: finished.command,
-      output: finished.output,
-      readOnly: finished.readOnly,
-      ...(finished.denial ? { denial: finished.denial } : {}),
-    })
-    for (const event of outcome.events) this.publishToolEvent(event)
-
-    if (signal.aborted) {
-      this.emit({ type: "turn_interrupted" })
-      return
-    }
-    await this.endTurn({}, outcome.output, signal)
+    this.checkpoints.push({ messageId, input: redactUserInput(input), before: [...this.items] })
   }
 
   private ensureTitle(input: UserInput): void {
@@ -824,19 +769,6 @@ export class AgentSession {
   private userMessage(input: UserInput, modelText: string, messageId: string): UserMessageItem {
     if (modelText === input.text) return { type: "user_message", ...input, messageId }
     return { type: "user_message", ...input, messageId, modelText }
-  }
-
-  private flushQueue(): void {
-    if (this.queued.length === 0) return
-    const inputs = this.queued.splice(0)
-    this.emit({ type: "queue_changed", entries: [] })
-    this.emit({ type: "queue_flushed", inputs })
-  }
-
-  private invalidateRedos(reason: string): void {
-    if (this.redos.length === 0) return
-    this.redos = []
-    this.redoInvalidated = reason
   }
 
   async undoCheckpoints(): Promise<UndoCheckpoint[]> {
@@ -863,174 +795,32 @@ export class AgentSession {
 
     this.movingHistory = true
     try {
-      return await this.performUndo(checkpoint)
+      return await performUndo(this.historyMoveHost(), checkpoint)
     } finally {
       this.movingHistory = false
       this.startBackgroundResultTurn()
-    }
-  }
-
-  private async performUndo(checkpoint: ConversationCheckpoint): Promise<UndoOutcome> {
-    let codeRewind: import("../tools/undo").CodeRewind
-    try {
-      codeRewind = await this.workspaceUndo.rewind(checkpoint.messageId)
-    } catch (error) {
-      return { status: "stopped", message: describeError(error) }
-    }
-
-    const rewound = rewindConversation({ items: this.items, checkpoints: this.checkpoints }, checkpoint.messageId)
-    if (!rewound) {
-      try {
-        await codeRewind.rollback()
-      } catch (error) {
-        return {
-          status: "stopped",
-          message: `the checkpoint changed and code rollback failed: ${describeError(error)}`,
-        }
-      }
-      return { status: "invalid" }
-    }
-    if (codeRewind.steps !== rewound.redos.length) {
-      try {
-        await codeRewind.rollback()
-      } catch (error) {
-        return {
-          status: "stopped",
-          message: `conversation and code history disagree; code rollback also failed: ${describeError(error)}`,
-        }
-      }
-      return { status: "stopped", message: "conversation and code history disagree" }
-    }
-
-    const fileCount = codeRewind.count
-    let recorded: AgentEvent
-    try {
-      recorded = await this.recordEvent({
-        type: "conversation_rewound",
-        messageId: checkpoint.messageId,
-        prompt: checkpoint.input.text,
-        removedMessages: rewound.removedMessages,
-        fileCount,
-      })
-    } catch (error) {
-      try {
-        await codeRewind.rollback()
-      } catch (rollbackError) {
-        return {
-          status: "stopped",
-          message: `the conversation could not be saved: ${describeError(error)}; code rollback also failed: ${describeError(rollbackError)}`,
-        }
-      }
-      return { status: "stopped", message: `the conversation could not be saved: ${describeError(error)}` }
-    }
-
-    const codeRedos = codeRewind.commit()
-    this.items = rewound.active.items
-    this.checkpoints = rewound.active.checkpoints
-    this.contextTokens = undefined
-    this.compactionFailures = 0
-    this.redoInvalidated = undefined
-    const branch = this.workspaceUndo.branch
-    this.redos.push(
-      ...rewound.redos
-        .map((conversation, index): RedoEntry => {
-          const code = codeRedos[index]
-          if (!code) throw new Error("conversation and code redo history disagree")
-          return {
-            messageId: conversation.messageId,
-            prompt: conversation.prompt,
-            conversation: conversation.state,
-            code,
-            fileCount: code.count,
-            branch,
-          }
-        })
-        .toReversed(),
-    )
-    this.notifyRedacted(recorded)
-    return {
-      status: "undone",
-      prompt: checkpoint.input.text,
-      fileCount,
-      input: rewound.input,
     }
   }
 
   async redo(): Promise<RedoOutcome> {
     if (this.currentState !== "idle" || this.asyncState.hasPendingAgentWork()) return { status: "busy" }
-    const entry = this.redos.at(-1)
+    const entry = this.redoStack.peek()
     if (!entry) {
-      return this.redoInvalidated ? { status: "nothing", message: this.redoInvalidated } : { status: "nothing" }
+      const invalidated = this.redoStack.message
+      return invalidated ? { status: "nothing", message: invalidated } : { status: "nothing" }
     }
     if (entry.branch !== this.workspaceUndo.branch) {
-      this.redos = []
-      this.redoInvalidated = "Redo is unavailable because a new agent change created a divergent branch."
-      return { status: "nothing", message: this.redoInvalidated }
+      const message = "Redo is unavailable because a new agent change created a divergent branch."
+      this.redoStack.invalidate(message)
+      return { status: "nothing", message }
     }
 
     this.movingHistory = true
     try {
-      return await this.performRedo(entry)
+      return await performRedo(this.historyMoveHost(), entry)
     } finally {
       this.movingHistory = false
       this.startBackgroundResultTurn()
-    }
-  }
-
-  private async performRedo(entry: RedoEntry): Promise<RedoOutcome> {
-    let applied: import("../tools/undo").AppliedCodeRedo
-    try {
-      applied = await entry.code.apply()
-    } catch (error) {
-      return { status: "stopped", message: describeError(error) }
-    }
-
-    const restoredMessages = entry.conversation.checkpoints.length - this.checkpoints.length
-    if (restoredMessages < 1) {
-      try {
-        await applied.rollback()
-      } catch (error) {
-        return {
-          status: "stopped",
-          message: `the superseded conversation is unavailable; code rollback also failed: ${describeError(error)}`,
-        }
-      }
-      return { status: "stopped", message: "the superseded conversation is unavailable" }
-    }
-
-    let recorded: AgentEvent
-    try {
-      recorded = await this.recordEvent({
-        type: "conversation_redone",
-        messageId: entry.messageId,
-        prompt: entry.prompt,
-        restoredMessages,
-        fileCount: entry.fileCount,
-      })
-    } catch (error) {
-      try {
-        await applied.rollback()
-      } catch (rollbackError) {
-        return {
-          status: "stopped",
-          message: `the conversation could not be saved: ${describeError(error)}; code rollback also failed: ${describeError(rollbackError)}`,
-        }
-      }
-      return { status: "stopped", message: `the conversation could not be saved: ${describeError(error)}` }
-    }
-
-    this.items = entry.conversation.items
-    this.checkpoints = entry.conversation.checkpoints
-    this.contextTokens = undefined
-    this.compactionFailures = 0
-    applied.commit()
-    this.redos.pop()
-    this.redoInvalidated = undefined
-    this.notifyRedacted(recorded)
-    return {
-      status: "redone",
-      prompt: entry.prompt,
-      fileCount: entry.fileCount,
     }
   }
 
@@ -1040,7 +830,14 @@ export class AgentSession {
     this.abortController = controller
     this.setState("compacting")
     try {
-      const compacted = await this.runCompaction(controller.signal, this.provider, this.model, "manual", instructions)
+      const compacted = await runCompaction(
+        this.compactionHost(),
+        controller.signal,
+        this.provider,
+        this.model,
+        "manual",
+        instructions,
+      )
       return compacted ? "compacted" : "nothing"
     } catch (error) {
       if (!isAbortError(error) && !controller.signal.aborted) throw error
@@ -1053,82 +850,26 @@ export class AgentSession {
   }
 
   approve(scope: PermissionScope = "once", pattern?: string): void {
-    this.resolveApproval({ decision: "allow", scope, pattern })
+    this.interactions.resolveApproval({ decision: "allow", scope, pattern })
   }
 
   deny(cause: DenialCause = "user", message?: string): void {
-    this.resolveApproval({ decision: "deny", cause, message })
+    this.interactions.resolveApproval({ decision: "deny", cause, message })
   }
 
   answerElicitation(requestId: string, answers: ElicitationAnswer[]): boolean {
-    const pending = this.pendingElicitation
-    if (!pending || pending.requestId !== requestId) return false
-
-    const byQuestion = new Map(answers.map((answer) => [answer.questionId, answer.value.trim()]))
-    if (byQuestion.size !== answers.length || byQuestion.size !== pending.request.questions.length) return false
-    if ([...byQuestion.values()].some((value) => !value)) return false
-
-    const normalized = pending.request.questions.flatMap((question): ElicitationAnswer[] => {
-      const value = byQuestion.get(question.id)
-      return value === undefined ? [] : [{ questionId: question.id, value }]
-    })
-    if (normalized.length !== pending.request.questions.length) return false
-
-    this.resolveElicitation({ status: "answered", answers: normalized })
-    return true
+    return this.interactions.answerElicitation(requestId, answers)
   }
 
   rejectElicitation(requestId: string): boolean {
-    if (this.pendingElicitation?.requestId !== requestId) return false
-    this.resolveElicitation({ status: "rejected" })
-    return true
+    return this.interactions.rejectElicitation(requestId)
   }
 
   interrupt(queued: "promote" | "flush" = "flush"): void {
     this.promoteOnAbort = queued === "promote"
     this.abortController?.abort()
-    this.resolveApproval({ decision: "deny", cause: "user" })
-    this.resolveElicitation({ status: "rejected" })
-  }
-
-  private resolveApproval(result: ApprovalResult): void {
-    const resolve = this.pendingApproval
-    if (!resolve) return
-    this.pendingApproval = undefined
-    if (result.pattern && result.scope && result.scope !== "once") {
-      rememberRule(this.sessionPermissionKey, this.cwd, result.pattern, result.scope).catch((error) => {
-        this.emit({ type: "error", message: describeError(error) })
-      })
-    }
-    resolve(result)
-  }
-
-  private resolveElicitation(result: ElicitationResult): void {
-    const pending = this.pendingElicitation
-    if (!pending) return
-    this.pendingElicitation = undefined
-    this.emit({ type: "elicitation_resolved", callId: pending.callId })
-    pending.resolve(result)
-  }
-
-  private async requestInput(
-    callId: string,
-    request: ElicitationRequest,
-    signal: AbortSignal,
-  ): Promise<ElicitationResult> {
-    if (!this.interactive) throw new Error("user input is unavailable without an interactive client")
-    if (request.questions.length === 0) throw new Error("user input requires at least one question")
-    if (this.pendingElicitation) throw new Error("another user input request is already pending")
-    if (signal.aborted) return { status: "rejected" }
-
-    const requestId = crypto.randomUUID()
-    const result = await new Promise<ElicitationResult>((resolve) => {
-      this.pendingElicitation = { requestId, callId, request, resolve }
-      this.setState("awaiting_input")
-      this.emit({ type: "elicitation_requested", requestId, callId, questions: request.questions })
-    })
-    if (!signal.aborted) this.setState("running_tool")
-    return result
+    this.interactions.resolveApproval({ decision: "deny", cause: "user" })
+    this.interactions.resolveElicitation({ status: "rejected" })
   }
 
   private availableTools(): RegisteredTool[] {
@@ -1209,56 +950,10 @@ export class AgentSession {
     this.pushItem({ type: "tool_result", callId: call.callId, output })
   }
 
-  private async runCompaction(
-    signal: AbortSignal,
-    provider: Provider,
-    model: string,
-    trigger: CompactionTrigger,
-    instructions?: string,
-  ): Promise<boolean> {
-    const budget = tailBudget(await contextWindow(provider, model), trigger)
-    const { head, tail, replaced } = splitForCompaction(this.items, budget)
-    if (head.length === 0) return false
-
-    this.setState("compacting")
-    const target = await resolveCompactionTarget(provider, model)
-    const summary = await summarizeHistory({
-      provider,
-      model: target.model,
-      historyModel: model,
-      thinking: target.thinking,
-      sessionId: this.sessionId,
-      kind: this.kind,
-      history: head,
-      instructions,
-      signal,
-    })
-
-    const tokensBefore = this.contextTokens
-    this.items = []
-    this.pushItem({ type: "compaction", summary, replaced, tokensBefore, retained: tail })
-    this.contextTokens = undefined
-    this.compactionFailures = 0
-    this.emit({ type: "compacted", summary, replaced, tokensBefore })
-    return true
-  }
-
-  private async autoCompact(signal: AbortSignal, provider: Provider, model: string): Promise<void> {
-    if (this.compactionFailures >= MAX_COMPACTION_FAILURES) return
-    const tokens = this.contextTokens ?? estimateHistoryTokens(activeHistory(this.items))
-    const window = await contextWindow(provider, model)
-    if (window === undefined || tokens < window * COMPACTION_TRIGGER_RATIO) return
-
-    try {
-      await this.runCompaction(signal, provider, model, "auto")
-    } catch (error) {
-      if (isAbortError(error) || signal.aborted) return
-      this.compactionFailures += 1
-      this.emit({
-        type: "error",
-        message: `context compaction failed: ${describeError(error)} — run /compact to retry`,
-      })
-    }
+  private drainTurnEndEvents(): ToolEvent[] {
+    const events = [...this.turnEndToolEvents.values()].flat()
+    this.turnEndToolEvents.clear()
+    return events
   }
 
   private streamHost(usage: TurnUsage): StreamRoundHost {
@@ -1301,147 +996,6 @@ export class AgentSession {
       tools: tools.map(({ name, description, parameters }) => ({ name, description, parameters })),
       sessionId: this.id,
       signal,
-    })
-  }
-
-  private async runTurn(
-    signal: AbortSignal,
-    provider: Provider,
-    model: string,
-    thinking: ThinkingEffort | undefined,
-    usage: TurnUsage,
-  ): Promise<void> {
-    const toolLoops = new ToolLoopDetector()
-
-    while (true) {
-      if (this.drainBackgroundResults()) toolLoops.reset()
-      await this.autoCompact(signal, provider, model)
-      if (signal.aborted) {
-        this.emit({ type: "turn_interrupted" })
-        return
-      }
-      if (await this.drainQueue(signal)) toolLoops.reset()
-
-      this.setState("streaming")
-      const items = await streamProviderTurn(this.streamHost(usage), signal, provider, model, thinking)
-      if (!items) return
-
-      this.buffer.flush()
-      for (const item of items) this.pushItem(item)
-
-      const toolCalls = items.filter((item): item is ToolCallItem => item.type === "tool_call")
-      if (toolCalls.length === 0) {
-        if (this.queued.length > 0 && !isDirectShellInput(this.queued[0]!)) continue
-        if (this.asyncState.hasQueued()) continue
-        if (this.outputContract) {
-          const correction = this.outputContract.missing()
-          if (this.outputContract.exhausted) throw this.outputContract.failure()
-          this.pushItem({ type: "user_message", text: correction, images: [] })
-          continue
-        }
-        const final = items.findLast((item) => item.type === "assistant_message")
-        await this.endTurn(usage, final?.type === "assistant_message" ? final.text : undefined, signal)
-        return
-      }
-
-      let loopError: Error | undefined
-      let requiresContinuation = false
-      let sharedEntries: ToolCallEntry[] = []
-      for (const [index, call] of toolCalls.entries()) {
-        const entry = await this.toolRunner.applyBeforeToolHook(call, signal)
-        if (this.toolRunner.concurrency(entry) === "shared") {
-          sharedEntries.push(entry)
-          continue
-        }
-
-        if (sharedEntries.length > 0) {
-          const outcome = await this.toolRunner.runBatch(
-            { concurrency: "shared", entries: sharedEntries },
-            signal,
-            toolLoops,
-          )
-          loopError = outcome.error
-          requiresContinuation ||= outcome.requiresContinuation
-          sharedEntries = []
-          const stopReason = this.toolRunner.stopReason(loopError, signal)
-          if (stopReason) {
-            this.toolRunner.finishSkippedEntry(entry, stopReason)
-            for (const remaining of toolCalls.slice(index + 1)) this.toolRunner.finishSkippedCall(remaining, stopReason)
-            break
-          }
-        }
-
-        const outcome = await this.toolRunner.runBatch(
-          { concurrency: "exclusive", entries: [entry] },
-          signal,
-          toolLoops,
-        )
-        loopError = outcome.error
-        requiresContinuation ||= outcome.requiresContinuation
-        const stopReason = this.toolRunner.stopReason(loopError, signal)
-        if (!stopReason) continue
-        for (const remaining of toolCalls.slice(index + 1)) this.toolRunner.finishSkippedCall(remaining, stopReason)
-        break
-      }
-      if (sharedEntries.length > 0) {
-        const outcome = await this.toolRunner.runBatch(
-          { concurrency: "shared", entries: sharedEntries },
-          signal,
-          toolLoops,
-        )
-        loopError = outcome.error
-        requiresContinuation ||= outcome.requiresContinuation
-      }
-      if (loopError) throw loopError
-      if (this.outputContract?.output) {
-        if ((this.queued.length > 0 && !isDirectShellInput(this.queued[0]!)) || this.asyncState.hasQueued()) {
-          this.outputContract.reset()
-          continue
-        }
-        await this.endTurn(usage, this.outputContract.output, signal)
-        return
-      }
-      if (this.outputContract?.exhausted) throw this.outputContract.failure()
-
-      if (signal.aborted) {
-        this.emit({ type: "turn_interrupted" })
-        return
-      }
-
-      if (
-        !requiresContinuation &&
-        (this.queued.length === 0 || isDirectShellInput(this.queued[0]!)) &&
-        !this.asyncState.hasQueued()
-      ) {
-        const final = items.findLast((item) => item.type === "assistant_message")
-        if (final?.type === "assistant_message") {
-          await this.endTurn(usage, final.text, signal)
-          return
-        }
-      }
-    }
-  }
-
-  private async endTurn(usage: TurnUsage, output: string | JsonObject | undefined, signal: AbortSignal): Promise<void> {
-    this.acceptingQueuedInput = false
-    await runTurnEndHooks(
-      {
-        ...(output === undefined ? {} : { output }),
-        ...(usage.turn ? { usage: usage.turn } : {}),
-        ...(usage.context ? { context: usage.context } : {}),
-      },
-      this.hookContext(signal),
-      this.hookReporter,
-    )
-    for (const events of this.turnEndToolEvents.values()) {
-      for (const event of events) this.publishToolEvent(event)
-    }
-    this.turnEndToolEvents.clear()
-    this.emit({
-      type: "turn_ended",
-      usage: usage.turn,
-      context: usage.context,
-      ...(typeof output === "string" || output === undefined ? {} : { output }),
     })
   }
 

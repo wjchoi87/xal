@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { isInteractiveTool, isSessionTool, type ToolResult } from "../tools/types"
+import { isInteractiveTool, isSessionTool, type ToolResult } from "../../tools/types"
 import { OutputContract, parseOutputSchema } from "./output-contract"
 
 async function execute(contract: OutputContract, args: Record<string, unknown>): Promise<ToolResult> {

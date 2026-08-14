@@ -1,4 +1,4 @@
-import { registerPrompt } from "../../agent/prompt"
+import { registerPrompt } from "../../agent/prompt/registry"
 import { contributeRules, isDenied, matchRules } from "../../permissions/rules"
 import { registerPolicyRule } from "../../permissions/service"
 import type { PermissionRequest, PolicyDecision } from "../../permissions/types"

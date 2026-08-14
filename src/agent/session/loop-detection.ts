@@ -1,5 +1,5 @@
-import type { JsonValue } from "../lib/json"
-import type { ToolCallItem } from "../providers/types"
+import type { JsonValue } from "../../lib/json"
+import type { ToolCallItem } from "../../providers/types"
 
 const SIGNATURE_TOKENS = 24
 const SIGNATURE_REPETITIONS = 3

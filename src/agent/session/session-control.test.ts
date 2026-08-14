@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
-import { contributeRules } from "../permissions/rules"
-import { registerTool, unregisterTool } from "../tools/registry"
-import type { ElicitationResult, InteractiveTool, Tool } from "../tools/types"
-import type { AgentEvent } from "./events"
-import { summaryMessage } from "./history"
+import { contributeRules } from "../../permissions/rules"
+import { registerTool, unregisterTool } from "../../tools/registry"
+import type { ElicitationResult, InteractiveTool, Tool } from "../../tools/types"
+import type { AgentEvent } from "../events"
+import { summaryMessage } from "../history"
 import {
   completedRound,
   round,
@@ -13,7 +13,7 @@ import {
   toolRound,
   type AgentSessionTestHarness,
   type ProviderRound,
-} from "./agent-session-test-support"
+} from "./test-support"
 
 let harness: AgentSessionTestHarness
 

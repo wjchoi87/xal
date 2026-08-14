@@ -1,7 +1,7 @@
 import type { JsonObject } from "../lib/json"
 import type { UserInput, Usage } from "../providers/types"
 import type { AgentEvent } from "./events"
-import type { AgentSession } from "./agent-session"
+import type { AgentSession } from "./session/session"
 
 export type AgentRunOutcome =
   | { status: "completed"; response: string | JsonObject; usage?: Usage; context?: Usage }

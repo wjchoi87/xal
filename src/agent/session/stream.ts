@@ -4,14 +4,14 @@ import {
   profileProviderRequestFinished,
   profileProviderRequestStarted,
   type ProviderRequestProfile,
-} from "../profiler/profiler"
-import { ProviderError } from "../providers/errors"
-import type { Provider, ProviderOutputItem, StreamRequest, ThinkingEffort, Usage } from "../providers/types"
-import { createRedactedStream, type RedactedStream } from "../secrets/redactor"
-import type { AgentEvent } from "./events"
+} from "../../profiler/profiler"
+import { ProviderError } from "../../providers/errors"
+import type { Provider, ProviderOutputItem, StreamRequest, ThinkingEffort, Usage } from "../../providers/types"
+import { createRedactedStream, type RedactedStream } from "../../secrets/redactor"
+import type { AgentEvent } from "../events"
 import { OutputLoopDetector, type OutputLoop } from "./loop-detection"
-import { isAbortError } from "./session-types"
-import type { SessionKind } from "./types"
+import { isAbortError } from "./types"
+import type { SessionKind } from "../types"
 
 const MAX_PROVIDER_ATTEMPTS = 6
 

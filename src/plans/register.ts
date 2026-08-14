@@ -1,5 +1,5 @@
 import { basename } from "node:path"
-import { registerPrompt } from "../agent/prompt"
+import { registerPrompt } from "../agent/prompt/registry"
 import { registerCommand } from "../commands/registry"
 import { asString, isRecord } from "../lib/json"
 import { compactPath } from "../lib/path"

@@ -139,7 +139,7 @@ test("an AgentSession approval stays scoped to its session and workspace", async
   try {
     const { registerTool, unregisterTool } = await import("../tools/registry")
     const { completedRound, runSettledTurn, ScriptedProvider, setupAgentSessionTests, toolRound } =
-      await import("../agent/agent-session-test-support")
+      await import("../agent/session/test-support")
     const toolName = `workspace_rule_${crypto.randomUUID().replaceAll("-", "_")}`
     let executions = 0
     const tool = {

@@ -11,8 +11,8 @@ import {
   type BackgroundAgentJob,
   type BackgroundJob,
   type BackgroundProcessJob,
-} from "../background/jobs"
-import type { AgentBackgroundResult, BackgroundResult, ProcessBackgroundResult } from "./events"
+} from "../../background/jobs"
+import type { AgentBackgroundResult, BackgroundResult, ProcessBackgroundResult } from "../events"
 
 const MAX_RESULT_CHARS = 12_000
 const REAP_GRACE_MS = 10_000

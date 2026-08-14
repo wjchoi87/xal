@@ -1,4 +1,4 @@
-import type { AgentSession } from "../agent/agent-session"
+import type { AgentSession } from "../agent/session/session"
 import type { UserInput } from "../providers/types"
 
 export interface SelectOption<T> {

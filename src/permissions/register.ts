@@ -1,4 +1,4 @@
-import { registerPrompt } from "../agent/prompt"
+import { registerPrompt } from "../agent/prompt/registry"
 import type { Settings } from "../config/settings"
 import { configureModes, modeDefinition, type CustomMode } from "./modes"
 import { setUserRules } from "./rules"

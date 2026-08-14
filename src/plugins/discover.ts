@@ -1,4 +1,4 @@
-import { registerPrompt } from "../agent/prompt"
+import { registerPrompt } from "../agent/prompt/registry"
 import { registerCli } from "../cli/registry"
 import { registerCommand } from "../commands/registry"
 import { agentHome } from "../config/paths"

@@ -1,14 +1,14 @@
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import type { JsonObject } from "../lib/json"
-import type { ModelCatalog, Provider, StreamEvent, StreamRequest, Usage, UserInput } from "../providers/types"
-import type { AgentEvent } from "./events"
+import type { JsonObject } from "../../lib/json"
+import type { ModelCatalog, Provider, StreamEvent, StreamRequest, Usage, UserInput } from "../../providers/types"
+import type { AgentEvent } from "../events"
 import type { OutputSchema } from "./output-contract"
-import { runAgentTurn, type AgentRunOutcome } from "./run"
+import { runAgentTurn, type AgentRunOutcome } from "../run"
 
 export type ProviderRound = (request: StreamRequest) => AsyncIterable<StreamEvent>
-export type AgentSessionConstructor = typeof import("./agent-session").AgentSession
+export type AgentSessionConstructor = typeof import("./session").AgentSession
 export type AgentSession = InstanceType<AgentSessionConstructor>
 
 export interface AgentSessionTestHarness {
@@ -31,7 +31,7 @@ export async function setupAgentSessionTests(prefix: string): Promise<AgentSessi
 
   let AgentSessionClass: AgentSessionConstructor
   try {
-    AgentSessionClass = (await import("./agent-session")).AgentSession
+    AgentSessionClass = (await import("./session")).AgentSession
   } catch (error) {
     await cleanup()
     throw error

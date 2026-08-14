@@ -1,5 +1,5 @@
 import type { BoxRenderable, CliRenderer } from "@opentui/core"
-import type { AgentSession } from "../../agent/agent-session"
+import type { AgentSession } from "../../agent/session/session"
 import type { BackgroundAgentTask } from "../../background/registry"
 import { runCommand } from "../../commands/run"
 import type { CommandContext, SelectRequest } from "../../commands/types"
