@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>xal — a terminal coding harness</title>
+    <meta
+      name="description"
+      content="xal is a terminal coding harness with a headless agent core, where every capability — including the interface — is a plugin. One compiled binary."
+    />
+    <meta property="og:title" content="xal — a terminal coding harness" />
+    <meta
+      property="og:description"
+      content="A headless agent core with a plugin for everything else. One compiled binary. Your providers, your rules, your terminal."
+    />
+    <meta property="og:type" content="website" />
+    <meta name="theme-color" content="#0d1117" />
+    <link rel="icon" href="../public/icon-light.svg" type="image/svg+xml" media="(prefers-color-scheme: dark)" />
+    <link rel="icon" href="../public/icon-light-32.png" sizes="32x32" media="(prefers-color-scheme: dark)" />
+    <link rel="icon" href="../public/icon-light-16.png" sizes="16x16" media="(prefers-color-scheme: dark)" />
+    <link rel="icon" href="../public/icon-dark.svg" type="image/svg+xml" media="(prefers-color-scheme: light)" />
+    <link rel="icon" href="../public/icon-dark-32.png" sizes="32x32" media="(prefers-color-scheme: light)" />
+    <link rel="icon" href="../public/icon-dark-16.png" sizes="16x16" media="(prefers-color-scheme: light)" />
+    <link rel="apple-touch-icon" href="../public/apple-touch-icon.png" />
+    <link rel="manifest" href="../public/site.webmanifest" />
+    <link rel="stylesheet" href="./styles.css" />
+    <script>
+      {
+        const stored = localStorage.getItem("theme")
+        const system = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"
+        document.documentElement.dataset.theme = stored === "dark" || stored === "light" ? stored : system
+      }
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <noscript>
+      <div class="noscript">
+        <h1>xal</h1>
+        <p>
+          A terminal coding harness with a headless agent core, where every capability — including the interface — is a
+          plugin. One compiled binary: no runtime, no node_modules.
+        </p>
+        <p>
+          Permissions per tool, plan mode, secret redaction, undo across files and conversation, sub-agents, background
+          jobs, MCP and LSP. Configuration layers a user file with a project file.
+        </p>
+        <p>This page is an emulation of the real terminal interface and needs JavaScript to run.</p>
+      </div>
+    </noscript>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

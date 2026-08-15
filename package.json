@@ -7,6 +7,8 @@
   "packageManager": "bun@1.3.14",
   "scripts": {
     "dev": "bun run --watch apps/cli/src/index.ts",
+    "dev:website": "turbo run dev --filter=xal-website",
+    "build": "turbo run build",
     "test": "turbo run test --",
     "release:local": "turbo run release:local --filter=xal",
     "typecheck": "turbo run typecheck",
