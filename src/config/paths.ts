@@ -24,6 +24,10 @@ export function sessionsDir(): string {
   return join(agentHome(), "sessions")
 }
 
+export function globalMemoryPath(): string {
+  return join(agentHome(), "MEMORY.md")
+}
+
 export function worktreesDir(): string {
   return join(agentHome(), "worktrees")
 }
