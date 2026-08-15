@@ -9,6 +9,8 @@
     "dev": "bun run --watch apps/cli/src/index.ts",
     "dev:website": "turbo run dev --filter=xal-website",
     "build": "turbo run build",
+    "build:website": "bun run --cwd apps/website build",
+    "deploy:website": "wrangler deploy --config apps/website/wrangler.jsonc",
     "test": "turbo run test --",
     "release:local": "turbo run release:local --filter=xal",
     "typecheck": "turbo run typecheck",
@@ -21,6 +23,7 @@
   },
   "devDependencies": {
     "prettier": "^3.9.6",
-    "turbo": "^2.10.10"
+    "turbo": "^2.10.10",
+    "wrangler": "^4.123.0"
   }
 }

@@ -1,0 +1,15 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "xal-website",
+  "compatibility_date": "2026-08-15",
+  "assets": {
+    "directory": "./dist",
+    "html_handling": "drop-trailing-slash",
+  },
+  "routes": [
+    {
+      "pattern": "xal.sh",
+      "custom_domain": true,
+    },
+  ],
+}
