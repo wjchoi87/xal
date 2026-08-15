@@ -158,6 +158,10 @@ export class AgentSession {
     this.asyncState = new SessionAsyncState({
       ownerId: () => this.sessionId,
       onResultsQueued: () => queueMicrotask(() => this.startBackgroundResultTurn()),
+      onAgentWorkSettled: () => {
+        if (this.movingHistory || this.turnActive || this.state !== "idle") return
+        this.settleBackgroundAgents()
+      },
     })
     this.asyncState.register()
     this.interactions = new PendingInteractions({
@@ -613,6 +617,12 @@ export class AgentSession {
     return true
   }
 
+  private settleBackgroundAgents(): boolean {
+    if (this.startBackgroundResultTurn()) return true
+    if (!this.asyncState.hasPendingAgentWork()) discardSettledAgentJobs(this.sessionId)
+    return false
+  }
+
   private startPreparedTurn(prepare: (signal: AbortSignal) => Promise<void>): void {
     this.outputContract?.reset()
     this.turnEndToolEvents.clear()
@@ -649,14 +659,14 @@ export class AgentSession {
         }
         if (controller.signal.aborted) {
           this.queue.flush()
-          this.startBackgroundResultTurn()
+          this.settleBackgroundAgents()
           return
         }
         const first = this.queue.first
         if (!errored && first !== undefined && isDirectShellInput(first) && this.startNextQueued()) {
           return
         }
-        if (this.startBackgroundResultTurn()) return
+        if (this.settleBackgroundAgents()) return
         this.queue.flush()
       })
   }
@@ -687,10 +697,10 @@ export class AgentSession {
         if (!errored && (!controller.signal.aborted || this.promoteOnAbort) && this.startNextQueued()) return
         if (controller.signal.aborted) {
           this.queue.flush()
-          this.startBackgroundResultTurn()
+          this.settleBackgroundAgents()
           return
         }
-        if (this.startBackgroundResultTurn()) return
+        if (this.settleBackgroundAgents()) return
         this.queue.flush()
       })
   }

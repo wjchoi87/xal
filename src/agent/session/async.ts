@@ -12,6 +12,7 @@ import {
   type BackgroundJob,
   type BackgroundProcessJob,
 } from "../../background/jobs"
+import { subscribeBackgroundTasks } from "../../background/registry"
 import type { AgentBackgroundResult, BackgroundResult, ProcessBackgroundResult } from "../events"
 
 const MAX_RESULT_CHARS = 12_000
@@ -138,19 +139,39 @@ export function backgroundResultsMessage(results: BackgroundResult[], ownerId: s
 interface SessionAsyncHost {
   ownerId(): string
   onResultsQueued(): void
+  onAgentWorkSettled(): void
 }
 
 export class SessionAsyncState {
   private epoch = 0
   private queue: BackgroundResult[] = []
+  private agentWorkPending = false
   private unregister: (() => void) | undefined
+  private unregisterTasks: (() => void) | undefined
 
   constructor(private readonly host: SessionAsyncHost) {}
 
   register(): void {
     this.unregister?.()
+    this.unregisterTasks?.()
     this.unregister = registerDeliverySink(this.host.ownerId(), {
       deliver: (job) => this.accept(job),
+    })
+    this.agentWorkPending = this.hasPendingAgentWork()
+    this.unregisterTasks = subscribeBackgroundTasks(() => this.agentWorkChanged())
+  }
+
+  private agentWorkChanged(): void {
+    if (this.hasPendingAgentWork()) {
+      this.agentWorkPending = true
+      return
+    }
+    if (!this.agentWorkPending) return
+    const epoch = this.epoch
+    queueMicrotask(() => {
+      if (epoch !== this.epoch || !this.agentWorkPending || this.hasPendingAgentWork()) return
+      this.agentWorkPending = false
+      this.host.onAgentWorkSettled()
     })
   }
 
@@ -201,6 +222,9 @@ export class SessionAsyncState {
   dispose(): void {
     this.advanceEpoch()
     this.unregister?.()
+    this.unregisterTasks?.()
+    this.agentWorkPending = false
     this.unregister = undefined
+    this.unregisterTasks = undefined
   }
 }
