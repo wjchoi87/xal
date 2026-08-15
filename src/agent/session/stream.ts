@@ -15,6 +15,12 @@ import type { SessionKind } from "../types"
 
 const MAX_PROVIDER_ATTEMPTS = 6
 
+class OutputLoopError extends ProviderError {
+  constructor(message: string) {
+    super(message, { retryable: true })
+  }
+}
+
 export type StreamKind = "assistant" | "reasoning"
 
 export class StreamBuffer {
@@ -121,11 +127,18 @@ export async function streamProviderTurn(
         host.emit({ type: "turn_interrupted" })
         return undefined
       }
-      if (!(error instanceof ProviderError) || !error.retryable || round.received || attempt >= MAX_PROVIDER_ATTEMPTS) {
+      const outputLoop = error instanceof OutputLoopError
+      if (
+        !(error instanceof ProviderError) ||
+        !error.retryable ||
+        (round.received && !outputLoop) ||
+        attempt >= MAX_PROVIDER_ATTEMPTS
+      ) {
         host.buffer.flush()
         throw error
       }
 
+      if (outputLoop) host.buffer.reset()
       const delayMs = error.retryAfterMs ?? 1_000 * 2 ** (attempt - 1)
       attempt += 1
       host.emit({
@@ -165,7 +178,7 @@ async function consumeStream(
   const rejectLoop = (loop: OutputLoop | undefined, label: string): void => {
     if (!loop) return
     const description = loop === "repeated" ? "repeated text" : "low-novelty text"
-    throw new ProviderError(`model output loop detected in ${label}: ${description}`, { retryable: true })
+    throw new OutputLoopError(`model output loop detected in ${label}: ${description}`)
   }
   const detectLoop = (detector: OutputLoopDetector, text: string, label: string): void => {
     rejectLoop(detector.add(text), label)
@@ -201,21 +214,25 @@ async function consumeStream(
         if (event.item.type === "assistant_message") {
           if (!assistantStreamed) {
             detectLoop(outputLoops.assistant, event.item.text, "assistant response")
+            finishLoop(outputLoops.assistant, "assistant response")
             if (item.type === "assistant_message" && item.text) {
               host.emit({ type: "assistant_message", text: item.text })
             }
+          } else {
+            finishLoop(outputLoops.assistant, "assistant response")
           }
-          finishLoop(outputLoops.assistant, "assistant response")
           assistantStreamed = false
         }
         if (event.item.type === "reasoning") {
           if (!reasoningStreamed) {
             detectLoop(outputLoops.reasoning, event.item.summary, "reasoning summary")
+            finishLoop(outputLoops.reasoning, "reasoning summary")
             if (item.type === "reasoning" && item.summary) {
               host.emit({ type: "reasoning_summary", text: item.summary })
             }
+          } else {
+            finishLoop(outputLoops.reasoning, "reasoning summary")
           }
-          finishLoop(outputLoops.reasoning, "reasoning summary")
           reasoningStreamed = false
         }
         round.items.push(item)

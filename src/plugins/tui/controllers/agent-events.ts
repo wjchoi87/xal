@@ -141,6 +141,8 @@ export class AgentEventController {
         this.reasoningStreamed = false
         break
       case "retry_scheduled":
+        this.assistantStreamed = false
+        this.reasoningStreamed = false
         scrollback.append({
           kind: "info",
           text: `retrying in ${Math.ceil(event.delayMs / 1_000)}s · attempt ${event.attempt}/${event.maxAttempts} · ${event.message}`,
