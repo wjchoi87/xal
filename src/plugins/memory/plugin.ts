@@ -27,7 +27,7 @@ const plugin: Plugin = {
       },
     })
     ctx.registerTool(createMemoryTool(current))
-    ctx.registerPermissionRules({ ask: ["memory(replace)", "memory(clear)"] })
+    ctx.registerPermissionRules({ allow: ["memory(*)"] })
   },
   async bootstrap() {
     if (!store) throw new Error("memory plugin is not registered")
