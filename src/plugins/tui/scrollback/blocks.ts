@@ -69,5 +69,7 @@ export type StreamBlock = TextBlock | ReasoningBlock
 
 export type StreamKind = StreamBlock["kind"]
 
+export type HeaderBlock = BannerBlock | InfoBlock | ErrorBlock | NoticeBlock
+
 export type Block =
   BannerBlock | UserBlock | InfoBlock | ErrorBlock | NoticeBlock | CompactionBlock | PlanBlock | StreamBlock | ToolBlock

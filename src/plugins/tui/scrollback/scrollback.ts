@@ -2,7 +2,7 @@ import type { CliRenderer, RGBA, ScrollbackSurface, TextRenderable } from "@open
 import { createRedactedStream, redactText, type RedactedStream } from "../../../secrets/redactor"
 import type { TuiPreferences } from "../config"
 import { COLORS, userMessageBackground } from "../theme/colors"
-import type { Block, StreamBlock, StreamKind } from "./blocks"
+import type { Block, HeaderBlock, StreamBlock, StreamKind } from "./blocks"
 import { contentWidth, renderBlock, streamContent, streamView } from "./render"
 
 const FLUSH_MS = 50
@@ -43,6 +43,7 @@ function redactBlock(block: Block): Block {
 
 export class Scrollback {
   private readonly blocks: Block[] = []
+  private readonly header: Block[] = []
   private stream: Stream | undefined
   private expanded: boolean
   private reasoningVisible: boolean
@@ -74,11 +75,13 @@ export class Scrollback {
   }
 
   append(block: Block): void {
-    this.endStream()
+    this.appendBlock(redactBlock(block))
+  }
+
+  appendHeader(block: HeaderBlock): void {
     const redacted = redactBlock(block)
-    const previous = this.blocks.findLast((candidate) => this.visible(candidate))
-    this.blocks.push(redacted)
-    this.emit(redacted, previous)
+    this.header.push(redacted)
+    this.appendBlock(redacted)
   }
 
   appendStream(kind: StreamKind, delta: string): void {
@@ -106,8 +109,16 @@ export class Scrollback {
   clear(): void {
     this.endStream()
     this.blocks.length = 0
+    this.header.length = 0
     this.reset()
     this.renderer.resetSplitFooterForReplay({ clearSavedLines: true })
+  }
+
+  clearTranscript(): void {
+    this.endStream()
+    this.blocks.length = 0
+    this.blocks.push(...this.header)
+    this.replay()
   }
 
   toggleExpanded(): void {
@@ -152,6 +163,13 @@ export class Scrollback {
 
   private liveRows(): number {
     return Math.max(1, this.renderer.terminalHeight - this.renderer.footerHeight - 1)
+  }
+
+  private appendBlock(block: Block): void {
+    this.endStream()
+    const previous = this.blocks.findLast((candidate) => this.visible(candidate))
+    this.blocks.push(block)
+    this.emit(block, previous)
   }
 
   private drop(block: Block): void {

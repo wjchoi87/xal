@@ -41,7 +41,7 @@ Application shortcuts can be replaced under `pluginConfig.tui.keybindings`. Each
     "tui": {
       "keybindings": {
         "composer.external-editor": ["ctrl+e"],
-        "composer.clear": ["ctrl+u", "ctrl+l"],
+        "display.clear": ["ctrl+l", "ctrl+k"],
         "display.toggle-todos": [],
         "agents.stop-all": ["ctrl+x ctrl+s"]
       }
@@ -60,12 +60,15 @@ A binding is a key with optional `ctrl`, `alt`, `shift`, or `super` modifiers jo
 | `composer.external-editor` | `ctrl+g`                             |
 | `composer.newline`         | `shift+enter`, `alt+enter`, `ctrl+j` |
 | `composer.paste-image`     | `ctrl+v`                             |
+| `display.clear`            | `ctrl+l`                             |
 | `display.toggle-details`   | `ctrl+o`                             |
 | `display.toggle-todos`     | `ctrl+t`                             |
 | `history.open`             | `escape escape`, `ctrl+r`            |
 | `session.next-mode`        | `shift+tab`                          |
 | `thinking.decrease`        | `alt+,`                              |
 | `thinking.increase`        | `alt+.`                              |
+
+`display.clear` removes the visible transcript and pre-launch terminal scrollback while keeping Tack's startup header, active session, and composer draft.
 
 Malformed bindings, unknown actions, duplicate assignments, and bindings that are prefixes of other bindings fail startup. Popover navigation, completion selection, task-list navigation, and ordinary text editing remain component-owned and are not remapped by this setting.
 

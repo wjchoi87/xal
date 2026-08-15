@@ -39,11 +39,11 @@ export class AppEventController {
         const { total, failures } = event.status
         const registered = total - failures.length
         if (failures.length === 0) {
-          scrollback.append({ kind: "info", text: `plugins: ${registered}/${total} registered` })
+          scrollback.appendHeader({ kind: "info", text: `plugins: ${registered}/${total} registered` })
           break
         }
         const hint = this.detailsShortcut ? ` — ${this.detailsShortcut} to see failures` : ""
-        scrollback.append({
+        scrollback.appendHeader({
           kind: "notice",
           summary: `plugins: ${registered}/${total} registered${hint}`,
           details: failureDetails(failures),
@@ -58,7 +58,7 @@ export class AppEventController {
         const failures = event.status.failures.filter((failure) => failure.phase === "bootstrap")
         if (failures.length > 0) {
           const hint = this.detailsShortcut ? ` — ${this.detailsShortcut} to see failures` : ""
-          scrollback.append({
+          scrollback.appendHeader({
             kind: "notice",
             summary: `plugins: ${failures.length} failed to initialize${hint}`,
             details: failureDetails(failures),

@@ -7,6 +7,9 @@ import { contextWindow } from "../../../providers/catalog"
 import type { Screen } from "../screen"
 
 export class AgentEventController {
+  private assistantStreamed = false
+  private reasoningStreamed = false
+
   constructor(
     private readonly screen: Screen,
     private readonly session: AgentSession,
@@ -44,6 +47,8 @@ export class AgentEventController {
         })
         break
       case "session_started":
+        this.assistantStreamed = false
+        this.reasoningStreamed = false
         this.screen.startSession(event.title, event.cwd, event.model, event.thinking, event.mode)
         this.trackContextWindow()
         break
@@ -116,18 +121,24 @@ export class AgentEventController {
         }
         break
       case "text_delta":
+        this.assistantStreamed = true
         scrollback.appendStream("text", event.text)
         break
       case "reasoning_summary_delta":
+        this.reasoningStreamed = true
         scrollback.appendStream("reasoning", event.text)
         break
       case "reasoning_delta":
         break
       case "assistant_message":
-        if (!scrollback.endStream()) scrollback.append({ kind: "text", text: event.text })
+        scrollback.endStream()
+        if (!this.assistantStreamed) scrollback.append({ kind: "text", text: event.text })
+        this.assistantStreamed = false
         break
       case "reasoning_summary":
-        if (!scrollback.endStream()) scrollback.append({ kind: "reasoning", text: event.text })
+        scrollback.endStream()
+        if (!this.reasoningStreamed) scrollback.append({ kind: "reasoning", text: event.text })
+        this.reasoningStreamed = false
         break
       case "retry_scheduled":
         scrollback.append({

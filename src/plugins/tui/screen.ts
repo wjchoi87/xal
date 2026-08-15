@@ -245,7 +245,7 @@ export class Screen {
     this.agentReplayPending = false
     this.viewAgent(undefined)
     this.scrollback.clear()
-    this.scrollback.append({ kind: "banner", model, cwd: compactPath(cwd) })
+    this.scrollback.appendHeader({ kind: "banner", model, cwd: compactPath(cwd) })
   }
 
   setSessionTitle(title: string | undefined): void {

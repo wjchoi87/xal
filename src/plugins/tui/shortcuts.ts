@@ -8,6 +8,7 @@ export type ShortcutAction =
   | "composer.external-editor"
   | "composer.newline"
   | "composer.paste-image"
+  | "display.clear"
   | "display.toggle-details"
   | "display.toggle-todos"
   | "history.open"
@@ -58,6 +59,7 @@ const definitions: Record<ShortcutAction, ShortcutDefinition> = {
   "composer.external-editor": { defaults: ["ctrl+g"], description: "external editor" },
   "composer.newline": { defaults: ["shift+enter", "alt+enter", "ctrl+j"], description: "new line" },
   "composer.paste-image": { defaults: ["ctrl+v"], description: "paste image" },
+  "display.clear": { defaults: ["ctrl+l"], description: "clear screen" },
   "display.toggle-details": { defaults: ["ctrl+o"], description: "toggle details" },
   "display.toggle-todos": { defaults: ["ctrl+t"], description: "toggle todos" },
   "history.open": {
@@ -79,6 +81,7 @@ function isShortcutAction(value: string): value is ShortcutAction {
     case "composer.external-editor":
     case "composer.newline":
     case "composer.paste-image":
+    case "display.clear":
     case "display.toggle-details":
     case "display.toggle-todos":
     case "history.open":

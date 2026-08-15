@@ -130,7 +130,7 @@ export async function startTui(events: EventService, config: TuiConfig, options:
   }
   renderer.on(CliRenderEvents.PALETTE, applyPalette)
   if (paletteError) {
-    screen.scrollback.append({ kind: "error", text: `terminal palette detection failed: ${paletteError}` })
+    screen.scrollback.appendHeader({ kind: "error", text: `terminal palette detection failed: ${paletteError}` })
   }
   const attentionController = new AttentionController(
     (sequence) => terminalOutput.write(sequence),
@@ -189,16 +189,16 @@ export async function startTui(events: EventService, config: TuiConfig, options:
   if (options.resume) {
     try {
       for (const notice of await resumeSession(session, options.resume)) {
-        screen.scrollback.append({ kind: "info", text: notice })
+        screen.scrollback.appendHeader({ kind: "info", text: notice })
       }
     } catch (error) {
-      screen.scrollback.append({ kind: "error", text: describeError(error) })
+      screen.scrollback.appendHeader({ kind: "error", text: describeError(error) })
     }
   } else {
-    screen.scrollback.append({ kind: "banner", model, cwd: compactPath(session.currentWorkingDirectory) })
+    screen.scrollback.appendHeader({ kind: "banner", model, cwd: compactPath(session.currentWorkingDirectory) })
   }
   if (!(await session.currentProvider.isLoggedIn().catch(() => false))) {
-    screen.scrollback.append({ kind: "info", text: "not connected — run /connect" })
+    screen.scrollback.appendHeader({ kind: "info", text: "not connected — run /connect" })
   }
 
   screen.view.on(RenderableEvents.DESTROYED, () => {

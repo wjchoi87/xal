@@ -78,6 +78,7 @@ export function bindKeys(renderer: CliRenderer, deps: KeymapDeps): void {
       case "agents.stop-all":
         return screen.tasks.hasRunningAgents
       case "app.cancel":
+      case "display.clear":
       case "display.toggle-details":
       case "display.toggle-todos":
         return true
@@ -145,6 +146,9 @@ export function bindKeys(renderer: CliRenderer, deps: KeymapDeps): void {
           screen.statusBar.setNotice(pasted ? "Image attached" : "No image found in clipboard")
           setTimeout(() => screen.statusBar.clearNotice(), QUIT_WINDOW_MS).unref()
         })
+        return
+      case "display.clear":
+        screen.scrollback.clearTranscript()
         return
       case "display.toggle-details":
         screen.scrollback.toggleExpanded()

@@ -31,6 +31,7 @@ function shortcutEntries(shortcuts: ResolvedShortcuts): ShortcutEntry[] {
     actionEntry(shortcuts, "session.next-mode"),
     actionEntry(shortcuts, "thinking.decrease"),
     actionEntry(shortcuts, "thinking.increase"),
+    actionEntry(shortcuts, "display.clear"),
     actionEntry(shortcuts, "display.toggle-details"),
     actionEntry(shortcuts, "display.toggle-todos"),
     actionEntry(shortcuts, "app.cancel"),
