@@ -13,7 +13,7 @@ export const banner: Block = { kind: "banner", model: MODEL, cwd: CWD }
 
 export const registered: Block = {
   kind: "info",
-  text: "plugins: 14/14 registered",
+  text: "plugins: 15/15 registered",
 }
 
 export const hint: Block = {
@@ -68,6 +68,7 @@ export const tools: Block[] = [
           "`bash` — risk-analyzed, compound commands split before they are judged",
           "`grep` · `glob` · `webfetch` — find things, fetch things",
           "`task` — delegate to a sub-agent and keep working",
+          "`mermaid` — render adaptive diagrams with native terminal characters",
           "`lsp` · `mcp__*` — code intelligence and every MCP server you connect",
         ],
       },

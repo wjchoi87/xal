@@ -24,7 +24,7 @@
   --cell: 14.5px;
   --line: 1.55;
   --gutter: 2ch;
-  --measure: 92ch;
+  --measure: 108ch;
   color-scheme: dark;
 }
 
@@ -51,7 +51,9 @@ body {
 }
 
 body:has(#app) {
-  height: 100%;
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
   overflow: hidden;
 }
 
@@ -148,11 +150,107 @@ a {
   }
 }
 
+.site-header {
+  flex-shrink: 0;
+}
+
+.site-nav {
+  display: flex;
+  align-items: center;
+  gap: 2.5ch;
+  width: 100%;
+  max-width: var(--measure);
+  min-height: 3.8em;
+  margin: 0 auto;
+  padding: 0.7em var(--gutter);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 35%, transparent);
+  white-space: nowrap;
+}
+
+.site-brand {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--fg);
+  font-size: 1.08em;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.site-brand-cursor {
+  width: 0.42em;
+  height: 0.8em;
+  margin-left: 0.12em;
+  border-radius: 2px;
+  background: var(--accent);
+  animation: blink 1.2s steps(1) infinite;
+}
+
+.site-links,
+.site-actions {
+  display: flex;
+  align-items: center;
+  gap: 2ch;
+}
+
+.site-links {
+  min-width: 0;
+}
+
+.site-actions {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.site-link,
+.site-stars,
+.site-github {
+  color: var(--faint);
+  text-decoration: none;
+}
+
+.site-link:hover,
+.site-stars:hover,
+.site-github:hover,
+.site-link.active {
+  color: var(--accent);
+}
+
+.site-stars {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.7ch;
+}
+
+.site-stars::before {
+  content: "[";
+  color: var(--faint);
+}
+
+.site-stars::after {
+  content: "]";
+  color: var(--faint);
+}
+
+.site-star-count {
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+}
+
+.site-link:focus-visible,
+.site-brand:focus-visible,
+.site-stars:focus-visible,
+.site-github:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
 /* ── shell ────────────────────────────────────────── */
 #app {
   display: flex;
+  flex: 1;
   flex-direction: column;
-  height: 100dvh;
+  min-height: 0;
 }
 
 .scrollback {
@@ -171,11 +269,15 @@ a {
 }
 
 .footer {
+  position: relative;
+  z-index: 1;
   flex-shrink: 0;
   max-width: var(--measure);
   width: 100%;
   margin: 0 auto;
   padding: 0 1ch 10px;
+  background: var(--bg);
+  box-shadow: 0 -1.2em 1.6em var(--bg);
 }
 
 .block {
@@ -847,6 +949,32 @@ a {
   color: var(--faint);
 }
 
+@media (max-width: 900px) {
+  .site-nav {
+    flex-wrap: wrap;
+    gap: 0.7em 2ch;
+  }
+
+  .site-links {
+    order: 3;
+    width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .site-links::-webkit-scrollbar {
+    display: none;
+  }
+
+  .site-link {
+    flex-shrink: 0;
+  }
+
+  .site-actions {
+    order: 2;
+  }
+}
+
 @media (max-width: 700px) {
   :root {
     --cell: 13.5px;
@@ -862,6 +990,16 @@ a {
   }
 }
 
+@media (max-width: 500px) {
+  .site-stars-label {
+    display: none;
+  }
+
+  .site-actions {
+    gap: 1.2ch;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -872,57 +1010,11 @@ a {
 }
 
 /* ── documentation ────────────────────────────────── */
-.docs-masthead {
-  display: flex;
-  align-items: baseline;
-  gap: 2ch;
-  max-width: 108ch;
-  margin: 0 auto;
-  padding: 1.6em var(--gutter) 1.2em;
-  border-bottom: 1px solid var(--border);
-}
-
-.docs-brand {
-  display: inline-flex;
-  align-items: center;
-  font-weight: 800;
-  font-size: 1.2em;
-  color: var(--fg);
-  text-decoration: none;
-}
-
-.docs-cursor {
-  width: 0.42em;
-  height: 0.8em;
-  margin-left: 0.12em;
-  border-radius: 2px;
-  background: var(--accent);
-}
-
-.docs-version {
-  color: var(--faint);
-  font-size: 0.86em;
-}
-
-.docs-back {
-  margin-left: auto;
-  color: var(--faint);
-  text-decoration: none;
-}
-
-.docs-back::before {
-  content: "← ";
-}
-
-.docs-back:hover {
-  color: var(--accent);
-}
-
 .docs-frame {
   display: grid;
-  grid-template-columns: 30ch 1fr;
-  gap: 4ch;
-  max-width: 108ch;
+  grid-template-columns: 26ch minmax(0, 1fr);
+  gap: 3ch;
+  max-width: var(--measure);
   margin: 0 auto;
   padding: 0 var(--gutter) 6em;
 }

@@ -11,6 +11,7 @@ const { renderBlock } = await import("../src/tui/blocks.ts")
 const { approvalFor } = await import("../src/tui/permission.ts")
 const { loadDocuments } = await import("../src/docs/load.ts")
 const { documentPage, indexPage } = await import("../src/docs/page.ts")
+const { navigation } = await import("../src/navigation.ts")
 
 const dist = new URL("../dist/", import.meta.url)
 const source = await Bun.file(new URL("index.html", dist)).text()
@@ -32,6 +33,7 @@ const shell: Shell = ({ title, description, path, body }) => {
   html = meta(html, "property", "og:description", description)
   return html
     .replace("</head>", `<link rel="canonical" href="${content.SITE_URL}${path}" />\n  </head>`)
+    .replace("<body>", `<body>${navigation(path)}`)
     .replace('<div id="app"></div>', body)
 }
 
@@ -91,7 +93,7 @@ for (const command of commands) {
       title: `${label} · xal`,
       description: `${command.describe} — xal, a terminal coding harness with a headless agent core.`,
       path: command.name,
-      body: stream([...content.startup, { kind: "user", text: command.name, at: "" }, ...blocks]),
+      body: stream([content.banner, { kind: "user", text: command.name, at: "" }, ...blocks]),
     }),
   )
 }

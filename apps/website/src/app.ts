@@ -1,6 +1,7 @@
 import { playBoot } from "./boot.ts"
 import { commands, findCommand, type Command, type CommandContext } from "./content/commands.ts"
 import * as content from "./content/sections.ts"
+import { setNavigationPath } from "./navigation.ts"
 import type { Block } from "./tui/blocks.ts"
 import { Composer } from "./tui/composer.ts"
 import { delay, el, reducedMotion } from "./tui/dom.ts"
@@ -44,10 +45,9 @@ export async function startApp(root: HTMLElement): Promise<void> {
     if (unattended) return Promise.resolve(approvalFor(choices))
     composer.setEnabled(false)
     statusBar.setActivity({ kind: "approval" })
-    scrollback.attach(permission.view)
     const started = performance.now()
     const answer = permission.ask(choices)
-    scrollback.scrollToEnd()
+    scrollback.attach(permission.view)
     return answer.then((choice) => {
       waiting += performance.now() - started
       permission.view.remove()
@@ -72,6 +72,7 @@ export async function startApp(root: HTMLElement): Promise<void> {
   function navigate(command: Command): void {
     const path = command.routable ? command.name : command.name === "/clear" ? "/" : undefined
     if (path && location.pathname !== path) history.pushState(null, "", path)
+    setNavigationPath(location.pathname)
   }
 
   function routedCommand(): Command | undefined {
@@ -81,12 +82,14 @@ export async function startApp(root: HTMLElement): Promise<void> {
 
   async function submit(value: string, options: { routed?: boolean } = {}): Promise<void> {
     if (busy) return
+    scrollback.setAutoScroll(options.routed !== true)
     const at = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
     scrollback.append({ kind: "user", text: value, at })
 
     const command = findCommand(value)
     if (!command) {
       await print({ kind: "info", text: `unknown command \`${value}\` — try \`/help\`` })
+      scrollback.setAutoScroll(false)
       return
     }
     if (!options.routed) navigate(command)
@@ -103,9 +106,11 @@ export async function startApp(root: HTMLElement): Promise<void> {
     statusBar.setActivity({ kind: "finished", elapsed })
     unattended = false
     busy = false
+    scrollback.setAutoScroll(false)
   }
 
   window.addEventListener("popstate", () => {
+    setNavigationPath(location.pathname)
     const command = routedCommand()
     if (command) void submit(command.name, { routed: true })
   })
@@ -128,10 +133,9 @@ export async function startApp(root: HTMLElement): Promise<void> {
   if (!landed) await playBoot(document.body)
 
   if (!prerendered) {
-    await print(...content.landing)
+    await print(...(landed ? [content.banner] : content.landing))
     if (landed) await submit(landed.name, { routed: true })
   }
 
-  scrollback.scrollToEnd()
   composer.focus()
 }

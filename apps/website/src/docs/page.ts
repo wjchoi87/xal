@@ -24,17 +24,8 @@ function rail(documents: Document[], current: Document | undefined): string {
   return `<nav class="docs-rail" aria-label="documentation"><a class="docs-home" href="/docs">Documentation</a><ul class="docs-pages">${entries}</ul></nav>`
 }
 
-function masthead(): string {
-  return `<header class="docs-masthead">
-    <a class="docs-brand" href="/">${appInfo.name}<span class="docs-cursor" aria-hidden="true"></span></a>
-    <span class="docs-version">v${appInfo.version}</span>
-    <a class="docs-back" href="/">back to the terminal</a>
-  </header>`
-}
-
 export function documentPage(shell: Shell, documents: Document[], current: Document): string {
-  const body = `${masthead()}
-  <div class="docs-frame">
+  const body = `<div class="docs-frame">
     ${rail(documents, current)}
     <main class="docs-body">
       <h1>${escape(current.title)}</h1>
@@ -64,8 +55,7 @@ export function indexPage(shell: Shell, documents: Document[]): string {
     )
     .join("")
 
-  const body = `${masthead()}
-  <div class="docs-frame">
+  const body = `<div class="docs-frame">
     ${rail(documents, undefined)}
     <main class="docs-body">
       <h1>Documentation</h1>

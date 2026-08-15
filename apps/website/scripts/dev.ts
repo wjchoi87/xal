@@ -3,6 +3,7 @@ import index from "../src/index.html"
 import { DOCS_PATH } from "../src/content/sections.ts"
 import { loadDocuments } from "../src/docs/load.ts"
 import { documentPage, indexPage, type Shell } from "../src/docs/page.ts"
+import { navigation } from "../src/navigation.ts"
 
 const port = Number(Bun.env.PORT ?? 3000)
 
@@ -14,7 +15,7 @@ const entry = bundle.outputs[0]
 if (!entry) throw new Error("failed to bundle src/main.ts for the dev server")
 const script = await entry.text()
 
-const shell: Shell = ({ title, body }) => `<!doctype html>
+const shell: Shell = ({ title, path, body }) => `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -34,7 +35,7 @@ const shell: Shell = ({ title, body }) => `<!doctype html>
     </script>
     <script type="module" src="/main.js"></script>
   </head>
-  <body>${body}</body>
+  <body>${navigation(path)}${body}</body>
 </html>`
 
 async function docsResponse(slug: string | undefined): Promise<Response> {

@@ -5,6 +5,7 @@ export class Scrollback {
   readonly view: HTMLElement
   private readonly stream: HTMLElement
   private previous: Block["kind"] | undefined
+  private autoScroll = false
 
   constructor(existing?: HTMLElement) {
     if (existing) {
@@ -25,13 +26,13 @@ export class Scrollback {
     if (block.kind === "tool" && this.previous === "tool") node.classList.add("glued")
     this.stream.append(node)
     this.previous = block.kind
-    this.scrollToEnd()
+    if (this.autoScroll) this.scrollToEnd()
   }
 
   attach(node: HTMLElement): void {
     this.stream.append(node)
     this.previous = undefined
-    this.scrollToEnd()
+    if (this.autoScroll) this.scrollToEnd()
   }
 
   replaceLast(block: Block): void {
@@ -45,7 +46,11 @@ export class Scrollback {
     this.previous = undefined
   }
 
-  scrollToEnd(): void {
+  setAutoScroll(enabled: boolean): void {
+    this.autoScroll = enabled
+  }
+
+  private scrollToEnd(): void {
     this.view.scrollTop = this.view.scrollHeight
   }
 }
