@@ -41,6 +41,8 @@ function request(): StreamRequest {
         parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] },
       },
     ],
+    cacheKey: "prompt-cache-key",
+    toolChoice: "auto",
     sessionId: "session-456",
   }
 }
@@ -158,6 +160,7 @@ describe("Alibaba Cloud transport", () => {
           },
         },
       ],
+      tool_choice: "auto",
     })
   })
 

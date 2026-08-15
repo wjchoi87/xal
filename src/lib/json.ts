@@ -4,6 +4,19 @@ export interface JsonObject {
   [key: string]: JsonValue
 }
 
+export function stableJson(value: JsonValue): string {
+  if (value === null || typeof value !== "object") {
+    const encoded = JSON.stringify(value)
+    if (encoded === undefined) throw new Error("value cannot be encoded as JSON")
+    return encoded
+  }
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`
+  return `{${Object.keys(value)
+    .sort()
+    .map((key) => `${stableJson(key)}:${stableJson(value[key]!)}`)
+    .join(",")}}`
+}
+
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }

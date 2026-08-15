@@ -2,6 +2,7 @@ import { isAbsolute, join, parse } from "node:path"
 import type { AgentEvent, BackgroundResult, SessionStartedEvent } from "../agent/events"
 import type { HistoryItem } from "../agent/history"
 import type { SessionPlan } from "../plans/types"
+import { promptCacheKey } from "../providers/cache"
 import type {
   ConversationItem,
   ProviderOutputItem,
@@ -107,13 +108,17 @@ function redactToolDefinition(tool: ToolDefinition): ToolDefinition {
 }
 
 export function redactStreamRequest(request: StreamRequest): StreamRequest {
+  const model = redactText(request.model)
+  const instructions = redactText(request.instructions)
+  const tools = request.tools.map(redactToolDefinition)
   return {
     ...request,
-    model: redactText(request.model),
+    model,
     ...(request.conversationModel === undefined ? {} : { conversationModel: redactText(request.conversationModel) }),
-    instructions: redactText(request.instructions),
+    instructions,
     input: request.input.map(redactConversationItem),
-    tools: request.tools.map(redactToolDefinition),
+    tools,
+    cacheKey: promptCacheKey(model, instructions, tools),
     sessionId: redactText(request.sessionId),
   }
 }

@@ -197,6 +197,7 @@ function buildBody(request: StreamRequest, provider: ChatCompletionProvider): st
             type: "function",
             function: { name: tool.name, description: tool.description, parameters: tool.parameters },
           })),
+          tool_choice: request.toolChoice,
         }),
   })
 }

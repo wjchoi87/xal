@@ -1,4 +1,4 @@
-import type { JsonValue } from "../../lib/json"
+import { stableJson } from "../../lib/json"
 import type { ToolCallItem } from "../../providers/types"
 
 const SIGNATURE_TOKENS = 24
@@ -48,19 +48,6 @@ function similarity(left: Set<string>, right: Set<string>): number {
     if (right.has(value)) shared += 1
   }
   return (2 * shared) / (left.size + right.size)
-}
-
-function stableJson(value: JsonValue): string {
-  if (value === null || typeof value !== "object") {
-    const encoded = JSON.stringify(value)
-    if (encoded === undefined) throw new Error("tool arguments contain an unsupported value")
-    return encoded
-  }
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`
-  return `{${Object.keys(value)
-    .sort()
-    .map((key) => `${stableJson(key)}:${stableJson(value[key]!)}`)
-    .join(",")}}`
 }
 
 function toolSignature(call: ToolCallItem): string {

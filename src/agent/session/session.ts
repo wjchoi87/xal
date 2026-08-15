@@ -10,11 +10,13 @@ import { defaultPermissionMode } from "../../permissions/modes"
 import type { PermissionMode, PermissionScope } from "../../permissions/types"
 import type { SessionPlan } from "../../plans/types"
 import { profileAgentEvent, profileSessionCreated } from "../../profiler/profiler"
+import { promptCacheKey } from "../../providers/cache"
 import { prepareConversation } from "../../providers/conversation"
 import { occupiedContext } from "../../providers/types"
 import type {
   ModelInputModality,
   Provider,
+  ProviderPrompt,
   StreamRequest,
   ThinkingEffort,
   ToolCallItem,
@@ -232,6 +234,7 @@ export class AgentSession {
       kind: this.kind,
       sessionId: () => this.sessionId,
       history: () => this.items,
+      prompt: (model) => this.providerPrompt(model),
       contextTokens: () => this.contextTokens,
       compactionFailures: () => this.compactionFailures,
       recordFailure: () => {
@@ -875,8 +878,8 @@ export class AgentSession {
   private availableTools(): RegisteredTool[] {
     const tools = listTools().filter((tool) => redactText(tool.name) === tool.name && this.canUseTool(tool))
     const contract = this.outputContract
-    if (!contract) return tools
-    return [...tools.filter((tool) => tool.name !== contract.tool.name), contract.tool]
+    const available = contract ? [...tools.filter((tool) => tool.name !== contract.tool.name), contract.tool] : tools
+    return available.toSorted((left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0))
   }
 
   private hookContext(signal: AbortSignal): HookContext {
@@ -973,27 +976,33 @@ export class AgentSession {
     }
   }
 
+  private providerPrompt(model: string): ProviderPrompt {
+    const available = this.availableTools()
+    const tools = available.map(({ name, description, parameters }) => ({ name, description, parameters }))
+    const instructions = composeSystemPrompt({
+      appName: appInfo.name,
+      platform: `${process.platform} ${release()}`,
+      cwd: this.cwd,
+      kind: this.kind,
+      tools: available,
+      mode: this.mode,
+      plan: this.mode === "plan" || this.planHandoffActive ? this.plan : undefined,
+    })
+    return { instructions, tools, cacheKey: promptCacheKey(model, instructions, tools) }
+  }
+
   private buildStreamRequest(
     provider: Provider,
     model: string,
     thinking: ThinkingEffort | undefined,
     signal: AbortSignal,
   ): StreamRequest {
-    const tools = this.availableTools()
     return redactStreamRequest({
       model,
       thinking,
-      instructions: composeSystemPrompt({
-        appName: appInfo.name,
-        platform: `${process.platform} ${release()}`,
-        cwd: this.cwd,
-        kind: this.kind,
-        tools,
-        mode: this.mode,
-        plan: this.mode === "plan" || this.planHandoffActive ? this.plan : undefined,
-      }),
+      ...this.providerPrompt(model),
       input: prepareConversation(activeHistory(this.items), { provider: provider.id, model }),
-      tools: tools.map(({ name, description, parameters }) => ({ name, description, parameters })),
+      toolChoice: "auto",
       sessionId: this.id,
       signal,
     })

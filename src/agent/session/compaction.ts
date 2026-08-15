@@ -10,6 +10,7 @@ import { prepareConversation } from "../../providers/conversation"
 import type {
   ConversationItem,
   Provider,
+  ProviderPrompt,
   ProviderReplay,
   ThinkingEffort,
   Usage,
@@ -36,7 +37,7 @@ export interface CompactionTarget {
   thinking: ThinkingEffort | undefined
 }
 
-const SUMMARY_INSTRUCTIONS = `You are compacting a coding session transcript so the assistant can keep working after the older messages are dropped.
+const SUMMARY_INSTRUCTIONS = `Summarize this coding session transcript so the assistant can keep working after the older messages are dropped.
 
 Write a dense, factual summary that lets the assistant continue without re-reading the removed history. Cover:
 
@@ -145,6 +146,7 @@ export interface SummaryRequest {
   model: string
   historyModel?: string
   thinking: ThinkingEffort | undefined
+  prompt: ProviderPrompt
   sessionId: string
   kind?: SessionKind
   history: HistoryItem[]
@@ -154,11 +156,7 @@ export interface SummaryRequest {
 
 function summaryRequest(instructions: string | undefined): UserMessageItem {
   const focus = instructions ? `\n\nFocus the summary on: ${instructions}` : ""
-  return {
-    type: "user_message",
-    text: `Summarize the conversation above so that work can continue after the earlier messages are dropped.${focus}`,
-    images: [],
-  }
+  return { type: "user_message", text: `${SUMMARY_INSTRUCTIONS}${focus}`, images: [] }
 }
 
 export async function summarizeHistory(request: SummaryRequest): Promise<string> {
@@ -184,9 +182,9 @@ export async function summarizeHistory(request: SummaryRequest): Promise<string>
         model: request.model,
         ...(request.historyModel === undefined ? {} : { conversationModel: request.historyModel }),
         thinking: request.thinking,
-        instructions: SUMMARY_INSTRUCTIONS,
+        ...request.prompt,
         input,
-        tools: [],
+        toolChoice: "none",
         sessionId: request.sessionId,
         signal: request.signal,
       }),
@@ -220,6 +218,7 @@ export interface CompactionHost {
   readonly kind: SessionKind
   sessionId(): string
   history(): HistoryItem[]
+  prompt(model: string): ProviderPrompt
   contextTokens(): number | undefined
   compactionFailures(): number
   recordFailure(): void
@@ -247,6 +246,7 @@ export async function runCompaction(
     model: target.model,
     historyModel: model,
     thinking: target.thinking,
+    prompt: host.prompt(target.model),
     sessionId: host.sessionId(),
     kind: host.kind,
     history: head,

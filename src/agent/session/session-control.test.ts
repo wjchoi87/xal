@@ -110,11 +110,14 @@ describe("AgentSession control flow", () => {
 
       expect(await session.compact("remaining implementation work")).toBe("compacted")
       expect(session.currentState).toBe("idle")
-      expect(provider.requests[1]?.input.at(-1)).toEqual({
-        type: "user_message",
-        text: "Summarize the conversation above so that work can continue after the earlier messages are dropped.\n\nFocus the summary on: remaining implementation work",
-        images: [],
-      })
+      expect(provider.requests[1]?.cacheKey).toBe(provider.requests[0]?.cacheKey)
+      expect(provider.requests[1]?.instructions).toBe(provider.requests[0]?.instructions)
+      expect(provider.requests[1]?.tools).toEqual(provider.requests[0]?.tools)
+      expect(provider.requests[1]?.toolChoice).toBe("none")
+      const summaryRequest = provider.requests[1]?.input.at(-1)
+      if (!summaryRequest || summaryRequest.type !== "user_message") throw new Error("missing summary request")
+      expect(summaryRequest.text).toContain("Preserve exact identifiers")
+      expect(summaryRequest.text).toContain("Focus the summary on: remaining implementation work")
       expect(observed.filter((event) => event.type === "compacted")).toEqual([
         {
           type: "compacted",
@@ -188,15 +191,17 @@ describe("AgentSession control flow", () => {
       context: undefined,
     })
     expect(provider.requests).toHaveLength(3)
-    expect(provider.requests[1]?.input).toEqual([
+    expect(provider.requests[1]?.input.slice(0, -1)).toEqual([
       { type: "user_message", text: "Fill the context", images: [] },
       { type: "assistant_message", text: longResponse },
-      {
-        type: "user_message",
-        text: "Summarize the conversation above so that work can continue after the earlier messages are dropped.",
-        images: [],
-      },
     ])
+    expect(provider.requests[1]?.cacheKey).toBe(provider.requests[0]?.cacheKey)
+    expect(provider.requests[1]?.instructions).toBe(provider.requests[0]?.instructions)
+    expect(provider.requests[1]?.tools).toEqual(provider.requests[0]?.tools)
+    expect(provider.requests[1]?.toolChoice).toBe("none")
+    const summaryRequest = provider.requests[1]?.input.at(-1)
+    if (!summaryRequest || summaryRequest.type !== "user_message") throw new Error("missing summary request")
+    expect(summaryRequest.text).toContain("Preserve exact identifiers")
     expect(provider.requests[2]?.input).toEqual([
       summaryMessage("Automatic summary"),
       { type: "user_message", text: "Continue after it fills", images: [] },

@@ -112,13 +112,18 @@ export type StreamEvent =
   | { type: "item_done"; item: ProviderOutputItem }
   | { type: "done"; usage?: Usage }
 
-export interface StreamRequest {
+export interface ProviderPrompt {
+  instructions: string
+  tools: ToolDefinition[]
+  cacheKey: string
+}
+
+export interface StreamRequest extends ProviderPrompt {
   model: string
   conversationModel?: string
   thinking?: ThinkingEffort
-  instructions: string
   input: ConversationItem[]
-  tools: ToolDefinition[]
+  toolChoice: "auto" | "none"
   sessionId: string
   signal?: AbortSignal
 }

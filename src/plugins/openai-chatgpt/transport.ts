@@ -33,11 +33,11 @@ function buildBody(request: StreamRequest): string {
       parameters: tool.parameters,
       strict: false,
     })),
-    tool_choice: "auto",
+    tool_choice: request.toolChoice,
     parallel_tool_calls: true,
     reasoning: { effort: request.thinking ?? "medium", summary: "auto" },
     include: ["reasoning.encrypted_content"],
-    prompt_cache_key: request.sessionId,
+    prompt_cache_key: request.cacheKey,
   })
 }
 

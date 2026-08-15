@@ -36,6 +36,8 @@ function request(input: StreamRequest["input"] = []): StreamRequest {
         parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] },
       },
     ],
+    cacheKey: "prompt-cache-key",
+    toolChoice: "auto",
     sessionId: "session-123",
   }
 }
@@ -163,7 +165,7 @@ describe("ChatGPT transport", () => {
       parallel_tool_calls: true,
       reasoning: { effort: "high", summary: "auto" },
       include: ["reasoning.encrypted_content"],
-      prompt_cache_key: "session-123",
+      prompt_cache_key: "prompt-cache-key",
     })
   })
 

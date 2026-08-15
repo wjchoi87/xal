@@ -124,6 +124,8 @@ describe("chat completions wire conversion", () => {
       instructions: "",
       input: [],
       tools: [],
+      cacheKey: "prompt-cache-key",
+      toolChoice: "auto",
       sessionId: "session",
     }
     const events: StreamEvent[] = []

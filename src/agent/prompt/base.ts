@@ -6,19 +6,6 @@ export function registerBasePrompt(): void {
     text: (prompt) => `You are ${prompt.appName}, a coding agent running in the user's terminal.`,
   })
   registerPrompt({
-    id: "environment",
-    text: (prompt) => `Platform: ${prompt.platform}. Working directory: ${prompt.cwd}.`,
-  })
-  registerPrompt({
-    id: "tools",
-    text(prompt) {
-      if (prompt.tools.length === 0) return "You have no tools available."
-      const names = prompt.tools.map((tool) => tool.name).join(", ")
-      const guidance = prompt.tools.filter((tool) => tool.prompt).map((tool) => `${tool.name}: ${tool.prompt}`)
-      return [`Available tools: ${names}.`, ...guidance].join("\n")
-    },
-  })
-  registerPrompt({
     id: "conduct",
     text: () =>
       [
@@ -31,5 +18,18 @@ export function registerBasePrompt(): void {
         "Progress updates must explain intent, decisions, or outcomes. Do not expose private chain-of-thought, restate the request, use generic activity labels, or narrate routine tool calls.",
         "Ground your statements in what you actually observed from tool output. Keep responses concise.",
       ].join("\n"),
+  })
+  registerPrompt({
+    id: "environment",
+    text: (prompt) => `Platform: ${prompt.platform}. Working directory: ${prompt.cwd}.`,
+  })
+  registerPrompt({
+    id: "tools",
+    text(prompt) {
+      if (prompt.tools.length === 0) return "You have no tools available."
+      const names = prompt.tools.map((tool) => tool.name).join(", ")
+      const guidance = prompt.tools.filter((tool) => tool.prompt).map((tool) => `${tool.name}: ${tool.prompt}`)
+      return [`Available tools: ${names}.`, ...guidance].join("\n")
+    },
   })
 }

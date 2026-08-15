@@ -115,6 +115,10 @@ describe("AgentSession", () => {
       expect(outcome).toEqual({ status: "completed", response: "Finished", usage: undefined, context: undefined })
       expect(executions).toEqual([{ value: 42 }])
       expect(provider.requests).toHaveLength(2)
+      expect(provider.requests[0]?.cacheKey).toBe(provider.requests[1]?.cacheKey)
+      expect(provider.requests[0]?.tools.map((entry) => entry.name)).toEqual(
+        provider.requests[0]?.tools.map((entry) => entry.name).toSorted(),
+      )
       expect(provider.requests[1]?.input).toEqual([
         { type: "user_message", text: "Use the tool", images: [] },
         { type: "tool_call", callId: "call-1", name: toolName, args: { value: 42 } },

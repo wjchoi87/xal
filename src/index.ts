@@ -46,9 +46,9 @@ const ctx: CliContext = {
 let terminationRequested = false
 
 function registerCore(settings: Settings): void {
+  registerBasePrompt()
   registerPermissions(settings)
   registerRedaction(settings)
-  registerBasePrompt()
   registerPlans()
   registerTasks()
   registerSkills()

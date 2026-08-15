@@ -1,9 +1,15 @@
 import { expect, test } from "bun:test"
-import type { ConversationItem } from "../../providers/types"
+import type { ConversationItem, ProviderPrompt } from "../../providers/types"
 import { round, ScriptedProvider } from "./test-support"
 import type { HistoryItem } from "../history"
 import { activeHistory, summaryMessage } from "../history"
 import { estimateHistoryTokens, splitForCompaction, summarizeHistory } from "./compaction"
+
+const prompt: ProviderPrompt = {
+  instructions: "Continue the coding session",
+  tools: [{ name: "read", description: "Read a file", parameters: { type: "object" } }],
+  cacheKey: "prompt-cache-key",
+}
 
 test("keeps a tool round whole when the tail budget lands inside it", () => {
   const final: ConversationItem = { type: "assistant_message", text: "Finished" }
@@ -91,6 +97,7 @@ test("summarizes the active history with the dedicated request contract", async 
     provider,
     model: "test-model",
     thinking: "high",
+    prompt,
     sessionId: "summary-session",
     history,
     instructions: "the unfinished migration",
@@ -102,19 +109,20 @@ test("summarizes the active history with the dedicated request contract", async 
   expect(provider.requests[0]).toMatchObject({
     model: "test-model",
     thinking: "high",
+    instructions: prompt.instructions,
+    tools: prompt.tools,
+    toolChoice: "none",
     sessionId: "summary-session",
-    tools: [],
-    input: [
-      { type: "user_message", text: "Original prompt", images: [] },
-      { type: "assistant_message", text: "Original answer" },
-      {
-        type: "user_message",
-        text: "Summarize the conversation above so that work can continue after the earlier messages are dropped.\n\nFocus the summary on: the unfinished migration",
-        images: [],
-      },
-    ],
   })
-  expect(provider.requests[0]?.instructions).toContain("Preserve exact identifiers")
+  expect(provider.requests[0]?.cacheKey).toHaveLength(64)
+  expect(provider.requests[0]?.input.slice(0, -1)).toEqual([
+    { type: "user_message", text: "Original prompt", images: [] },
+    { type: "assistant_message", text: "Original answer" },
+  ])
+  const summaryRequest = provider.requests[0]?.input.at(-1)
+  if (!summaryRequest || summaryRequest.type !== "user_message") throw new Error("missing summary request")
+  expect(summaryRequest.text).toContain("Preserve exact identifiers")
+  expect(summaryRequest.text).toContain("Focus the summary on: the unfinished migration")
 })
 
 test("falls back to streamed summary text and rejects an empty summary", async () => {
@@ -126,6 +134,7 @@ test("falls back to streamed summary text and rejects an empty summary", async (
       provider: streamed,
       model: "test-model",
       thinking: undefined,
+      prompt,
       sessionId: "streamed-summary",
       history: [{ type: "user_message", text: "Prompt", images: [] }],
       instructions: undefined,
@@ -139,6 +148,7 @@ test("falls back to streamed summary text and rejects an empty summary", async (
       provider: empty,
       model: "test-model",
       thinking: undefined,
+      prompt,
       sessionId: "empty-summary",
       history: [{ type: "user_message", text: "Prompt", images: [] }],
       instructions: undefined,
