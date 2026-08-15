@@ -46,7 +46,6 @@ export class Picker {
   private all: SelectOption<unknown>[] = []
   private items: number[] = []
   private labelWidth = MAX_LABEL_WIDTH
-  private searching = false
   private selected = 0
   private offset = 0
   private settle: ((index: number | undefined) => void) | undefined
@@ -56,7 +55,7 @@ export class Picker {
   }
 
   get height(): number {
-    return this.rowCount + PICKER_CHROME_ROWS + (this.searching ? 1 : 0)
+    return this.rowCount + PICKER_CHROME_ROWS + 1
   }
 
   private get rowCount(): number {
@@ -81,11 +80,10 @@ export class Picker {
     })
     const gutter = column(ctx, { width: 2, flexShrink: 0 })
     this.list = column(ctx, { flexGrow: 1, flexShrink: 1, minWidth: 1 })
-    this.input = new InputRenderable(ctx, { visible: false, ...inputColors() })
+    this.input = new InputRenderable(ctx, { ...inputColors() })
     this.marker = label(ctx, {
       content: terminalGlyph("◆", "*"),
       width: 2,
-      visible: false,
       attributes: TextAttributes.BOLD,
       color: COLORS.agent,
     })
@@ -108,16 +106,13 @@ export class Picker {
     this.input.on(InputRenderableEvents.INPUT, (value: string) => this.filter(value))
   }
 
-  show(options: SelectOption<unknown>[], search: string | undefined): Promise<number | undefined> {
+  show(options: SelectOption<unknown>[], search = "search"): Promise<number | undefined> {
     this.resolve(undefined)
     this.all = options
     this.items = options.map((_, index) => index)
     this.labelWidth = Math.min(MAX_LABEL_WIDTH, Math.max(0, ...options.map((option) => displayWidth(option.label))) + 2)
-    this.searching = search !== undefined
-    this.input.visible = this.searching
-    this.marker.visible = this.searching
     this.input.value = ""
-    if (search !== undefined) this.input.placeholder = search
+    this.input.placeholder = search
     this.selected = Math.max(
       0,
       options.findIndex((option) => option.active),
@@ -136,7 +131,7 @@ export class Picker {
   }
 
   focus(): void {
-    if (this.searching && this.view.visible) this.input.focus()
+    if (this.view.visible) this.input.focus()
   }
 
   blur(): void {
@@ -161,7 +156,7 @@ export class Picker {
       this.confirm()
       return true
     }
-    return !this.searching
+    return false
   }
 
   private close(): void {
@@ -183,10 +178,10 @@ export class Picker {
   }
 
   private filter(query: string): void {
+    const previous = this.rowCount
     this.items = this.all.flatMap((option, index) => (matches(option, query) ? [index] : []))
     this.selected = 0
     this.offset = 0
-    const previous = this.rowCount
     this.render()
     if (this.rowCount !== previous) this.onChange()
   }
