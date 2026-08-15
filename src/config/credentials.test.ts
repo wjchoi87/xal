@@ -2,6 +2,7 @@ import { expect, test } from "bun:test"
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { appEnvVar, appInfo } from "../app-info"
 import { REDACTION_MARKER, redactText, replaceSecretValues } from "../secrets/redactor"
 import {
   loadCredential,
@@ -12,17 +13,18 @@ import {
 } from "./credentials"
 
 async function withCredentialsHome(run: (home: string) => Promise<void>): Promise<void> {
-  const directory = await mkdtemp(join(tmpdir(), "tack-credentials-test-"))
+  const directory = await mkdtemp(join(tmpdir(), `${appInfo.name}-credentials-test-`))
   const home = join(directory, "home")
-  const inheritedHome = process.env.TACK_HOME
+  const homeEnv = appEnvVar("HOME")
+  const inheritedHome = process.env[homeEnv]
   await mkdir(home, { recursive: true })
-  process.env.TACK_HOME = home
+  process.env[homeEnv] = home
   try {
     await run(home)
   } finally {
     replaceSecretValues("credentials", [])
-    if (inheritedHome === undefined) delete process.env.TACK_HOME
-    else process.env.TACK_HOME = inheritedHome
+    if (inheritedHome === undefined) delete process.env[homeEnv]
+    else process.env[homeEnv] = inheritedHome
     await rm(directory, { recursive: true, force: true })
   }
 }

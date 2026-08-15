@@ -9,10 +9,7 @@ function transport(sequence: string, tmux: boolean): string {
 
 export function notificationSequence(message: string, tmux: boolean): string {
   const safe = message.replace(/\p{Cc}/gu, "").replaceAll(";", ",")
-  return transport(
-    `\u001b]777;notify;${appInfo.name.slice(0, 1).toUpperCase()}${appInfo.name.slice(1)};${safe}\u001b\\`,
-    tmux,
-  )
+  return transport(`\u001b]777;notify;${appInfo.displayName};${safe}\u001b\\`, tmux)
 }
 
 export function progressSequence(active: boolean, tmux: boolean): string {

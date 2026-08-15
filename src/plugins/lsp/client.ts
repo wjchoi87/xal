@@ -484,7 +484,7 @@ export class LspClient {
       case "window/showMessageRequest":
         return null
       case "workspace/applyEdit":
-        return { applied: false, failureReason: "Tack's LSP client does not apply server edits" }
+        return { applied: false, failureReason: `${appInfo.displayName}'s LSP client does not apply server edits` }
       default:
         throw new JsonRpcRequestError(-32601, `Method not found: ${method}`)
     }

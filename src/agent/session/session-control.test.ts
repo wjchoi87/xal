@@ -18,7 +18,7 @@ import {
 let harness: AgentSessionTestHarness
 
 beforeAll(async () => {
-  harness = await setupAgentSessionTests("tack-agent-session-control-test-")
+  harness = await setupAgentSessionTests("agent-session-control-test-")
 })
 
 afterAll(async () => {

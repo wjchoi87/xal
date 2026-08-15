@@ -2,9 +2,11 @@ import { expect, test } from "bun:test"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { appEnvVar, appInfo } from "../app-info"
 import type { PermissionRequest } from "./types"
 
 const defaultSessionKey = {}
+const homeEnv = appEnvVar("HOME")
 
 function request(tool: string, overrides: Partial<PermissionRequest> = {}): PermissionRequest {
   return {
@@ -22,9 +24,9 @@ function request(tool: string, overrides: Partial<PermissionRequest> = {}): Perm
 }
 
 test("permission policy enforces mode, deny, configured, registered, and remembered precedence", async () => {
-  const previousHome = process.env.TACK_HOME
-  const home = await mkdtemp(join(tmpdir(), "tack-policy-test-"))
-  process.env.TACK_HOME = home
+  const previousHome = process.env[homeEnv]
+  const home = await mkdtemp(join(tmpdir(), `${appInfo.name}-policy-test-`))
+  process.env[homeEnv] = home
   try {
     const { evaluatePolicy, registerPolicyRule } = await import("./service")
     const { configureModes } = await import("./modes")
@@ -126,16 +128,16 @@ test("permission policy enforces mode, deny, configured, registered, and remembe
 
     configureModes({})
   } finally {
-    if (previousHome === undefined) delete process.env.TACK_HOME
-    else process.env.TACK_HOME = previousHome
+    if (previousHome === undefined) delete process.env[homeEnv]
+    else process.env[homeEnv] = previousHome
     await rm(home, { recursive: true, force: true })
   }
 })
 
 test("an AgentSession approval stays scoped to its session and workspace", async () => {
-  const previousHome = process.env.TACK_HOME
-  const home = await mkdtemp(join(tmpdir(), "tack-policy-session-test-"))
-  process.env.TACK_HOME = home
+  const previousHome = process.env[homeEnv]
+  const home = await mkdtemp(join(tmpdir(), `${appInfo.name}-policy-session-test-`))
+  process.env[homeEnv] = home
   try {
     const { registerTool, unregisterTool } = await import("../tools/registry")
     const { completedRound, runSettledTurn, ScriptedProvider, setupAgentSessionTests, toolRound } =
@@ -166,7 +168,7 @@ test("an AgentSession approval stays scoped to its session and workspace", async
       toolRound("other-session-call", toolName, {}),
       completedRound("Other session complete"),
     ])
-    const harness = await setupAgentSessionTests("tack-policy-agent-session-test-")
+    const harness = await setupAgentSessionTests("policy-agent-session-test-")
     const firstWorkspace = join(home, "first-workspace")
     const secondWorkspace = join(home, "second-workspace")
     const session = harness.createSession(provider, { cwd: firstWorkspace })
@@ -220,8 +222,8 @@ test("an AgentSession approval stays scoped to its session and workspace", async
       await harness.cleanup()
     }
   } finally {
-    if (previousHome === undefined) delete process.env.TACK_HOME
-    else process.env.TACK_HOME = previousHome
+    if (previousHome === undefined) delete process.env[homeEnv]
+    else process.env[homeEnv] = previousHome
     await rm(home, { recursive: true, force: true })
   }
 })

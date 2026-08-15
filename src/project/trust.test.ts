@@ -2,31 +2,34 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { appEnvVar, appInfo } from "../app-info"
+import { projectConfigPath } from "../config/paths"
 import { findProjectRoot } from "./root"
 import { ensureWorkspaceTrust, forgetTrusted, isTrusted } from "./trust"
 
 const originalCwd = process.cwd()
-const originalTackHome = process.env.TACK_HOME
+const homeEnv = appEnvVar("HOME")
+const originalHome = process.env[homeEnv]
 let directory = ""
 let home = ""
 let workspace = ""
 let nested = ""
 
 beforeEach(async () => {
-  directory = await realpath(await mkdtemp(join(tmpdir(), "tack-trust-test-")))
+  directory = await realpath(await mkdtemp(join(tmpdir(), `${appInfo.name}-trust-test-`)))
   home = join(directory, "home")
   workspace = join(directory, "workspace")
   nested = join(workspace, "packages", "app")
   await mkdir(join(workspace, ".git"), { recursive: true })
   await mkdir(nested, { recursive: true })
-  process.env.TACK_HOME = home
+  process.env[homeEnv] = home
   process.chdir(nested)
 })
 
 afterEach(async () => {
   process.chdir(originalCwd)
-  if (originalTackHome === undefined) delete process.env.TACK_HOME
-  else process.env.TACK_HOME = originalTackHome
+  if (originalHome === undefined) delete process.env[homeEnv]
+  else process.env[homeEnv] = originalHome
   await rm(directory, { recursive: true, force: true })
 })
 
@@ -40,14 +43,16 @@ describe("workspace trust", () => {
   })
 
   test("headless startup ignores untrusted project configuration without blocking", async () => {
-    const config = join(workspace, ".tack", "config.json")
-    await mkdir(join(workspace, ".tack"), { recursive: true })
+    const config = projectConfigPath(workspace)
+    await mkdir(join(workspace, `.${appInfo.name}`), { recursive: true })
     await writeFile(config, JSON.stringify({ plugins: ["untrusted-plugin"] }))
     const lines: string[] = []
 
     expect(await ensureWorkspaceTrust({ print: (line) => lines.push(line) })).toBe(true)
     expect(await isTrusted(workspace)).toBe(false)
-    expect(lines).toEqual([`ignoring project configuration in ${config} — run "tack trust grant" to enable it`])
+    expect(lines).toEqual([
+      `ignoring project configuration in ${config} — run "${appInfo.name} trust grant" to enable it`,
+    ])
   })
 
   test("interactive startup exits when the user rejects the workspace", async () => {

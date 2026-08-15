@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto"
 import { mkdir, realpath, unlink } from "node:fs/promises"
 import { dirname, isAbsolute, join, relative, resolve } from "node:path"
+import { appInfo } from "../app-info"
 import { worktreesDir } from "../config/paths"
 import { describeError } from "../lib/error"
 import { pathExists, readJsonFile, writeSecureJson } from "../lib/fs"
@@ -17,7 +18,7 @@ export interface ManagedWorktree {
   baseCommit: string
 }
 
-const MARKER = "tack-worktree.json"
+const MARKER = `${appInfo.name}-worktree.json`
 
 let mutations: Promise<void> = Promise.resolve()
 
@@ -109,7 +110,7 @@ export function createManagedWorktree(cwd: string, name: string, signal?: AbortS
     const baseCommit = await runGit(originalCwd, ["rev-parse", "--verify", "HEAD^{commit}"], signal)
     const suffix = randomUUID().replaceAll("-", "")
     const label = slug(name) || "workspace"
-    const branch = `tack/${label}-${suffix}`
+    const branch = `${appInfo.name}/${label}-${suffix}`
     const repository = createHash("sha256").update(repositoryRoot).digest("hex").slice(0, 16)
     const path = join(resolve(worktreesDir()), repository, `${label}-${suffix}`)
     await mkdir(dirname(path), { recursive: true })
@@ -168,7 +169,9 @@ export async function managedWorktreeAt(cwd: string, signal?: AbortSignal): Prom
 export function removeManagedWorktree(worktree: ManagedWorktree, force: boolean, signal?: AbortSignal): Promise<void> {
   return mutate(async () => {
     const current = await managedWorktreeAt(worktree.path, signal)
-    if (!current || current.path !== worktree.path) throw new Error(`${worktree.path} is not a managed Tack worktree`)
+    if (!current || current.path !== worktree.path) {
+      throw new Error(`${worktree.path} is not a managed ${appInfo.displayName} worktree`)
+    }
     if (!force) {
       await assertClean(
         current.path,
@@ -184,6 +187,8 @@ export function removeManagedWorktree(worktree: ManagedWorktree, force: boolean,
 
 export async function unmanageWorktree(worktree: ManagedWorktree, signal?: AbortSignal): Promise<void> {
   const current = await managedWorktreeAt(worktree.path, signal)
-  if (!current || current.path !== worktree.path) throw new Error(`${worktree.path} is not a managed Tack worktree`)
+  if (!current || current.path !== worktree.path) {
+    throw new Error(`${worktree.path} is not a managed ${appInfo.displayName} worktree`)
+  }
   await unlink(await markerPath(worktree.path, signal))
 }

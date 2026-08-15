@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { statSync } from "node:fs"
 import { basename, isAbsolute } from "node:path"
+import { appInfo } from "../../app-info"
 import { killProcessTree } from "../../lib/process"
 import { spawnCommand, spawnShellProcess, type ShellProcess } from "./process"
 import { sandboxLaunch, sandboxProcessEnvironment, type SandboxAccess } from "./sandbox"
@@ -135,7 +136,7 @@ function runPersistent(
   onOutput: (text: string) => void,
 ): Promise<ShellTermination> {
   return new Promise((resolve, reject) => {
-    const marker = `__tack_${randomUUID()}__`
+    const marker = `__${appInfo.name}_${randomUUID()}__`
     const needle = `\n${marker}:`
     const holdback = needle.length + 8
     let pending = ""

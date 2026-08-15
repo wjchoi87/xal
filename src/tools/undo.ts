@@ -4,6 +4,7 @@ import { realpathSync } from "node:fs"
 import { lstat, mkdtemp, realpath, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
+import { appInfo } from "../app-info"
 import { describeError, isMissingPathError } from "../lib/error"
 
 export interface UndoPreview {
@@ -284,7 +285,7 @@ class Repository {
   }
 
   private async capture(forced: string[], full: boolean): Promise<string> {
-    const directory = await mkdtemp(join(tmpdir(), "tack-git-index-"))
+    const directory = await mkdtemp(join(tmpdir(), `${appInfo.name}-git-index-`))
     const indexFile = join(directory, "index")
     try {
       const base = await runGit(this.workspace, ["rev-parse", "--verify", "HEAD^{tree}"])

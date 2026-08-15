@@ -1,4 +1,5 @@
 import { join } from "node:path"
+import { appInfo } from "../app-info"
 import { writeSecureText } from "../lib/fs"
 import { MAX_PLAN_LENGTH, parsePlanMarkdown, type SessionPlan } from "./types"
 import type { InteractiveTool } from "../tools/types"
@@ -57,7 +58,7 @@ export const submitPlanTool: InteractiveTool = {
         {
           id: "plan_review",
           header: "Plan review",
-          question: "Review the implementation plan above. What should Tack do?",
+          question: `Review the implementation plan above. What should ${appInfo.displayName} do?`,
           options: [
             {
               label: APPROVE,

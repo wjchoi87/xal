@@ -2,6 +2,8 @@ import { expect, test } from "bun:test"
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
+import { appEnvVar, appInfo } from "../app-info"
+import { projectConfigPath } from "./paths"
 import { loadSettings, saveSettings, settings } from "./settings"
 
 interface SettingsEnvironment {
@@ -15,21 +17,22 @@ async function writeJson(path: string, value: unknown): Promise<void> {
 }
 
 async function withSettingsEnvironment(run: (environment: SettingsEnvironment) => Promise<void>): Promise<void> {
-  const directory = await mkdtemp(join(tmpdir(), "tack-settings-test-"))
+  const directory = await mkdtemp(join(tmpdir(), `${appInfo.name}-settings-test-`))
   const home = join(directory, "home")
   const project = join(directory, "project")
-  const inheritedHome = process.env.TACK_HOME
+  const homeEnv = appEnvVar("HOME")
+  const inheritedHome = process.env[homeEnv]
   const inheritedCwd = process.cwd()
   await mkdir(home, { recursive: true })
   await mkdir(join(project, ".git"), { recursive: true })
-  process.env.TACK_HOME = home
+  process.env[homeEnv] = home
   process.chdir(project)
   try {
     await run({ home, project: process.cwd() })
   } finally {
     process.chdir(inheritedCwd)
-    if (inheritedHome === undefined) delete process.env.TACK_HOME
-    else process.env.TACK_HOME = inheritedHome
+    if (inheritedHome === undefined) delete process.env[homeEnv]
+    else process.env[homeEnv] = inheritedHome
     await rm(directory, { recursive: true, force: true })
   }
 }
@@ -56,7 +59,7 @@ test("trusted project settings override user settings with recursive object merg
       },
     })
     await writeJson(join(home, "trust.json"), [project])
-    await writeJson(join(project, ".tack", "config.json"), {
+    await writeJson(projectConfigPath(project), {
       plugins: ["project-plugin"],
       model: "project-model",
       permissions: {
@@ -110,7 +113,7 @@ test("trusted project settings override user settings with recursive object merg
 test("does not read malformed project settings until the project is trusted", async () => {
   await withSettingsEnvironment(async ({ home, project }) => {
     await writeJson(join(home, "config.json"), { provider: "user-provider" })
-    const projectConfig = join(project, ".tack", "config.json")
+    const projectConfig = projectConfigPath(project)
     await mkdir(dirname(projectConfig), { recursive: true })
     await writeFile(projectConfig, "{malformed")
 
@@ -140,7 +143,7 @@ test("saves only user settings securely while retaining project overrides in mem
       pluginConfig: { userPlugin: { enabled: true } },
     })
     await writeJson(join(home, "trust.json"), [project])
-    await writeJson(join(project, ".tack", "config.json"), {
+    await writeJson(projectConfigPath(project), {
       provider: "project-provider",
       plugins: ["project-plugin"],
     })

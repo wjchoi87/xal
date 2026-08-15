@@ -1,13 +1,15 @@
 # Configuration
 
-Tack reads JSON configuration from two locations:
+The app name comes from `package.json`. In the paths and commands below, `<name>` means that package name. The app home defaults to `~/.<name>` and can be overridden with the environment variable formed by upper-casing the package name, replacing non-alphanumeric characters with underscores, and appending `_HOME`.
 
-| Layer   | Path                                                                         | Priority |
-| ------- | ---------------------------------------------------------------------------- | -------- |
-| User    | `$TACK_HOME/config.json`, or `~/.tack/config.json` when `TACK_HOME` is unset | Lower    |
-| Project | `<git-root>/.tack/config.json`                                               | Higher   |
+The app reads JSON configuration from two locations:
 
-Tack searches upward from the working directory for `.git`. When no Git root is found, the working directory is used as the project root.
+| Layer   | Path                             | Priority |
+| ------- | -------------------------------- | -------- |
+| User    | `<app-home>/config.json`         | Lower    |
+| Project | `<git-root>/.<name>/config.json` | Higher   |
+
+The app searches upward from the working directory for `.git`. When no Git root is found, the working directory is used as the project root.
 
 Both files are optional and must contain a JSON object when present. Objects merge recursively from user to project configuration. Arrays and scalar values are replaced by the project value. Project configuration currently applies to every option, including plugins and permission rules, so it must be treated as trusted code and policy.
 
@@ -15,17 +17,17 @@ Commands that save model, thinking, or TUI display preferences write the user fi
 
 ## Options
 
-| Option         | Type       | Default                  | Description                                                                             |
-| -------------- | ---------- | ------------------------ | --------------------------------------------------------------------------------------- |
-| `plugins`      | `string[]` | `[]`                     | Additional plugins loaded after built-in plugins.                                       |
-| `provider`     | `string`   | Last registered provider | Provider ID or alias used for new sessions.                                             |
-| `model`        | `string`   | Provider default         | Model ID used for new sessions. Run `tack models` to refresh and list available models. |
-| `ui`           | `string`   | `"tui"`                  | UI ID started when Tack is run without a command.                                       |
-| `permissions`  | `object`   | `{}`                     | Permission rules under `allow`, `ask`, and `deny`.                                      |
-| `modes`        | `object`   | `{}`                     | Custom permission modes keyed by mode name.                                             |
-| `redaction`    | `object`   | `{}`                     | Sensitive values to redact under `values` and `environment`.                            |
-| `pluginConfig` | `object`   | `{}`                     | Configuration keyed by plugin name.                                                     |
-| `thinking`     | `object`   | `{}`                     | Thinking effort keyed by provider ID and then model ID.                                 |
+| Option         | Type       | Default                  | Description                                                                               |
+| -------------- | ---------- | ------------------------ | ----------------------------------------------------------------------------------------- |
+| `plugins`      | `string[]` | `[]`                     | Additional plugins loaded after built-in plugins.                                         |
+| `provider`     | `string`   | Last registered provider | Provider ID or alias used for new sessions.                                               |
+| `model`        | `string`   | Provider default         | Model ID used for new sessions. Run `<name> models` to refresh and list available models. |
+| `ui`           | `string`   | `"tui"`                  | UI ID started when the app is run without a command.                                      |
+| `permissions`  | `object`   | `{}`                     | Permission rules under `allow`, `ask`, and `deny`.                                        |
+| `modes`        | `object`   | `{}`                     | Custom permission modes keyed by mode name.                                               |
+| `redaction`    | `object`   | `{}`                     | Sensitive values to redact under `values` and `environment`.                              |
+| `pluginConfig` | `object`   | `{}`                     | Configuration keyed by plugin name.                                                       |
+| `thinking`     | `object`   | `{}`                     | Thinking effort keyed by provider ID and then model ID.                                   |
 
 Malformed `permissions`, `modes`, or `redaction` configuration fails startup instead of silently running without those rules.
 
@@ -33,7 +35,7 @@ Built-in provider IDs are `openai-chatgpt`, `deepseek`, and `alibaba-cloud`. `ch
 
 ### TUI keybindings
 
-Application shortcuts can be replaced under `pluginConfig.tui.keybindings`. Each action accepts an ordered array of bindings. The array replaces that action's defaults, and an empty array disables the action. Restart Tack after changing the configuration.
+Application shortcuts can be replaced under `pluginConfig.tui.keybindings`. Each action accepts an ordered array of bindings. The array replaces that action's defaults, and an empty array disables the action. Restart the app after changing the configuration.
 
 ```json
 {
@@ -68,18 +70,18 @@ A binding is a key with optional `ctrl`, `alt`, `shift`, or `super` modifiers jo
 | `thinking.decrease`        | `alt+,`                              |
 | `thinking.increase`        | `alt+.`                              |
 
-`display.clear` removes the visible transcript and pre-launch terminal scrollback while keeping Tack's startup header, active session, and composer draft.
+`display.clear` removes the visible transcript and pre-launch terminal scrollback while keeping the app's startup header, active session, and composer draft.
 
 Malformed bindings, unknown actions, duplicate assignments, and bindings that are prefixes of other bindings fail startup. Popover navigation, completion selection, task-list navigation, and ordinary text editing remain component-owned and are not remapped by this setting.
 
 ### Plugins
 
-The `plugins` array tells Tack what to load; it does not install or download anything. Every referenced plugin must already exist and be resolvable when Tack starts. Plugin registration is transactional: if importing, validating, or registering a plugin fails, Tack records a plugin registration failure and keeps none of that plugin's contributions.
+The `plugins` array tells the app what to load; it does not install or download anything. Every referenced plugin must already exist and be resolvable when the app starts. Plugin registration is transactional: if importing, validating, or registering a plugin fails, the app records a plugin registration failure and keeps none of that plugin's contributions.
 
 Each `plugins` entry supports one of these forms:
 
 - An already-installed package or module specifier, passed directly to Bun's module loader.
-- A relative directory beginning with `.`, resolved from the Tack home directory and expected to contain `plugin.ts`.
+- A relative directory beginning with `.`, resolved from the app home directory and expected to contain `plugin.ts`.
 - An absolute directory expected to contain `plugin.ts`.
 
 For example, this loads an existing local plugin:
@@ -94,7 +96,7 @@ The referenced directory must contain a `plugin.ts` whose default export has a `
 
 Plugins can contribute slash commands with `ctx.registerCommand`. Commands known synchronously belong in `register`; commands discovered from files or services may be added during `bootstrap`, before interactive input is released.
 
-When the UI or CLI exits, Tack aborts `ctx.signal` so in-progress `bootstrap` work can stop, waits for bootstrap to settle, and then runs `shutdown` in reverse plugin order. Plugins that own child processes or network connections close them there. A dynamically discovered tool can be removed with `ctx.unregisterTool(tool)` using the same tool object that was registered.
+When the UI or CLI exits, the app aborts `ctx.signal` so in-progress `bootstrap` work can stop, waits for bootstrap to settle, and then runs `shutdown` in reverse plugin order. Plugins that own child processes or network connections close them there. A dynamically discovered tool can be removed with `ctx.unregisterTool(tool)` using the same tool object that was registered.
 
 ### Hooks
 
@@ -107,9 +109,9 @@ Plugins register trusted in-process lifecycle hooks with `ctx.registerHook`. Hoo
 | `afterTool`  | Tool details and its model-facing output    | Replace the output                                          |
 | `turnEnd`    | Final output and token usage when available | No result; use it for lifecycle automation or observability |
 
-Every handler also receives a context containing an abort signal and the session ID, kind, working directory, provider, model, and permission mode. Prompt changes affect what the model sees while the TUI keeps the user's original text. Tool argument changes happen before scheduling and permission evaluation, so Tack authorizes and records the effective action. Post-tool hooks also run for failed or interrupted tool executions, but not for calls blocked before execution.
+Every handler also receives a context containing an abort signal and the session ID, kind, working directory, provider, model, and permission mode. Prompt changes affect what the model sees while the TUI keeps the user's original text. Tool argument changes happen before scheduling and permission evaluation, so the app authorizes and records the effective action. Post-tool hooks also run for failed or interrupted tool executions, but not for calls blocked before execution.
 
-Hook failures stop prompt, pre-tool, and turn-completion processing. A post-tool failure becomes a failed tool result that warns the model the tool may already have changed state. Hook inputs and code run inside Tack's process, so only load hooks you trust. Returned text and arguments pass through secret redaction before they reach the model, session storage, or TUI.
+Hook failures stop prompt, pre-tool, and turn-completion processing. A post-tool failure becomes a failed tool result that warns the model the tool may already have changed state. Hook inputs and code run inside the app's process, so only load hooks you trust. Returned text and arguments pass through secret redaction before they reach the model, session storage, or TUI.
 
 This plugin marks prompts and read results, and blocks an exact `git push` command:
 
@@ -172,7 +174,7 @@ Supported effort values are `none`, `low`, `medium`, `high`, `xhigh`, and `max`.
 
 ### Permission modes
 
-Tack ships three modes, cycled in the TUI with the `session.next-mode` shortcut (Shift+Tab by default):
+The app ships three modes, cycled in the TUI with the `session.next-mode` shortcut (Shift+Tab by default):
 
 - `normal` is the default. Actions run without confirmation unless they are risky: shell commands whose file arguments, redirect targets, or `cd` destinations leave the workspace, destructive commands aimed at the workspace root or `.git`, file writes and edits outside the workspace, privileged or system-level commands such as `sudo` and `dd`, network fetches with `curl` or `wget`, force pushes, package publishes, remote MCP calls, and reads of `.env` files or key material ask first. Deletes and other file operations inside the workspace run without prompting because workspace undo can restore them. Writes to the system temporary directory are also allowed.
 - `plan` is read-only. Tools that mutate anything are refused before they run.
@@ -200,26 +202,26 @@ Custom modes are defined under `modes` and appear in the TUI mode cycle and `--m
 | `values`      | `string[]` | `[]`    | Exact sensitive values to replace.                              |
 | `environment` | `string[]` | `[]`    | Environment variable names whose current values should be used. |
 
-Matches are case-sensitive and normally become `[REDACTED]` before content reaches a model, session or prompt-history storage, tool-output artifacts, CLI output, or the TUI. Tack chooses a safe alternate marker when a configured value is part of that text. Provider access tokens, refresh tokens, and API keys in Tack's credential store are included automatically. Prefer `environment` for additional values so the secret itself does not need to appear in a configuration file.
+Matches are case-sensitive and normally become `[REDACTED]` before content reaches a model, session or prompt-history storage, tool-output artifacts, CLI output, or the TUI. The app chooses a safe alternate marker when a configured value is part of that text. Provider access tokens, refresh tokens, and API keys in the app's credential store are included automatically. Prefer `environment` for additional values so the secret itself does not need to appear in a configuration file.
 
 Custom plugins can add values from their own credential sources with `ctx.registerSecrets`.
 
 ### Model discovery
 
-`tack models` and the TUI's `/model` command refresh every connected provider's model catalog. The catalog supplies the model picker, context-window tracking, input modalities, and the choices shown by `/thinking`.
+`<name> models` and the TUI's `/model` command refresh every connected provider's model catalog. The catalog supplies the model picker, context-window tracking, input modalities, and the choices shown by `/thinking`.
 
-The ChatGPT provider discovers the account-visible catalog from the authenticated Codex service and stores the last successful result in `$TACK_HOME/cache/openai-chatgpt-models.json` (or `~/.tack/cache/openai-chatgpt-models.json`). If live discovery is unavailable, Tack reports the failure and uses that cache, then its bundled catalog. DeepSeek discovers models from its authenticated `/models` endpoint and reports when it must use bundled model metadata. Alibaba Cloud uses a bundled catalog of Qwen models shared by Model Studio and Coding Plan.
+The ChatGPT provider discovers the account-visible catalog from the authenticated Codex service and stores the last successful result in `<app-home>/cache/openai-chatgpt-models.json`. If live discovery is unavailable, the app reports the failure and uses that cache, then its bundled catalog. DeepSeek discovers models from its authenticated `/models` endpoint and reports when it must use bundled model metadata. Alibaba Cloud uses a bundled catalog of Qwen models shared by Model Studio and Coding Plan.
 
 ## Prompt commands
 
-Tack discovers reusable Markdown prompt commands from two directories:
+The app discovers reusable Markdown prompt commands from two directories:
 
-| Scope   | Path                             | Priority |
-| ------- | -------------------------------- | -------- |
-| User    | `$TACK_HOME/commands/*.md`       | Lower    |
-| Project | `<git-root>/.tack/commands/*.md` | Higher   |
+| Scope   | Path                               | Priority |
+| ------- | ---------------------------------- | -------- |
+| User    | `<app-home>/commands/*.md`         | Lower    |
+| Project | `<git-root>/.<name>/commands/*.md` | Higher   |
 
-When `TACK_HOME` is unset, the user directory is `~/.tack/commands`. A project command replaces a user command with the same filename. Command filenames become slash-command names and must use lower-case letters, numbers, hyphens, or underscores. Prompt commands cannot replace built-in or plugin-registered commands.
+A project command replaces a user command with the same filename. Command filenames become slash-command names and must use lower-case letters, numbers, hyphens, or underscores. Prompt commands cannot replace built-in or plugin-registered commands.
 
 Each file contains the prompt sent to the active session. Optional frontmatter supplies its command-palette description and argument hint:
 
@@ -240,16 +242,16 @@ After startup, type `/` in the TUI to see discovered commands in the command pal
 
 ## Skills
 
-Tack discovers reusable skill packages from four directories, in increasing priority:
+The app discovers reusable skill packages from four directories, in increasing priority:
 
 | Scope   | Path                                    |
 | ------- | --------------------------------------- |
 | User    | `~/.agents/skills/**/SKILL.md`          |
-| User    | `$TACK_HOME/skills/**/SKILL.md`         |
+| User    | `<app-home>/skills/**/SKILL.md`         |
 | Project | `<git-root>/.agents/skills/**/SKILL.md` |
-| Project | `<git-root>/.tack/skills/**/SKILL.md`   |
+| Project | `<git-root>/.<name>/skills/**/SKILL.md` |
 
-When `TACK_HOME` is unset, its user skill directory is `~/.tack/skills`. A later package replaces an earlier package with the same skill name. Project skill directories are read only after workspace trust is established.
+A later package replaces an earlier package with the same skill name. Project skill directories are read only after workspace trust is established.
 
 Every package is a directory named after its skill and containing a `SKILL.md` entry file. The entry file requires YAML frontmatter with a lower-case, hyphen-separated `name` and a `description`, followed by non-empty instructions:
 
@@ -266,7 +268,7 @@ Only skill names and descriptions enter the system prompt. The model loads full 
 
 Type `$` anywhere in the TUI composer to open skill completion. Continue typing to filter, then press Tab, Right, or Enter to replace only the skill reference at the cursor. Known `$skill-name` references are highlighted both while editing and in the submitted user message.
 
-A prompt beginning with `$skill-name` explicitly invokes that skill. Tack keeps the compact original prompt visible in the conversation while sending the full skill instructions and the remaining user input to the model. A `$skill-name` reference later in a prompt remains ordinary user text, matching the behavior of other inline references. Skills do not register slash commands or appear in `/` completion.
+A prompt beginning with `$skill-name` explicitly invokes that skill. The app keeps the compact original prompt visible in the conversation while sending the full skill instructions and the remaining user input to the model. A `$skill-name` reference later in a prompt remains ordinary user text, matching the behavior of other inline references. Skills do not register slash commands or appear in `/` completion.
 
 ## Built-in plugin configuration
 
@@ -279,13 +281,13 @@ Run `/config` in the TUI to change display preferences. Changes save immediately
 | `showOutputs`  | `boolean` | `false` | Expand tool outputs and other transcript details. |
 | `showThinking` | `boolean` | `false` | Include model reasoning in the transcript.        |
 
-The TUI always emits OSC 9;4 progress while Tack is working and an OSC 777 notification when a turn completes, fails, or is interrupted. Notifications include the trailing 200 characters of visible assistant output, are not gated by terminal focus, and use tmux passthrough automatically. OSC lifecycle signaling is built in and has no configuration.
+The TUI always emits OSC 9;4 progress while the app is working and an OSC 777 notification when a turn completes, fails, or is interrupted. Notifications include the trailing 200 characters of visible assistant output, are not gated by terminal focus, and use tmux passthrough automatically. OSC lifecycle signaling is built in and has no configuration.
 
 The `display.toggle-details` shortcut (Ctrl+O by default) temporarily toggles transcript details for the current session without changing `showOutputs`.
 
 ### `lsp`
 
-Tack includes lazy language-server recipes for common languages:
+The app includes lazy language-server recipes for common languages:
 
 | ID           | File suffixes                                                | Command                      | Installation                                                 |
 | ------------ | ------------------------------------------------------------ | ---------------------------- | ------------------------------------------------------------ |
@@ -294,7 +296,7 @@ Tack includes lazy language-server recipes for common languages:
 | `rust`       | `.rs`                                                        | `rust-analyzer`              | `rustup component add rust-analyzer`                         |
 | `go`         | `.go`                                                        | `gopls`                      | `go install golang.org/x/tools/gopls@latest`                 |
 
-Tack checks for these commands on `PATH`, but never downloads or installs them. An installed recipe remains idle until the model queries a matching file. `/lsp` reports missing commands as unavailable with their installation guidance.
+The app checks for these commands on `PATH`, but never downloads or installs them. An installed recipe remains idle until the model queries a matching file. `/lsp` reports missing commands as unavailable with their installation guidance.
 
 Configure built-in overrides and custom servers under `pluginConfig.lsp.servers`. A built-in entry inherits every omitted recipe field, and `enabled: false` disables it. Custom server names must begin with a lower-case letter and contain only lower-case letters, numbers, hyphens, and underscores.
 
@@ -325,11 +327,11 @@ Configure built-in overrides and custom servers under `pluginConfig.lsp.servers`
 
 An enabled custom server requires `command` and a non-empty `fileTypes` object mapping filename suffixes to LSP language IDs. Commands must be executable names resolved through `PATH` or absolute paths; relative executable paths are rejected because servers run from detected project roots. A suffix can belong to only one enabled server, so disable a built-in recipe before assigning its suffixes to a differently named replacement.
 
-`args` and `env` are optional, custom `rootMarkers` default to `[".git"]`, `timeoutMs` defaults to `30000`, and `enabled` defaults to `true`. Supplying `args`, `fileTypes`, or `rootMarkers` on a built-in replaces that recipe field. `initializationOptions` are passed during the LSP handshake; `settings` are sent with `workspace/didChangeConfiguration` after initialization. `${NAME}` references in the command, arguments, and environment values expand from Tack's environment, and secret-like environment values enter Tack's redaction set.
+`args` and `env` are optional, custom `rootMarkers` default to `[".git"]`, `timeoutMs` defaults to `30000`, and `enabled` defaults to `true`. Supplying `args`, `fileTypes`, or `rootMarkers` on a built-in replaces that recipe field. `initializationOptions` are passed during the LSP handshake; `settings` are sent with `workspace/didChangeConfiguration` after initialization. `${NAME}` references in the command, arguments, and environment values expand from the app's environment, and secret-like environment values enter its redaction set.
 
-The read-only `lsp` model tool supports definitions, references, hover information, document and workspace symbols, implementations, incoming and outgoing calls, and diagnostics. It starts one server lazily for each matching server and project root. Before every request, Tack reads the current file from disk and synchronizes changed content through the notifications supported by the server, so changes made by any tool or external editor are visible without coupling the LSP plugin to a file-editing plugin. The diagnostics operation uses pull diagnostics when supported and otherwise waits briefly for published diagnostics.
+The read-only `lsp` model tool supports definitions, references, hover information, document and workspace symbols, implementations, incoming and outgoing calls, and diagnostics. It starts one server lazily for each matching server and project root. Before every request, the app reads the current file from disk and synchronizes changed content through the notifications supported by the server, so changes made by any tool or external editor are visible without coupling the LSP plugin to a file-editing plugin. The diagnostics operation uses pull diagnostics when supported and otherwise waits briefly for published diagnostics.
 
-For each file, Tack searches upward for the nearest configured root marker. If none is found, it uses the session working directory for files inside that workspace and the file's directory for external files. `/lsp` shows disabled, unavailable, idle, ready, and failed servers. `/lsp restart [server]` closes matching instances; the next semantic query starts them again. The model-facing tool is available when at least one enabled server command resolves. Language-server commands run as trusted local processes with the server root as their working directory, so only configure executables you trust. Tack closes every started server during shutdown.
+For each file, the app searches upward for the nearest configured root marker. If none is found, it uses the session working directory for files inside that workspace and the file's directory for external files. `/lsp` shows disabled, unavailable, idle, ready, and failed servers. `/lsp restart [server]` closes matching instances; the next semantic query starts them again. The model-facing tool is available when at least one enabled server command resolves. Language-server commands run as trusted local processes with the server root as their working directory, so only configure executables you trust. The app closes every started server during shutdown.
 
 ### `mcp`
 
@@ -363,15 +365,15 @@ MCP servers are configured under `pluginConfig.mcp.servers`. Server names must b
 }
 ```
 
-Each server supports `enabled` (default `true`) and `timeoutMs` (default `30000`). A stdio server requires `command`, accepts optional `args`, `cwd`, and `env`, and inherits the SDK's safe default process environment. Relative `cwd` values resolve from the directory where Tack starts. An HTTP server requires `url` and accepts optional `headers`; Tack tries Streamable HTTP first and falls back to legacy SSE at the same URL only when the initial Streamable HTTP request receives a 4xx response.
+Each server supports `enabled` (default `true`) and `timeoutMs` (default `30000`). A stdio server requires `command`, accepts optional `args`, `cwd`, and `env`, and inherits the SDK's safe default process environment. Relative `cwd` values resolve from the directory where the app starts. An HTTP server requires `url` and accepts optional `headers`; the app tries Streamable HTTP first and falls back to legacy SSE at the same URL only when the initial Streamable HTTP request receives a 4xx response.
 
 If a higher-priority configuration changes an existing server's transport, fields inherited for the inactive transport are ignored. Unknown field names still fail configuration.
 
-`${NAME}` references in commands, arguments, working directories, environment values, URLs, and headers expand from Tack's environment. A missing variable makes the MCP configuration fail instead of starting with an incomplete value. Values in secret-like environment variables and headers are added to Tack's redaction set.
+`${NAME}` references in commands, arguments, working directories, environment values, URLs, and headers expand from the app's environment. A missing variable makes the MCP configuration fail instead of starting with an incomplete value. Values in secret-like environment variables and headers are added to the app's redaction set.
 
 Servers connect in parallel during plugin bootstrap. One unavailable server is reported as failed without hiding tools from healthy servers. Discovered tools use names such as `mcp__local-tools__count`, retain their remote input schemas, and pass through normal permission handling. Every remote MCP call is treated as an unsandboxed mutation and invalidates workspace redo history because server annotations are untrusted hints and the tool's effects are external or unknown. Reading a remote resource or resolving a remote prompt also requires approval; listing their already-cached catalogs remains read-only.
 
-Connected resource catalogs, resource templates, and prompts are exposed through `mcp_resources`, `mcp_read_resource`, `mcp_prompts`, and `mcp_get_prompt`. Server instructions join the system prompt. Binary resource and image or audio content is summarized with its media type and byte size because Tack's tool-result boundary is text-only. Tools that require the experimental MCP task protocol, or whose output schema uses an unsupported dialect, are skipped and reported in status; ordinary and task-optional tools remain available. Tool-list change notifications refresh registered tools, and `/mcp reconnect [server]` reconnects one server or all servers. Run `/mcp` to see transport, status, and capability counts.
+Connected resource catalogs, resource templates, and prompts are exposed through `mcp_resources`, `mcp_read_resource`, `mcp_prompts`, and `mcp_get_prompt`. Server instructions join the system prompt. Binary resource and image or audio content is summarized with its media type and byte size because the app's tool-result boundary is text-only. Tools that require the experimental MCP task protocol, or whose output schema uses an unsupported dialect, are skipped and reported in status; ordinary and task-optional tools remain available. Tool-list change notifications refresh registered tools, and `/mcp reconnect [server]` reconnects one server or all servers. Run `/mcp` to see transport, status, and capability counts.
 
 ### `project-instructions`
 
@@ -384,7 +386,7 @@ Connected resource catalogs, resource templates, and prompts are exposed through
 | Option       | Type   | Default                                                  | Description                                                                           |
 | ------------ | ------ | -------------------------------------------------------- | ------------------------------------------------------------------------------------- |
 | `baseUrl`    | string | `https://dashscope-intl.aliyuncs.com/compatible-mode/v1` | HTTPS OpenAI-compatible endpoint for the API key's region, workspace, or Coding Plan. |
-| `clientName` | string | Tack's application name                                  | Client name used in the provider request user agent.                                  |
+| `clientName` | string | Package application name                                 | Client name used in the provider request user agent.                                  |
 
 Alibaba Cloud Model Studio API keys are region-specific. Set `baseUrl` to the OpenAI-compatible API Host shown when the key is created. Coding Plan keys use `https://coding-intl.dashscope.aliyuncs.com/v1`. `/connect` stores the key without making a billable model request; the first turn validates that the key, endpoint, and selected model are compatible.
 

@@ -2,6 +2,7 @@ import { expect, test } from "bun:test"
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { appInfo } from "../app-info"
 import type { AgentEvent } from "../agent/events"
 import type { HistoryItem } from "../agent/history"
 import { SessionRecorder } from "./recorder"
@@ -23,7 +24,7 @@ function record(value: unknown): string {
 }
 
 async function withSessionFile(run: (path: string) => Promise<void>): Promise<void> {
-  const directory = await mkdtemp(join(tmpdir(), "tack-session-store-"))
+  const directory = await mkdtemp(join(tmpdir(), `${appInfo.name}-session-store-`))
   try {
     await run(join(directory, "session.jsonl"))
   } finally {

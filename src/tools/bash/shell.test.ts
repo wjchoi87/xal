@@ -2,6 +2,7 @@ import { afterEach, expect, test } from "bun:test"
 import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { appInfo } from "../../app-info"
 import { getJob, stopJob, suppressDelivery, waitForProcessOutput } from "../../background/jobs"
 import { disposeShellSession, executeShellCommand } from "./shell"
 import { bashTool } from "./tool"
@@ -27,7 +28,7 @@ afterEach(() => {
 })
 
 test("keeps persistent shell state inside its owning session", async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "tack-shell-session-test-"))
+  const workspace = await mkdtemp(join(tmpdir(), `${appInfo.name}-shell-session-test-`))
   const nested = join(workspace, "nested")
   await mkdir(nested)
   const first = crypto.randomUUID()
@@ -47,7 +48,7 @@ test("keeps persistent shell state inside its owning session", async () => {
 
 test("runs owner-scoped managed background Bash for task agents with a durable log", async () => {
   const sessionId = crypto.randomUUID()
-  const directory = await mkdtemp(join(tmpdir(), "tack-shell-bg-test-"))
+  const directory = await mkdtemp(join(tmpdir(), `${appInfo.name}-shell-bg-test-`))
   try {
     const result = await bashTool.execute(
       { command: "echo durable-marker && sleep 30", background: true },

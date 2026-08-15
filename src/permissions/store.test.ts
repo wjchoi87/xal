@@ -2,11 +2,14 @@ import { expect, test } from "bun:test"
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { appEnvVar, appInfo } from "../app-info"
+
+const homeEnv = appEnvVar("HOME")
 
 test("permission store serializes concurrent updates, deduplicates rules, and writes securely", async () => {
-  const previousHome = process.env.TACK_HOME
-  const home = await mkdtemp(join(tmpdir(), "tack-permission-store-test-"))
-  process.env.TACK_HOME = home
+  const previousHome = process.env[homeEnv]
+  const home = await mkdtemp(join(tmpdir(), `${appInfo.name}-permission-store-test-`))
+  process.env[homeEnv] = home
   try {
     const { loadProjectRules, saveProjectRule } = await import("./store")
 
@@ -29,16 +32,16 @@ test("permission store serializes concurrent updates, deduplicates rules, and wr
     })
     expect((await stat(path)).mode & 0o777).toBe(0o600)
   } finally {
-    if (previousHome === undefined) delete process.env.TACK_HOME
-    else process.env.TACK_HOME = previousHome
+    if (previousHome === undefined) delete process.env[homeEnv]
+    else process.env[homeEnv] = previousHome
     await rm(home, { recursive: true, force: true })
   }
 })
 
 test("permission store rejects malformed data without overwriting it", async () => {
-  const previousHome = process.env.TACK_HOME
-  const home = await mkdtemp(join(tmpdir(), "tack-permission-store-test-"))
-  process.env.TACK_HOME = home
+  const previousHome = process.env[homeEnv]
+  const home = await mkdtemp(join(tmpdir(), `${appInfo.name}-permission-store-test-`))
+  process.env[homeEnv] = home
   try {
     const { loadProjectRules, saveProjectRule } = await import("./store")
     const path = join(home, "permissions.json")
@@ -52,8 +55,8 @@ test("permission store rejects malformed data without overwriting it", async () 
     )
     expect(await readFile(path, "utf8")).toBe(contents)
   } finally {
-    if (previousHome === undefined) delete process.env.TACK_HOME
-    else process.env.TACK_HOME = previousHome
+    if (previousHome === undefined) delete process.env[homeEnv]
+    else process.env[homeEnv] = previousHome
     await rm(home, { recursive: true, force: true })
   }
 })

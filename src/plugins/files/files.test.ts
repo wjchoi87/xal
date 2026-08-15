@@ -2,13 +2,14 @@ import { expect, test } from "bun:test"
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { appInfo } from "../../app-info"
 import type { ToolExecutionContext } from "../../tools/types"
 import { unifiedDiff } from "./diff"
 import { editTool } from "./edit"
 import { writeTool } from "./write"
 
 async function withWorkspace(run: (workspace: string) => Promise<void>): Promise<void> {
-  const workspace = await mkdtemp(join(tmpdir(), "tack-files-tools-"))
+  const workspace = await mkdtemp(join(tmpdir(), `${appInfo.name}-files-tools-`))
   try {
     await run(workspace)
   } finally {

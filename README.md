@@ -1,4 +1,4 @@
-# Tack
+# Terminal coding harness
 
 A small, customizable terminal coding harness built around a headless agent core and plugins.
 

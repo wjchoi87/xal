@@ -2,6 +2,7 @@ import pkg from "../package.json"
 
 export const appInfo = {
   name: pkg.name,
+  displayName: `${pkg.name.slice(0, 1).toUpperCase()}${pkg.name.slice(1)}`,
   version: pkg.version,
 } as const
 

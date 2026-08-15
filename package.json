@@ -1,5 +1,5 @@
 {
-  "name": "tack",
+  "name": "xal",
   "version": "0.0.1",
   "module": "src/index.ts",
   "type": "module",
@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "bun run --watch src/index.ts",
     "test": "bun test --isolate",
-    "release:local": "bun build --compile src/index.ts --outfile dist/tack && install -d \"$HOME/.local/bin\" && install -m 755 dist/tack \"$HOME/.local/bin/tack\"",
+    "release:local": "bun build --compile src/index.ts --outfile \"dist/$npm_package_name\" && install -d \"$HOME/.local/bin\" && install -m 755 \"dist/$npm_package_name\" \"$HOME/.local/bin/$npm_package_name\"",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",

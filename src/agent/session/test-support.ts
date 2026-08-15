@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { appEnvVar, appInfo } from "../../app-info"
 import type { JsonObject } from "../../lib/json"
 import type { ModelCatalog, Provider, StreamEvent, StreamRequest, Usage, UserInput } from "../../providers/types"
 import type { AgentEvent } from "../events"
@@ -20,12 +21,13 @@ export interface AgentSessionTestHarness {
 }
 
 export async function setupAgentSessionTests(prefix: string): Promise<AgentSessionTestHarness> {
-  const inheritedTackHome = process.env.TACK_HOME
-  const testHome = await mkdtemp(join(tmpdir(), prefix))
-  process.env.TACK_HOME = testHome
+  const homeEnv = appEnvVar("HOME")
+  const inheritedHome = process.env[homeEnv]
+  const testHome = await mkdtemp(join(tmpdir(), `${appInfo.name}-${prefix}`))
+  process.env[homeEnv] = testHome
   const cleanup = async (): Promise<void> => {
-    if (inheritedTackHome === undefined) delete process.env.TACK_HOME
-    else process.env.TACK_HOME = inheritedTackHome
+    if (inheritedHome === undefined) delete process.env[homeEnv]
+    else process.env[homeEnv] = inheritedHome
     await rm(testHome, { recursive: true, force: true })
   }
 

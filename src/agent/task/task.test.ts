@@ -20,7 +20,7 @@ import { registerTaskAgents } from "./tool"
 let harness: AgentSessionTestHarness
 
 beforeAll(async () => {
-  harness = await setupAgentSessionTests("tack-sub-agent-test-")
+  harness = await setupAgentSessionTests("sub-agent-test-")
   registerTaskAgents()
 })
 

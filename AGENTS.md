@@ -1,4 +1,4 @@
-# Tack
+# Terminal coding harness
 
 A terminal coding harness: an agentic TUI that integrates with AI providers to do real development work in your project. Built in small working increments — `0.0.x` releases grow feature by feature until `0.1.0`, which is **v0, the beta**.
 

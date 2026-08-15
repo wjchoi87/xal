@@ -1,3 +1,4 @@
+import { appInfo } from "../app-info"
 import type { AgentEvent, BackgroundResult } from "../agent/events"
 import type { SessionMeta } from "./types"
 
@@ -38,7 +39,7 @@ function renderEvent(event: AgentEvent): string | undefined {
     case "shell_finished":
       return `## Shell\n\n${indented(`$ ${event.command}\n${event.output}`)}`
     case "background_results":
-      return `## Tack context\n\n${event.results.map(backgroundResult).join("\n\n")}`
+      return `## ${appInfo.displayName} context\n\n${event.results.map(backgroundResult).join("\n\n")}`
     case "compacted":
       return `## Compaction\n\n${event.summary}`
     case "conversation_rewound":
@@ -93,7 +94,7 @@ function renderEvent(event: AgentEvent): string | undefined {
 
 export function renderSessionMarkdown(session: SessionExport): string {
   const { meta } = session
-  const title = session.title ?? "Tack session"
+  const title = session.title ?? `${appInfo.displayName} session`
   const metadata = [
     `- Session: \`${meta.id}\``,
     ...(meta.parentId ? [`- Forked from: \`${meta.parentId}\``] : []),

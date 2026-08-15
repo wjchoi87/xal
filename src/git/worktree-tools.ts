@@ -1,4 +1,5 @@
 import { isAbsolute, relative, resolve } from "node:path"
+import { appInfo } from "../app-info"
 import { listBackgroundTasks } from "../background/registry"
 import { createManagedWorktree, managedWorktreeAt, removeManagedWorktree, unmanageWorktree } from "./worktrees"
 import { asBoolean, asString } from "../lib/json"
@@ -33,8 +34,7 @@ function activeTaskAt(path: string): string | undefined {
 
 export const worktreeEnterTool: SessionTool = {
   name: "worktree_enter",
-  description:
-    "Create a clean Git worktree on a new Tack branch and move this session into it. The current workspace must be clean. Task agents spawned afterward inherit the isolated checkout.",
+  description: `Create a clean Git worktree on a new ${appInfo.displayName} branch and move this session into it. The current workspace must be clean. Task agents spawned afterward inherit the isolated checkout.`,
   parameters: {
     type: "object",
     properties: {
@@ -118,7 +118,7 @@ export const worktreeExitTool: SessionTool = {
     const action = actionFrom(args)
     if (action === "keep" && asBoolean(args.force)) throw new Error("force is valid only when removing a worktree")
     const worktree = await managedWorktreeAt(ctx.session.cwd, ctx.signal)
-    if (!worktree) throw new Error("this session is not inside a managed Tack worktree")
+    if (!worktree) throw new Error(`this session is not inside a managed ${appInfo.displayName} worktree`)
     const active = activeTaskAt(worktree.path)
     if (action === "remove" && active) {
       throw new Error(`cannot remove ${worktree.path} while ${active} is running`)
@@ -137,8 +137,7 @@ export const worktreeExitTool: SessionTool = {
 
 export const worktreeRemoveTool: SessionTool = {
   name: "worktree_remove",
-  description:
-    "Remove a managed Tack worktree that is not the current session workspace, such as an isolated task-agent checkout. Refuses uncommitted or ignored files unless force is true and leaves the branch available.",
+  description: `Remove a managed ${appInfo.displayName} worktree that is not the current session workspace, such as an isolated task-agent checkout. Refuses uncommitted or ignored files unless force is true and leaves the branch available.`,
   parameters: {
     type: "object",
     properties: {
@@ -173,7 +172,7 @@ export const worktreeRemoveTool: SessionTool = {
     const path = asString(args.path)?.trim()
     if (!path) throw new Error("path is required")
     const worktree = await managedWorktreeAt(resolveFilePath(path, ctx.session.cwd), ctx.signal)
-    if (!worktree) throw new Error(`${path} is not a managed Tack worktree`)
+    if (!worktree) throw new Error(`${path} is not a managed ${appInfo.displayName} worktree`)
     if (managedPath(worktree.path, ctx.session.cwd)) {
       throw new Error("cannot remove the current session worktree; use worktree_exit")
     }

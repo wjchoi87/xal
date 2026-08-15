@@ -2,6 +2,7 @@ import { expect, test } from "bun:test"
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { appInfo } from "../app-info"
 import { WorkspaceUndo } from "./undo"
 
 async function git(cwd: string, args: string[]): Promise<string> {
@@ -16,7 +17,7 @@ async function git(cwd: string, args: string[]): Promise<string> {
 }
 
 async function withGitWorkspace(run: (workspace: string, root: string) => Promise<void>): Promise<void> {
-  const root = await mkdtemp(join(tmpdir(), "tack-workspace-undo-"))
+  const root = await mkdtemp(join(tmpdir(), `${appInfo.name}-workspace-undo-`))
   const workspace = join(root, "workspace")
   try {
     await mkdir(workspace)
@@ -26,9 +27,9 @@ async function withGitWorkspace(run: (workspace: string, root: string) => Promis
     await git(workspace, ["add", "tracked.txt"])
     await git(workspace, [
       "-c",
-      "user.name=Tack Tests",
+      `user.name=${appInfo.displayName} Tests`,
       "-c",
-      "user.email=tack@example.invalid",
+      `user.email=${appInfo.name}@example.invalid`,
       "commit",
       "--quiet",
       "-m",
