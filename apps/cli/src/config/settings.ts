@@ -25,6 +25,12 @@ export interface RedactionSettings {
   environment: string[]
 }
 
+export interface AgentSettings {
+  maxConcurrent: number
+  timeoutMinutes: number
+  maxTurns: number
+}
+
 export interface Settings {
   plugins: string[]
   provider?: string
@@ -33,15 +39,19 @@ export interface Settings {
   permissions: PermissionSettings
   modes: Record<string, ModeSettings>
   redaction: RedactionSettings
+  agents: AgentSettings
   pluginConfig: Record<string, Record<string, unknown>>
   thinking: Record<string, Record<string, ThinkingEffort>>
 }
+
+const AGENT_DEFAULTS: AgentSettings = { maxConcurrent: 4, timeoutMinutes: 10, maxTurns: 24 }
 
 let current: Settings = {
   plugins: [],
   permissions: { allow: [], ask: [], deny: [] },
   modes: {},
   redaction: { values: [], environment: [] },
+  agents: { ...AGENT_DEFAULTS },
   pluginConfig: {},
   thinking: {},
 }
@@ -104,6 +114,14 @@ function sectionRecord(raw: Record<string, unknown>, field: string): Record<stri
   return value
 }
 
+function strictBoundedInteger(value: unknown, path: string, fallback: number, min: number, max: number): number {
+  if (value === undefined) return fallback
+  if (typeof value !== "number" || !Number.isInteger(value) || value < min || value > max) {
+    throw new Error(`${path} must be an integer between ${min} and ${max}`)
+  }
+  return value
+}
+
 function strictStringArray(value: unknown, path: string): string[] {
   if (value === undefined) return []
   if (!Array.isArray(value) || asStringArray(value).length !== value.length) {
@@ -127,6 +145,7 @@ function parseSettings(raw: Record<string, unknown>): Settings {
     }
   }
   const redaction = sectionRecord(raw, "redaction")
+  const agents = sectionRecord(raw, "agents")
   const pluginConfig: Record<string, Record<string, unknown>> = {}
   if (isRecord(raw.pluginConfig)) {
     for (const [name, value] of Object.entries(raw.pluginConfig)) {
@@ -158,6 +177,23 @@ function parseSettings(raw: Record<string, unknown>): Settings {
     redaction: {
       values: strictStringArray(redaction.values, "redaction.values"),
       environment: strictStringArray(redaction.environment, "redaction.environment"),
+    },
+    agents: {
+      maxConcurrent: strictBoundedInteger(
+        agents.maxConcurrent,
+        "agents.maxConcurrent",
+        AGENT_DEFAULTS.maxConcurrent,
+        1,
+        8,
+      ),
+      timeoutMinutes: strictBoundedInteger(
+        agents.timeoutMinutes,
+        "agents.timeoutMinutes",
+        AGENT_DEFAULTS.timeoutMinutes,
+        1,
+        60,
+      ),
+      maxTurns: strictBoundedInteger(agents.maxTurns, "agents.maxTurns", AGENT_DEFAULTS.maxTurns, 1, 100),
     },
     pluginConfig,
     thinking,

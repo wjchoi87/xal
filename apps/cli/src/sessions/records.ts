@@ -160,6 +160,7 @@ function parseBackgroundResult(value: unknown): BackgroundResult | undefined {
     const exitCode = asNumber(value.exitCode)
     const signal = asString(value.signal)
     const record = asString(value.record)
+    const recordCapped = asBoolean(value.recordCapped)
     return {
       kind: "process",
       id,
@@ -169,6 +170,7 @@ function parseBackgroundResult(value: unknown): BackgroundResult | undefined {
       ...(exitCode === undefined ? {} : { exitCode }),
       ...(signal === undefined ? {} : { signal }),
       ...(record === undefined ? {} : { record }),
+      ...(recordCapped === undefined ? {} : { recordCapped }),
     }
   }
   return undefined

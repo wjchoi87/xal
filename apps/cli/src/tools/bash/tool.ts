@@ -1,8 +1,10 @@
 import { stripVTControlCharacters } from "node:util"
+import type { BackgroundProcessJob } from "../../background/jobs"
 import { asBoolean, asNumber, asString } from "../../lib/json"
 import type { ProcessExecution, Tool } from "../types"
-import { startJob } from "./jobs"
+import { adoptJob, startJob } from "./jobs"
 import { spawnCommand } from "./process"
+import { armPromotion } from "./promote"
 import { sandboxAvailable, sandboxProcessEnvironment, type SandboxAccess } from "./sandbox"
 import { executeShellCommand, shellLaunch } from "./shell"
 import { splitCommand } from "./split"
@@ -142,10 +144,11 @@ export const bashTool: Tool = {
 
     const timeoutSeconds = timeoutSecondsOf(args)
     let output = ""
-    const execution = executeShellCommand(ctx.sessionId, command, ctx.cwd, sandbox, (text) => {
+    let sink = (text: string): void => {
       output += text
       ctx.update(text)
-    })
+    }
+    const execution = executeShellCommand(ctx.sessionId, command, ctx.cwd, sandbox, (text) => sink(text))
 
     let timedOut = false
     const timeout = setTimeout(() => {
@@ -156,8 +159,26 @@ export const bashTool: Tool = {
     ctx.signal.addEventListener("abort", onAbort)
     if (ctx.signal.aborted) onAbort()
 
+    const promotion = Promise.withResolvers<BackgroundProcessJob>()
+    const disarm = armPromotion(ctx.sessionId, () => {
+      clearTimeout(timeout)
+      ctx.signal.removeEventListener("abort", onAbort)
+      const adopted = adoptJob(command, execution, output, ctx.cwd, ctx.sessionId, ctx.directory)
+      sink = adopted.sink
+      promotion.resolve(adopted.job)
+    })
+
     try {
-      const termination = await execution.done
+      const settled = await Promise.race([
+        execution.done.then((termination) => ({ kind: "done" as const, termination })),
+        promotion.promise.then((job) => ({ kind: "promoted" as const, job })),
+      ])
+      if (settled.kind === "promoted") {
+        return {
+          output: `Moved to background job ${settled.job.id}${sandbox ? ` (${sandbox} sandbox)` : ""}. Its result is delivered automatically when it exits; read new output with job_output and stop it with job_kill.`,
+        }
+      }
+      const termination = settled.termination
       const trimmed = normalizeCompletedOutput(output).trimEnd()
       const sandboxed = sandbox ? { sandbox } : {}
       let processExecution: ProcessExecution
@@ -181,6 +202,7 @@ export const bashTool: Tool = {
         maxOutputBytes: MAX_RESULT_BYTES,
       }
     } finally {
+      disarm()
       clearTimeout(timeout)
       ctx.signal.removeEventListener("abort", onAbort)
     }

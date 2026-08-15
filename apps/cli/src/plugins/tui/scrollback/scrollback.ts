@@ -34,6 +34,13 @@ function redactBlock(block: Block): Block {
       }
     case "compaction":
       return { ...block, summary: redactText(block.summary) }
+    case "background":
+      return {
+        ...block,
+        label: redactText(block.label),
+        output: redactText(block.output),
+        ...(block.record === undefined ? {} : { record: redactText(block.record) }),
+      }
     case "plan":
       return { ...block, path: redactText(block.path), text: redactText(block.text) }
     case "tool":

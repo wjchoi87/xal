@@ -1,7 +1,7 @@
 import { release } from "node:os"
 import { dirname, resolve } from "node:path"
 import { appInfo } from "../../app-info"
-import { discardSettledAgentJobs, unsettledJobs } from "../../background/jobs"
+import { unsettledJobs } from "../../background/jobs"
 import { projectSessionsDir } from "../../config/paths"
 import { describeError } from "../../lib/error"
 import { runPromptHooks, type HookReporter } from "../../hooks/registry"
@@ -287,6 +287,10 @@ export class AgentSession {
     return this.cwd
   }
 
+  get currentContextTokens(): number | undefined {
+    return this.contextTokens
+  }
+
   get currentPlan(): SessionPlan | undefined {
     return this.plan
   }
@@ -380,7 +384,6 @@ export class AgentSession {
 
   reset(): boolean {
     if (this.currentState !== "idle" || this.asyncState.hasPendingAsyncWork()) return false
-    discardSettledAgentJobs(this.sessionId)
     this.disposeToolResources()
     this.asyncState.advanceEpoch()
     this.sessionId = crypto.randomUUID()
@@ -431,7 +434,6 @@ export class AgentSession {
         },
         this.cwd,
       )
-      discardSettledAgentJobs(parentId)
       this.disposeToolResources()
       this.asyncState.advanceEpoch()
       this.sessionId = id
@@ -458,7 +460,6 @@ export class AgentSession {
     ) {
       return false
     }
-    discardSettledAgentJobs(this.sessionId)
     this.disposeToolResources()
     this.asyncState.advanceEpoch()
     this.sessionId = meta.id
@@ -618,9 +619,7 @@ export class AgentSession {
   }
 
   private settleBackgroundAgents(): boolean {
-    if (this.startBackgroundResultTurn()) return true
-    if (!this.asyncState.hasPendingAgentWork()) discardSettledAgentJobs(this.sessionId)
-    return false
+    return this.startBackgroundResultTurn()
   }
 
   private startPreparedTurn(prepare: (signal: AbortSignal) => Promise<void>): void {

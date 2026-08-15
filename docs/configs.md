@@ -26,12 +26,25 @@ Commands that save model, thinking, or TUI display preferences write the user fi
 | `permissions`  | `object`   | `{}`                     | Permission rules under `allow`, `ask`, and `deny`.                                        |
 | `modes`        | `object`   | `{}`                     | Custom permission modes keyed by mode name.                                               |
 | `redaction`    | `object`   | `{}`                     | Sensitive values to redact under `values` and `environment`.                              |
+| `agents`       | `object`   | `{}`                     | Task-agent limits under `maxConcurrent`, `timeoutMinutes`, and `maxTurns`.                |
 | `pluginConfig` | `object`   | `{}`                     | Configuration keyed by plugin name.                                                       |
 | `thinking`     | `object`   | `{}`                     | Thinking effort keyed by provider ID and then model ID.                                   |
 
-Malformed `permissions`, `modes`, or `redaction` configuration fails startup instead of silently running without those rules.
+Malformed `permissions`, `modes`, `redaction`, or `agents` configuration fails startup instead of silently running without those rules.
 
 Built-in provider IDs are `openai-chatgpt`, `deepseek`, and `alibaba-cloud`. `chatgpt` is an alias for `openai-chatgpt`, and `dashscope` is an alias for `alibaba-cloud`. The only built-in UI ID is `tui`. Plugins may register more providers, aliases, and UIs.
+
+### Agents
+
+The `agents` object bounds background task agents dispatched with the `task` tool. Every field is an integer and is validated strictly.
+
+| Option           | Default | Range   | Description                                                                                  |
+| ---------------- | ------- | ------- | -------------------------------------------------------------------------------------------- |
+| `maxConcurrent`  | `4`     | `1–8`   | Task agents running at once; further dispatched tasks queue until a slot frees.              |
+| `timeoutMinutes` | `10`    | `1–60`  | Hard deadline per task agent.                                                                |
+| `maxTurns`       | `24`    | `1–100` | Soft turn budget; past it the agent is told to wrap up, and at 1.5× its last report is used. |
+
+See [Background work](/docs/background-work) for how task agents and background jobs behave.
 
 ### TUI keybindings
 
@@ -56,6 +69,7 @@ A binding is a key with optional `ctrl`, `alt`, `shift`, or `super` modifiers jo
 
 | Action                     | Default bindings                     |
 | -------------------------- | ------------------------------------ |
+| `agents.open`              | `ctrl+x ctrl+a`                      |
 | `agents.stop-all`          | `ctrl+x ctrl+k`                      |
 | `app.cancel`               | `ctrl+c`                             |
 | `composer.clear`           | `ctrl+u`                             |
@@ -66,6 +80,7 @@ A binding is a key with optional `ctrl`, `alt`, `shift`, or `super` modifiers jo
 | `display.toggle-details`   | `ctrl+o`                             |
 | `display.toggle-todos`     | `ctrl+t`                             |
 | `history.open`             | `escape escape`, `ctrl+r`            |
+| `jobs.background`          | `ctrl+b`                             |
 | `session.next-mode`        | `shift+tab`                          |
 | `thinking.decrease`        | `alt+,`                              |
 | `thinking.increase`        | `alt+.`                              |

@@ -1,7 +1,8 @@
 import { terminalPresentation } from "../terminal"
 
 const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" })
-const CONTROL_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g
+const CONTROL_CHARS =
+  /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\u0085\u200B-\u200F\u2028-\u202E\u2060\u2066-\u2069\uFEFF]/g
 
 export function displayWidth(text: string): number {
   return Bun.stringWidth(text)
@@ -39,5 +40,5 @@ export function truncateToWidth(text: string, width: number): string {
 }
 
 export function firstLine(text: string): string {
-  return text.split("\n", 1)[0]?.trim() ?? ""
+  return sanitize(text).split("\n", 1)[0]?.trim() ?? ""
 }

@@ -12,7 +12,7 @@ import { occupiedContext, type ThinkingEffort, type Usage } from "../../../provi
 import { redactText } from "../../../secrets/redactor"
 import { formatDuration, formatTokens } from "../lib/format"
 import { label, row } from "../lib/renderables"
-import { Spinner } from "../lib/spinner"
+import { spinnerGlyph, spinnerHandle } from "../lib/spinner"
 import { COLORS } from "../theme/colors"
 import { muted, paint } from "../theme/styles"
 
@@ -31,9 +31,10 @@ function modeColor(mode: PermissionMode): RGBA {
 export class StatusBar {
   readonly view: BoxRenderable
   private readonly activity: TextRenderable
+  private readonly backgroundLabel: TextRenderable
   private readonly modeLabel: TextRenderable
   private readonly meta: TextRenderable
-  private readonly spinner = new Spinner()
+  private readonly spinner = spinnerHandle(() => this.render())
   private state: AgentState = "idle"
   private hint: string | undefined
   private loading: string | undefined
@@ -54,6 +55,7 @@ export class StatusBar {
     this.model = redactText(model)
     this.view = row(ctx, { height: STATUS_ROWS, paddingLeft: 2, paddingRight: 2 })
     this.activity = label(ctx, { content: "", flexGrow: 1, flexShrink: 1 })
+    this.backgroundLabel = label(ctx, { content: "", flexShrink: 0, marginLeft: 1 })
     this.modeLabel = label(ctx, { content: "", flexShrink: 0, marginLeft: 1 })
     this.meta = label(ctx, {
       content: this.model,
@@ -62,6 +64,7 @@ export class StatusBar {
       color: COLORS.faint,
     })
     this.view.add(this.activity)
+    this.view.add(this.backgroundLabel)
     this.view.add(this.meta)
     this.view.add(this.modeLabel)
     this.renderMode()
@@ -86,6 +89,11 @@ export class StatusBar {
   setThinking(thinking: ThinkingEffort | undefined): void {
     this.thinking = thinking
     this.renderMeta()
+  }
+
+  setBackground(summary: string | undefined): void {
+    this.backgroundLabel.content =
+      summary === undefined ? "" : new StyledText([paint(COLORS.agent, summary), muted(" ·")])
   }
 
   private renderMode(): void {
@@ -182,7 +190,7 @@ export class StatusBar {
   }
 
   private toggleSpinner(active: boolean): void {
-    if (active) this.spinner.start(() => this.render())
+    if (active) this.spinner.start()
     else this.spinner.stop()
   }
 
@@ -194,7 +202,7 @@ export class StatusBar {
     if (this.hint) return new StyledText([muted(this.hint)])
     if (this.notice) return new StyledText([muted(this.notice)])
     if (this.loading) {
-      return new StyledText([paint(COLORS.agent, this.spinner.glyph), muted(` ${this.loading}`)])
+      return new StyledText([paint(COLORS.agent, spinnerGlyph()), muted(` ${this.loading}`)])
     }
     if (this.state === "awaiting_approval") {
       return new StyledText([paint(COLORS.warning, "!"), muted(" Approval needed · choose above")])
@@ -206,7 +214,7 @@ export class StatusBar {
       const hint = this.view.width > WIDE ? " · Esc interrupt" : ""
       const activity =
         this.state === "compacting" ? "Compacting context" : this.state === "running_hook" ? "Running hooks" : "Working"
-      return new StyledText([paint(COLORS.agent, this.spinner.glyph), muted(` ${activity}${hint}`)])
+      return new StyledText([paint(COLORS.agent, spinnerGlyph()), muted(` ${activity}${hint}`)])
     }
     if (this.turnElapsed && this.turnOutcome === "completed") {
       return new StyledText([paint(COLORS.success, "✓"), muted(` Finished in ${this.turnElapsed}`)])

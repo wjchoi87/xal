@@ -1,14 +1,17 @@
-import { setTimeout as sleep } from "node:timers/promises"
 import {
   appendAgentTranscript,
+  attachJobLog,
   createAgentJob,
+  sendAgentGuidance,
   setAgentActivity,
   startAgentJob,
   stopJob,
   touchAgentActivity,
   type BackgroundAgentJob,
 } from "../../background/jobs"
+import { createJobLog } from "../../background/log"
 import { registerBackgroundTask } from "../../background/registry"
+import { settings } from "../../config/settings"
 import { resolveThinking } from "../../config/thinking"
 import { createManagedWorktree, type ManagedWorktree } from "../../git/worktrees"
 import { describeError } from "../../lib/error"
@@ -66,9 +69,12 @@ class Semaphore {
   }
 }
 
-export const MAX_CONCURRENT_TASKS = 4
-const TASK_TIMEOUT_MS = 10 * 60 * 1_000
-const scheduler = new Semaphore(MAX_CONCURRENT_TASKS)
+let scheduler: Semaphore | undefined
+
+function taskScheduler(): Semaphore {
+  scheduler ??= new Semaphore(settings().agents.maxConcurrent)
+  return scheduler
+}
 
 function childMode(access: TaskAccess, parentMode: PermissionMode): PermissionMode {
   return access === "read" ? "plan" : parentMode
@@ -84,10 +90,12 @@ function registerTask(
   ctx: SessionToolContext,
   state: ActivityState,
   cwd: () => string,
+  child: () => AgentSession | undefined,
 ): void {
   registerBackgroundTask({
     kind: "agent",
     id: job.id,
+    ownerId: job.ownerId,
     title: item.task,
     startedAt: job.startedAt,
     role: item.isolation === "worktree" ? "task agent · worktree" : "task agent",
@@ -95,17 +103,30 @@ function registerTask(
     get cwd() {
       return cwd()
     },
+    childSessionId: () => child()?.id,
+    send: (message) => sendAgentGuidance(job, message, "user"),
     state: () =>
-      job.done ? { running: false, ok: job.outcome?.status === "completed", detail: job.detail } : { running: true },
+      job.done
+        ? {
+            running: false,
+            ok: job.outcome?.status === "completed" && job.delivery !== "dead_lettered",
+            detail: job.detail,
+          }
+        : { running: true },
     output: () => taskOutput(job),
-    snapshot: () => ({
-      activity: job.activity,
-      elapsedMs: (job.finishedAt ?? Date.now()) - job.startedAt,
-      toolCount: state.toolCalls.size,
-      usage: state.usage,
-    }),
+    snapshot: () => {
+      const now = Date.now()
+      return {
+        activity: job.activity,
+        queued: !job.done && job.runningAt === undefined,
+        queuedMs: (job.runningAt ?? job.finishedAt ?? now) - job.startedAt,
+        elapsedMs: job.runningAt === undefined ? 0 : (job.finishedAt ?? now) - job.runningAt,
+        toolCount: state.toolCalls.size,
+        contextTokens: child()?.currentContextTokens,
+      }
+    },
     stop: async () => {
-      await stopJob(job)
+      await stopJob(job, "user")
     },
   })
 }
@@ -133,17 +154,18 @@ async function runTask(
     terminal = { outcome: { status: "failed" }, detail: `failed to clean up task resources: ${message}` }
     setAgentActivity(job, "Cleanup failed")
   }
+  const timeoutMinutes = settings().agents.timeoutMinutes
   try {
-    await scheduler.acquire(controller.signal)
+    await taskScheduler().acquire(controller.signal)
     acquired = true
     if (controller.signal.aborted) throw new Error("task cancelled before it started")
-    startAgentJob(job, TASK_TIMEOUT_MS)
+    startAgentJob(job, timeoutMinutes * 60_000)
     deadline = setTimeout(() => {
       timedOut = true
       controller.abort()
       setAgentActivity(job, "Deadline reached; stopping…")
-      record("\nTask reached its 10-minute deadline.\n")
-    }, TASK_TIMEOUT_MS)
+      record(`\nTask reached its ${timeoutMinutes}-minute deadline.\n`)
+    }, timeoutMinutes * 60_000)
     deadline.unref()
 
     worktree =
@@ -201,7 +223,7 @@ async function runTask(
 
     if (timedOut) {
       setAgentActivity(job, "Timed out")
-      terminal = { outcome: { status: "timed_out" }, detail: "timed out after 10m" }
+      terminal = { outcome: { status: "timed_out" }, detail: `timed out after ${timeoutMinutes}m` }
     } else if (outcome.status === "interrupted") {
       setAgentActivity(job, "Interrupted")
       terminal = { outcome: { status: "interrupted" }, detail: "interrupted" }
@@ -216,7 +238,7 @@ async function runTask(
   } catch (error) {
     if (timedOut) {
       setAgentActivity(job, "Timed out")
-      terminal = { outcome: { status: "timed_out" }, detail: "timed out after 10m" }
+      terminal = { outcome: { status: "timed_out" }, detail: `timed out after ${timeoutMinutes}m` }
     } else if (controller.signal.aborted) {
       setAgentActivity(job, "Interrupted")
       terminal = { outcome: { status: "interrupted" }, detail: "interrupted" }
@@ -229,13 +251,14 @@ async function runTask(
   } finally {
     if (deadline) clearTimeout(deadline)
     if (child) {
-      while (true) {
+      try {
+        await child.cancelAndReapAsyncWork()
+      } catch (error) {
+        cleanupFailure(error)
         try {
-          await child.cancelAndReapAsyncWork()
-          break
-        } catch (error) {
-          cleanupFailure(error)
-          await sleep(1_000)
+          await child.cancelAndReapAsyncWork(0)
+        } catch (retryError) {
+          cleanupFailure(retryError)
         }
       }
       child.disposeAsyncDelivery()
@@ -245,7 +268,7 @@ async function runTask(
         cleanupFailure(error)
       }
     }
-    if (acquired) scheduler.release()
+    if (acquired) taskScheduler().release()
     terminal ??= { outcome: { status: "failed" }, detail: "task ended without an outcome" }
     await finishTask(job, terminal, ctx.session.directory, worktree)
   }
@@ -264,8 +287,9 @@ export function spawnTask(item: TaskItem, context: string, ctx: SessionToolConte
       child?.suppressAsyncDeliveries()
       child?.interrupt()
     },
-    send: (message) => child?.steer(`Parent guidance:\n${message}`) ?? false,
+    send: (message, source) => child?.steer(`${source === "user" ? "User" : "Parent"} guidance:\n${message}`) ?? false,
   })
+  attachJobLog(job, createJobLog(ctx.session.directory, `agent-${job.id}`))
   const state: ActivityState = {
     streamedText: false,
     activity: "Queued…",
@@ -273,7 +297,14 @@ export function spawnTask(item: TaskItem, context: string, ctx: SessionToolConte
     updatedCalls: new Set(),
   }
   setAgentActivity(job, state.activity)
-  registerTask(job, item, ctx, state, () => cwd)
+  registerTask(
+    job,
+    item,
+    ctx,
+    state,
+    () => cwd,
+    () => child,
+  )
   void runTask(
     job,
     item,

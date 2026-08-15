@@ -9,20 +9,17 @@ import {
   listBackgroundTasks,
   removeBackgroundTask,
   subscribeBackgroundTasks,
-  type BackgroundAgentTask,
   type BackgroundTask,
 } from "../../../background/registry"
 import { describeError } from "../../../lib/error"
-import { occupiedContext } from "../../../providers/types"
 import { redactText } from "../../../secrets/redactor"
 import { formatDuration, formatTokens } from "../lib/format"
 import { column, detailPanel, label, row } from "../lib/renderables"
-import { Spinner } from "../lib/spinner"
+import { spinnerGlyph, spinnerHandle } from "../lib/spinner"
 import { firstLine, sanitize, terminalGlyph } from "../lib/text"
 import { COLORS } from "../theme/colors"
 import { muted, paint } from "../theme/styles"
 
-const TICK_MS = 100
 const MAX_VISIBLE = 5
 const PREVIEW_LINES = 8
 const PREVIEW_KEPT_CHARS = 4_000
@@ -31,7 +28,8 @@ const GUTTER = 4
 export interface BackgroundTasksActions {
   changed(): void
   released(): void
-  viewAgent(task: BackgroundAgentTask | undefined): void
+  viewJob(task: BackgroundTask | undefined): void
+  scrollViewer(name: string): boolean
   error(message: string): void
 }
 
@@ -61,10 +59,6 @@ function rowId(entry: NavigatorRow): string {
   return entry.kind === "main" ? "main" : entry.task.id
 }
 
-function isAgent(task: BackgroundTask): task is BackgroundAgentTask {
-  return task.kind === "agent"
-}
-
 export class BackgroundTasks {
   readonly view: BoxRenderable
   private readonly overflow: BoxRenderable
@@ -72,17 +66,21 @@ export class BackgroundTasks {
   private readonly hints: BoxRenderable
   private readonly hintText: TextRenderable
   private rows: NavigatorRow[] = []
-  private readonly spinner = new Spinner(TICK_MS)
+  private readonly spinner = spinnerHandle(() => {
+    this.render()
+    if (this.viewedJobId !== undefined) this.actions.changed()
+  })
   private focusedFlag = false
   private selected = 0
   private offset = 0
   private expanded = false
-  private viewedAgentId: string | undefined
+  private viewedJobId: string | undefined
 
   constructor(
     private readonly ctx: RenderContext,
     private readonly actions: BackgroundTasksActions,
     private readonly stopAllShortcut: string | undefined,
+    private readonly primaryId: () => string,
   ) {
     this.view = column(ctx, { paddingLeft: 2, paddingRight: 2 })
     this.overflow = row(this.ctx, { height: 1, visible: false })
@@ -127,7 +125,7 @@ export class BackgroundTasks {
   focus(): void {
     if (this.rows.length === 0 || this.focusedFlag) return
     this.focusedFlag = true
-    const viewed = this.viewedAgentId
+    const viewed = this.viewedJobId
     if (viewed) {
       const index = this.rows.findIndex((entry) => entry.kind === "task" && entry.task.id === viewed)
       if (index >= 0) this.selected = index
@@ -144,6 +142,7 @@ export class BackgroundTasks {
 
   handleKey(name: string): boolean {
     if (!this.focusedFlag || this.rows.length === 0) return false
+    if (this.viewedJobId !== undefined && this.actions.scrollViewer(name)) return true
     if (name === "up" || name === "down") {
       const count = this.rows.length
       this.selected = (this.selected + (name === "up" ? -1 : 1) + count) % count
@@ -154,13 +153,15 @@ export class BackgroundTasks {
     if (name === "return" || name === "enter") {
       const entry = this.rows[this.selected]
       if (!entry) return true
-      if (entry.kind === "main") {
-        this.viewAgent(undefined)
-      } else if (entry.task.kind === "agent") {
-        this.viewAgent(entry.task.id === this.viewedAgentId ? undefined : entry.task)
-      } else {
-        this.expanded = !this.expanded
-      }
+      if (entry.kind === "main") this.viewJob(undefined)
+      else this.viewJob(entry.task.id === this.viewedJobId ? undefined : entry.task)
+      this.render()
+      return true
+    }
+    if (name === "tab") {
+      const entry = this.rows[this.selected]
+      if (!entry || entry.kind === "main") return true
+      this.expanded = !this.expanded
       this.render()
       return true
     }
@@ -170,15 +171,15 @@ export class BackgroundTasks {
       if (entry.task.state().running) {
         entry.task.stop().catch((error: unknown) => this.actions.error(describeError(error)))
       } else {
-        if (entry.task.id === this.viewedAgentId) this.viewAgent(undefined)
+        if (entry.task.id === this.viewedJobId) this.viewJob(undefined)
         this.expanded = false
         removeBackgroundTask(entry.task.id)
       }
       return true
     }
     if (name === "escape") {
-      if (this.viewedAgentId) {
-        this.viewAgent(undefined)
+      if (this.viewedJobId) {
+        this.viewJob(undefined)
         this.render()
         return true
       }
@@ -195,8 +196,8 @@ export class BackgroundTasks {
   }
 
   closeViewer(): boolean {
-    if (this.viewedAgentId === undefined) return false
-    this.viewAgent(undefined)
+    if (this.viewedJobId === undefined) return false
+    this.viewJob(undefined)
     this.render()
     return true
   }
@@ -209,32 +210,38 @@ export class BackgroundTasks {
     return agents.length > 0
   }
 
-  private viewAgent(task: BackgroundAgentTask | undefined): void {
-    this.viewedAgentId = task?.id
+  private viewJob(task: BackgroundTask | undefined): void {
+    this.viewedJobId = task?.id
     this.expanded = false
-    this.actions.viewAgent(task)
+    this.actions.viewJob(task)
   }
 
   private sync(): void {
     const tasks = listBackgroundTasks()
-    const agents = tasks.filter(isAgent)
-    const ordered = [...agents, ...tasks.filter((task) => task.kind === "process")]
-    const ids = agents.length > 0 ? ["main", ...ordered.map((task) => task.id)] : ordered.map((task) => task.id)
+    const hasAgents = tasks.some((task) => task.kind === "agent")
+    const running = tasks.filter((task) => task.state().running)
+    const settled = tasks.filter((task) => !task.state().running).sort((a, b) => b.startedAt - a.startedAt)
+    const ordered = [
+      ...running.filter((task) => task.kind === "agent"),
+      ...running.filter((task) => task.kind === "process"),
+      ...settled,
+    ]
+    const ids = hasAgents ? ["main", ...ordered.map((task) => task.id)] : ordered.map((task) => task.id)
     if (ids.length !== this.rows.length || ids.some((id, index) => id !== rowId(this.rows[index]!))) {
-      this.rebuild(tasks, agents.length > 0)
+      this.rebuild(ordered, hasAgents)
     }
-    if (this.viewedAgentId && !agents.some((agent) => agent.id === this.viewedAgentId)) this.viewAgent(undefined)
+    if (this.viewedJobId && !tasks.some((task) => task.id === this.viewedJobId)) this.viewJob(undefined)
     if (tasks.length === 0 && this.focusedFlag) {
       this.blur()
       this.actions.released()
     }
-    if (tasks.some((task) => task.state().running)) this.spinner.start(() => this.render())
+    if (running.length > 0) this.spinner.start()
     else this.spinner.stop()
     this.render()
     this.actions.changed()
   }
 
-  private rebuild(tasks: BackgroundTask[], includeMain: boolean): void {
+  private rebuild(ordered: BackgroundTask[], includeMain: boolean): void {
     const selectedId = this.rows[this.selected] ? rowId(this.rows[this.selected]!) : undefined
     for (const entry of this.rows) {
       this.view.remove(entry.view)
@@ -244,8 +251,7 @@ export class BackgroundTasks {
     this.view.remove(this.hints)
     this.rows = []
     if (includeMain) this.rows.push(this.createMainRow())
-    this.rows.push(...tasks.filter(isAgent).map((task) => this.createTaskRow(task)))
-    this.rows.push(...tasks.filter((task) => task.kind === "process").map((task) => this.createTaskRow(task)))
+    this.rows.push(...ordered.map((task) => this.createTaskRow(task)))
     for (const entry of this.rows) this.view.add(entry.view)
     this.view.add(this.overflow)
     this.view.add(this.hints)
@@ -302,13 +308,33 @@ export class BackgroundTasks {
     })
     const hidden = this.rows.length - (visibleEnd - this.offset)
     this.overflow.visible = hidden > 0
-    if (hidden > 0) this.overflowText.content = `… +${hidden} more`
+    if (hidden > 0) this.overflowText.content = this.overflowSummary(visibleEnd, hidden)
     this.hints.visible = this.focusedFlag
     if (this.focusedFlag) this.hintText.content = this.hint()
   }
 
+  private overflowSummary(visibleEnd: number, hidden: number): string {
+    const hiddenTasks = this.rows.filter(
+      (entry, index): entry is TaskRow => entry.kind === "task" && (index < this.offset || index >= visibleEnd),
+    )
+    let running = 0
+    let done = 0
+    let failed = 0
+    for (const entry of hiddenTasks) {
+      const state = entry.task.state()
+      if (state.running) running += 1
+      else if (state.ok) done += 1
+      else failed += 1
+    }
+    const parts = [`… +${hidden} more`]
+    if (running > 0) parts.push(`${running} running`)
+    if (done > 0) parts.push(`${done} done`)
+    if (failed > 0) parts.push(`${failed} failed`)
+    return parts.join(" · ")
+  }
+
   private renderMain(entry: MainRow, active: boolean): void {
-    const viewingMain = this.viewedAgentId === undefined
+    const viewingMain = this.viewedJobId === undefined
     entry.glyph.content = new StyledText([
       paint(
         viewingMain ? COLORS.foreground : COLORS.faint,
@@ -321,10 +347,19 @@ export class BackgroundTasks {
     entry.status.content = ""
   }
 
+  private ownerSuffix(task: BackgroundTask): string {
+    if (task.kind !== "process" || task.ownerId === this.primaryId()) return ""
+    const owner = this.rows.find(
+      (entry): entry is TaskRow =>
+        entry.kind === "task" && entry.task.kind === "agent" && entry.task.childSessionId() === task.ownerId,
+    )
+    return ` ${terminalGlyph("⟨", "<")}${owner ? owner.task.id : "sub-agent"}${terminalGlyph("⟩", ">")}`
+  }
+
   private renderTask(entry: TaskRow, active: boolean): void {
     const state = entry.task.state()
     if (entry.task.kind === "agent") {
-      const viewed = entry.task.id === this.viewedAgentId
+      const viewed = entry.task.id === this.viewedJobId
       const glyph = state.running ? terminalGlyph(viewed ? "●" : "○", viewed ? "*" : "o") : state.ok ? "✓" : "x"
       const glyphColor = state.running
         ? viewed
@@ -339,36 +374,50 @@ export class BackgroundTasks {
         ? new StyledText([paint(COLORS.accent, name)])
         : new StyledText([state.running || viewed ? paint(COLORS.foreground, name) : muted(name)])
       const snapshot = entry.task.snapshot()
-      const tokens = snapshot.usage ? ` · ↓ ${formatTokens(occupiedContext(snapshot.usage))} tokens` : ""
-      entry.status.content = new StyledText([
-        muted(state.running ? `${formatDuration(snapshot.elapsedMs)}${tokens}` : redactText(state.detail)),
-      ])
+      const tokens = snapshot.contextTokens ? ` · ↓ ${formatTokens(snapshot.contextTokens)} tokens` : ""
+      const running = snapshot.queued
+        ? `queued ${formatDuration(snapshot.queuedMs)}`
+        : `${formatDuration(snapshot.elapsedMs)}${tokens}`
+      entry.status.content = new StyledText([muted(state.running ? running : redactText(state.detail))])
       return
     }
+    const viewed = entry.task.id === this.viewedJobId
     entry.glyph.content = state.running
-      ? new StyledText([paint(COLORS.agent, this.spinner.glyph)])
+      ? new StyledText([paint(COLORS.agent, spinnerGlyph())])
       : new StyledText([paint(state.ok ? COLORS.success : COLORS.error, state.ok ? "✓" : "x")])
-    const name = `${entry.task.id} · ${firstLine(redactText(entry.task.title))}`
+    const name = `${entry.task.id} · ${firstLine(redactText(entry.task.title))}${this.ownerSuffix(entry.task)}`
     entry.text.content = active
       ? new StyledText([paint(COLORS.accent, name)])
-      : new StyledText([state.running ? paint(COLORS.foreground, name) : muted(name)])
+      : new StyledText([state.running || viewed ? paint(COLORS.foreground, name) : muted(name)])
     entry.status.content = new StyledText([
       muted(state.running ? formatDuration(Date.now() - entry.task.startedAt) : redactText(state.detail)),
     ])
   }
 
   private hint(): string {
-    const stopAll = this.stopAllShortcut ? [`${this.stopAllShortcut} stop all`] : []
     const entry = this.rows[this.selected]
-    if (!entry || entry.kind === "main") return ["↑↓ move", "enter main", ...stopAll, "esc back"].join(" · ")
-    if (entry.task.kind === "agent") {
-      const open = entry.task.id === this.viewedAgentId ? "enter close" : "enter view"
-      const action = entry.task.state().running ? "x stop" : "x dismiss"
-      return ["↑↓ move", open, action, ...stopAll, "esc back"].join(" · ")
+    if (this.viewedJobId !== undefined) {
+      const viewed = this.rows.find((row) => row.kind === "task" && row.task.id === this.viewedJobId)
+      const steer =
+        viewed?.kind === "task" &&
+        viewed.task.kind === "agent" &&
+        viewed.task.state().running &&
+        viewed.task.childSessionId() !== undefined
+          ? ["i steer"]
+          : []
+      const open =
+        !entry || entry.kind === "main"
+          ? "enter main"
+          : entry.task.id === this.viewedJobId
+            ? "enter close"
+            : "enter view"
+      return ["↑↓ move", open, "pgup/pgdn scroll", "end follow", ...steer, "esc close"].join(" · ")
     }
-    const view = this.expanded ? "enter collapse" : "enter output"
+    const stopAll = this.stopAllShortcut ? [`${this.stopAllShortcut} stop all`] : []
+    if (!entry || entry.kind === "main") return ["↑↓ move", "enter main", ...stopAll, "esc back"].join(" · ")
+    const preview = this.expanded ? "tab collapse" : "tab preview"
     const action = entry.task.state().running ? "x stop" : "x dismiss"
-    return `↑↓ move · ${view} · ${action} · esc back`
+    return ["↑↓ move", "enter view", preview, action, ...stopAll, "esc back"].join(" · ")
   }
 
   private scrollToSelected(): void {
@@ -379,7 +428,7 @@ export class BackgroundTasks {
   }
 
   private renderPreview(entry: NavigatorRow, active: boolean): void {
-    const lines = active && entry.kind === "task" && entry.task.kind === "process" ? this.previewLines(entry.task) : []
+    const lines = active && entry.kind === "task" ? this.previewLines(entry.task) : []
     entry.preview.visible = lines.length > 0
     while (entry.previewLabels.length > lines.length) {
       const removed = entry.previewLabels.pop()!

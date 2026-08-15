@@ -68,9 +68,9 @@ test("runs owner-scoped managed background Bash for task agents with a durable l
 
     expect(job.ownerId).toBe(sessionId)
     await waitForProcessOutput(job, 5_000)
-    expect(job.history).toContain("durable-marker")
+    expect(job.history.text()).toContain("durable-marker")
 
-    await stopJob(job)
+    await stopJob(job, "user")
     await job.completion
     suppressDelivery(job)
 

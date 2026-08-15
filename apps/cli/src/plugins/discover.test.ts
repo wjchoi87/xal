@@ -26,6 +26,7 @@ function settings(plugins: string[] = [], pluginConfig: Settings["pluginConfig"]
     permissions: { allow: [], ask: [], deny: [] },
     modes: {},
     redaction: { values: [], environment: [] },
+    agents: { maxConcurrent: 4, timeoutMinutes: 10, maxTurns: 24 },
     pluginConfig,
     thinking: {},
   }

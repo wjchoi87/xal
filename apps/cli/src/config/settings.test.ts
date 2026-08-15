@@ -91,6 +91,7 @@ test("trusted project settings override user settings with recursive object merg
         deny: ["bash(rm *)"],
       },
       modes: {},
+      agents: { maxConcurrent: 4, timeoutMinutes: 10, maxTurns: 24 },
       redaction: {
         values: [],
         environment: ["MY_PROJECT_TOKEN"],
@@ -124,6 +125,7 @@ test("does not read malformed project settings until the project is trusted", as
       ui: undefined,
       permissions: { allow: [], ask: [], deny: [] },
       modes: {},
+      agents: { maxConcurrent: 4, timeoutMinutes: 10, maxTurns: 24 },
       redaction: { values: [], environment: [] },
       pluginConfig: {},
       thinking: {},
@@ -163,6 +165,7 @@ test("saves only user settings securely while retaining project overrides in mem
       ui: undefined,
       permissions: { allow: [], ask: [], deny: [] },
       modes: {},
+      agents: { maxConcurrent: 4, timeoutMinutes: 10, maxTurns: 24 },
       redaction: { values: [], environment: [] },
       pluginConfig: { userPlugin: { enabled: true } },
       thinking: {},

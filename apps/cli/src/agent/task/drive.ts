@@ -1,4 +1,5 @@
 import { runningProcessJobs, type BackgroundProcessJob } from "../../background/jobs"
+import { settings } from "../../config/settings"
 import type { UserInput } from "../../providers/types"
 import type { AgentEvent } from "../events"
 import type { AgentSession } from "../session/session"
@@ -7,6 +8,14 @@ export type TaskDriveOutcome =
   { status: "completed"; report: string } | { status: "failed"; error: string } | { status: "interrupted" }
 
 type TaskTurnEnd = { status: "completed" } | { status: "failed"; error: string } | { status: "interrupted" }
+
+function turnBudgetNotice(remaining: number): string {
+  return [
+    "<system-notice>",
+    `You are near your turn budget. Stop expanding scope, settle or stop remaining background jobs, and produce your final report within the next ${remaining} ${remaining === 1 ? "turn" : "turns"}.`,
+    "</system-notice>",
+  ].join("\n")
+}
 
 function runningJobsNotice(running: BackgroundProcessJob[]): string {
   const listing = running.map((job) => `- ${job.id}: ${job.command.split("\n", 1)[0]}`).join("\n")
@@ -28,17 +37,19 @@ export async function driveTaskToQuiescence(
   const turns: TaskTurnEnd[] = []
   let candidate = ""
   let idle = false
-  let waiter: (() => void) | undefined
+  const waiters = new Set<() => void>()
 
-  const wake = (): void => waiter?.()
+  const wake = (): void => {
+    for (const waiter of [...waiters]) waiter()
+  }
   const wait = (): Promise<void> =>
     new Promise((resolve) => {
       const settle = (): void => {
         signal.removeEventListener("abort", settle)
-        if (waiter === settle) waiter = undefined
+        waiters.delete(settle)
         resolve()
       }
-      waiter = settle
+      waiters.add(settle)
       signal.addEventListener("abort", settle)
     })
 
@@ -102,6 +113,10 @@ export async function driveTaskToQuiescence(
     }
   })
 
+  const budget = settings().agents.maxTurns
+  const hardCap = Math.ceil(budget * 1.5)
+  let completedTurns = 0
+  let budgetNoticeSent = false
   try {
     if (!child.send(input)) return { status: "failed", error: "task session did not accept the prompt" }
     let noticeSent = false
@@ -114,6 +129,7 @@ export async function driveTaskToQuiescence(
       const turn = turns.shift()!
       if (turn.status === "failed") return { status: "failed", error: turn.error }
       if (turn.status === "interrupted") return { status: "interrupted" }
+      completedTurns += 1
       while (!idle && !signal.aborted) await wait()
       if (signal.aborted) return { status: "interrupted" }
       if (turns.length > 0) continue
@@ -121,6 +137,16 @@ export async function driveTaskToQuiescence(
         const report = candidate.trim()
         if (report) return { status: "completed", report }
         return { status: "failed", error: "completed without a final report" }
+      }
+      if (completedTurns >= hardCap) {
+        const report = candidate.trim()
+        if (report) return { status: "completed", report }
+        return { status: "failed", error: `exceeded its ${hardCap}-turn budget without a final report` }
+      }
+      if (completedTurns >= budget && !budgetNoticeSent) {
+        budgetNoticeSent = true
+        child.send({ text: turnBudgetNotice(hardCap - completedTurns), images: [] })
+        continue
       }
       if (!noticeSent) {
         const running = runningProcessJobs(child.id)

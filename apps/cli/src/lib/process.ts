@@ -1,10 +1,11 @@
 import type { ChildProcess } from "node:child_process"
 
-export function killProcessTree(process: ChildProcess): void {
-  if (process.pid === undefined || process.exitCode !== null || process.signalCode !== null) return
+export function killProcessTree(process: ChildProcess, signal: NodeJS.Signals = "SIGKILL"): void {
+  if (process.pid === undefined) return
   try {
-    globalThis.process.kill(-process.pid, "SIGKILL")
+    globalThis.process.kill(-process.pid, signal)
   } catch {
-    process.kill("SIGKILL")
+    if (process.exitCode !== null || process.signalCode !== null) return
+    process.kill(signal)
   }
 }

@@ -2,6 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import {
   finishAgentJob,
+  jobLogOf,
   sealAgentTranscript,
   setAgentRecord,
   type BackgroundAgentJob,
@@ -22,10 +23,18 @@ function taskDetail(detail: string, worktree: ManagedWorktree | undefined): stri
 }
 
 export function taskOutput(job: BackgroundAgentJob): string {
-  if (!job.record) return job.transcript
+  const transcript = job.transcript.text()
+  const saved = job.record
+  if (!saved) return transcript
   const record =
-    job.record.status === "saved" ? `Task record: ${job.record.path}` : `Task record unavailable: ${job.record.message}`
-  return job.transcript ? `${job.transcript}\n\n${record}` : record
+    saved.status === "failed"
+      ? `Task record unavailable: ${saved.message}`
+      : saved.complete
+        ? `Task record: ${saved.path}`
+        : saved.reason === "capped"
+          ? `Task record: ${saved.path} (transcript capped)`
+          : `Task record: ${saved.path} (full transcript unavailable: ${saved.message})`
+  return transcript ? `${transcript}\n\n${record}` : record
 }
 
 async function saveTaskRecord(
@@ -34,6 +43,7 @@ async function saveTaskRecord(
   terminal: TaskTerminal,
   detail: string,
   worktree: ManagedWorktree | undefined,
+  transcriptNote: string,
 ): Promise<string> {
   const path = join(directory, `agent-${job.id.replace(/[^a-zA-Z0-9_-]/g, "_")}-${crypto.randomUUID()}.md`)
   const workspace = worktree
@@ -47,6 +57,7 @@ async function saveTaskRecord(
       `Agent: ${job.id}`,
       `Status: ${terminal.outcome.status}`,
       `Outcome: ${detail}`,
+      transcriptNote,
       "",
       "## Assignment",
       job.task,
@@ -54,7 +65,7 @@ async function saveTaskRecord(
       ...workspace,
       ...report,
       "## Transcript",
-      job.transcript || "(no transcript)",
+      job.transcript.text() || "(no transcript)",
       "",
     ].join("\n"),
   )
@@ -71,10 +82,38 @@ export async function finishTask(
 ): Promise<void> {
   const detail = taskDetail(terminal.detail, worktree)
   sealAgentTranscript(job)
+  const log = jobLogOf(job)
+  let transcript: { status: "complete" } | { status: "capped" } | { status: "unavailable"; message: string } = {
+    status: "unavailable",
+    message: "task transcript log was not created",
+  }
+  let transcriptNote = "Full transcript unavailable."
+  if (log) {
+    try {
+      await log.close()
+      transcript = { status: log.capped() ? "capped" : "complete" }
+      transcriptNote = `Full transcript: ${log.path}${transcript.status === "capped" ? " (capped)" : ""}`
+    } catch (error) {
+      const message = describeError(error)
+      transcript = { status: "unavailable", message }
+      transcriptNote = `Full transcript unavailable: ${message}`
+    }
+  }
   let finalDetail = detail
   try {
-    const path = await saveTaskRecord(directory, job, terminal, detail, worktree)
-    setAgentRecord(job, { status: "saved", path })
+    const path = await saveTaskRecord(directory, job, terminal, detail, worktree, transcriptNote)
+    if (transcript.status === "complete") setAgentRecord(job, { status: "saved", path, complete: true })
+    else if (transcript.status === "capped") {
+      setAgentRecord(job, { status: "saved", path, complete: false, reason: "capped" })
+    } else {
+      setAgentRecord(job, {
+        status: "saved",
+        path,
+        complete: false,
+        reason: "unavailable",
+        message: transcript.message,
+      })
+    }
   } catch (error) {
     const message = describeError(error)
     setAgentRecord(job, { status: "failed", message })

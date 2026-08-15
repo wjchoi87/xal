@@ -3,6 +3,7 @@ import type { AgentSession } from "../../../agent/session/session"
 import { saveThinking, thinkingOptions } from "../../../config/thinking"
 import { describeError } from "../../../lib/error"
 import { nextPermissionMode } from "../../../permissions/modes"
+import { hasPromotion, requestBackground } from "../../../tools/bash/promote"
 import type { Screen } from "../screen"
 import type { ResolvedShortcuts, ShortcutAction, ShortcutStroke } from "../shortcuts"
 
@@ -75,8 +76,12 @@ export function bindKeys(renderer: CliRenderer, deps: KeymapDeps): void {
 
   function active(action: ShortcutAction, key: KeyEvent, first: ShortcutStroke): boolean {
     switch (action) {
+      case "agents.open":
+        return screen.tasks.count > 0 && !screen.overlayVisible
       case "agents.stop-all":
         return screen.tasks.hasRunningAgents
+      case "jobs.background":
+        return hasPromotion(session.id)
       case "app.cancel":
       case "display.clear":
       case "display.toggle-details":
@@ -97,7 +102,7 @@ export function bindKeys(renderer: CliRenderer, deps: KeymapDeps): void {
         return (
           session.currentState === "idle" &&
           !screen.tasks.focused &&
-          !screen.agentViewer.visible &&
+          !screen.jobViewer.visible &&
           !screen.palette.visible
         )
     }
@@ -116,6 +121,15 @@ export function bindKeys(renderer: CliRenderer, deps: KeymapDeps): void {
 
   function runAction(action: ShortcutAction, binding: string): void {
     switch (action) {
+      case "agents.open":
+        screen.openAgents()
+        return
+      case "jobs.background":
+        screen.statusBar.setNotice(
+          requestBackground(session.id) ? "Moved the running command to background" : "No command to background",
+        )
+        setTimeout(() => screen.statusBar.clearNotice(), QUIT_WINDOW_MS).unref()
+        return
       case "agents.stop-all":
         screen.statusBar.setNotice(screen.tasks.stopAllAgents() ? "Stopping all agents…" : "No agents are running")
         setTimeout(() => screen.statusBar.clearNotice(), QUIT_WINDOW_MS).unref()
@@ -219,6 +233,22 @@ export function bindKeys(renderer: CliRenderer, deps: KeymapDeps): void {
   }
 
   renderer.keyInput.on("keypress", (key) => {
+    if (
+      !screen.overlayVisible &&
+      key.ctrl &&
+      !key.meta &&
+      !key.option &&
+      !key.shift &&
+      !key.super &&
+      !key.hyper &&
+      key.name === "u" &&
+      screen.jobViewer.handleInputKey(key)
+    ) {
+      clearPending()
+      key.preventDefault()
+      screen.syncFooter()
+      return
+    }
     if (handleShortcut(key)) return
     if (screen.config.handleKey(key.name)) {
       key.preventDefault()
@@ -241,6 +271,11 @@ export function bindKeys(renderer: CliRenderer, deps: KeymapDeps): void {
       return
     }
     if (screen.picker.handleKey(key.name)) {
+      key.preventDefault()
+      screen.syncFooter()
+      return
+    }
+    if (screen.jobViewer.handleInputKey(key)) {
       key.preventDefault()
       screen.syncFooter()
       return

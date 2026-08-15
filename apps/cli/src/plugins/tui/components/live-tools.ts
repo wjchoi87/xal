@@ -1,12 +1,11 @@
 import type { BoxRenderable, RenderContext, TextRenderable } from "@opentui/core"
 import { formatDuration } from "../lib/format"
 import { column, label, row } from "../lib/renderables"
-import { Spinner } from "../lib/spinner"
+import { spinnerGlyph, spinnerHandle } from "../lib/spinner"
 import { sanitize } from "../lib/text"
 import { COLORS } from "../theme/colors"
 import { commandLabel, liveStatus, type LivePhase } from "./tool-status"
 
-const TICK_MS = 100
 const PREVIEW_LINES = 3
 const PREVIEW_KEPT_CHARS = 4_000
 
@@ -15,6 +14,7 @@ interface LiveRow {
   status: TextRenderable
   preview: BoxRenderable
   previewLabels: TextRenderable[]
+  tool: string
   tail: string
   createdAt: number
   pausedAt: number | undefined
@@ -25,11 +25,12 @@ interface LiveRow {
 export class LiveTools {
   readonly view: BoxRenderable
   private readonly rows = new Map<string, LiveRow>()
-  private readonly spinner = new Spinner(TICK_MS)
+  private readonly spinner = spinnerHandle(() => this.render())
 
   constructor(
     private readonly ctx: RenderContext,
     private readonly onChange: () => void,
+    private readonly backgroundShortcut: string | undefined,
   ) {
     this.view = column(ctx, {})
   }
@@ -150,6 +151,7 @@ export class LiveTools {
       status,
       preview,
       previewLabels: [],
+      tool,
       tail: "",
       createdAt: Date.now(),
       pausedAt: undefined,
@@ -167,7 +169,7 @@ export class LiveTools {
 
   private syncSpinner(): void {
     if ([...this.rows.values()].some((entry) => entry.phase === "running")) {
-      this.spinner.start(() => this.render())
+      this.spinner.start()
       return
     }
     this.spinner.stop()
@@ -181,7 +183,11 @@ export class LiveTools {
 
   private render(): void {
     for (const entry of this.rows.values()) {
-      entry.status.content = liveStatus(entry.phase, formatDuration(this.elapsed(entry)), this.spinner.glyph)
+      const suffix =
+        entry.tool === "bash" && entry.phase === "running" && this.backgroundShortcut
+          ? ` · ${this.backgroundShortcut} background`
+          : ""
+      entry.status.content = liveStatus(entry.phase, formatDuration(this.elapsed(entry)), spinnerGlyph(), suffix)
     }
   }
 }

@@ -15,12 +15,14 @@ import { commandLabel, settledStatus, type ToolOutcome } from "../components/too
 import { formatTimestamp, formatTokens } from "../lib/format"
 import { column, detailPanel, label, paragraph, row } from "../lib/renderables"
 import { highlightSkillReferences } from "../lib/skill-text"
+import { firstLine, terminalGlyph } from "../lib/text"
 import { renderMarkdown, type RenderedMarkdown } from "../markdown/render"
 import { MAX_OUTPUT_ROWS, renderToolOutput } from "../output/render"
 import { summarizeToolOutput, toolOutputFailed } from "../output/summary"
 import { COLORS } from "../theme/colors"
 import { background, muted, paint } from "../theme/styles"
 import type {
+  BackgroundBlock,
   BannerBlock,
   Block,
   CompactionBlock,
@@ -74,6 +76,8 @@ export function renderBlock(
       return frame(ctx, notice(ctx, block, expanded))
     case "compaction":
       return frame(ctx, compaction(ctx, block, expanded, detailsShortcut))
+    case "background":
+      return frame(ctx, backgroundResult(ctx, block, expanded, detailsShortcut))
     case "plan":
       return frame(ctx, plan(ctx, block))
     case "text":
@@ -160,6 +164,34 @@ function compaction(
   if (!expanded) return box
   const body = detailPanel(ctx)
   body.add(paragraph(ctx, { content: block.summary, color: COLORS.faint }))
+  box.add(body)
+  return box
+}
+
+function backgroundResult(
+  ctx: RenderContext,
+  block: BackgroundBlock,
+  expanded: boolean,
+  detailsShortcut: string | undefined,
+): Renderable {
+  const box = column(ctx)
+  const lines = block.output ? block.output.split("\n").length : 0
+  const hint = expanded || !detailsShortcut ? "" : ` · ${detailsShortcut} to read it`
+  box.add(
+    paragraph(ctx, {
+      content: `${terminalGlyph("↳", ">")} ${block.id} · ${firstLine(block.label)} · ${block.status} · ${lines} ${lines === 1 ? "line" : "lines"}${hint}`,
+      color: block.status === "completed" ? COLORS.success : COLORS.error,
+    }),
+  )
+  if (!expanded) return box
+  const body = detailPanel(ctx)
+  const width = Math.max(1, contentWidth(ctx) - 4)
+  const output = renderToolOutput(block.output || "(no output)", width, MAX_OUTPUT_ROWS)
+  const content = label(ctx, { content: output.content, height: output.rows })
+  content.wrapMode = "char"
+  content.truncate = false
+  body.add(content)
+  if (block.record !== undefined) body.add(paragraph(ctx, { content: `Record: ${block.record}`, color: COLORS.faint }))
   box.add(body)
   return box
 }

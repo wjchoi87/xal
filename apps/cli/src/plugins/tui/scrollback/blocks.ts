@@ -37,6 +37,15 @@ export interface CompactionBlock {
   tokensBefore: number | undefined
 }
 
+export interface BackgroundBlock {
+  kind: "background"
+  id: string
+  label: string
+  status: "completed" | "failed" | "interrupted" | "timed_out"
+  output: string
+  record?: string
+}
+
 export interface PlanBlock {
   kind: "plan"
   path: string
@@ -72,4 +81,13 @@ export type StreamKind = StreamBlock["kind"]
 export type HeaderBlock = BannerBlock | InfoBlock | ErrorBlock | NoticeBlock
 
 export type Block =
-  BannerBlock | UserBlock | InfoBlock | ErrorBlock | NoticeBlock | CompactionBlock | PlanBlock | StreamBlock | ToolBlock
+  | BannerBlock
+  | UserBlock
+  | InfoBlock
+  | ErrorBlock
+  | NoticeBlock
+  | CompactionBlock
+  | BackgroundBlock
+  | PlanBlock
+  | StreamBlock
+  | ToolBlock

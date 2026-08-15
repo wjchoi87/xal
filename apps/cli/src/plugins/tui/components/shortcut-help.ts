@@ -34,6 +34,8 @@ function shortcutEntries(shortcuts: ResolvedShortcuts): ShortcutEntry[] {
     actionEntry(shortcuts, "display.clear"),
     actionEntry(shortcuts, "display.toggle-details"),
     actionEntry(shortcuts, "display.toggle-todos"),
+    actionEntry(shortcuts, "agents.open"),
+    actionEntry(shortcuts, "agents.stop-all"),
     actionEntry(shortcuts, "app.cancel"),
   ]
   return entries.filter((entry) => entry !== undefined)

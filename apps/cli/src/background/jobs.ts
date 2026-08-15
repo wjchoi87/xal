@@ -2,10 +2,13 @@ import { setTimeout as sleep } from "node:timers/promises"
 import { describeError } from "../lib/error"
 import { profileJobCreated, profileJobFinished } from "../profiler/profiler"
 import { createRedactedStream, redactText, type RedactedStream } from "../secrets/redactor"
+import { createJobBuffer, type JobBuffer } from "./buffer"
+import type { JobLog } from "./log"
 import { backgroundTasksChanged, listBackgroundTasks, removeBackgroundTask, subscribeBackgroundTasks } from "./registry"
 
-const MAX_PENDING_CHARS = 2_000_000
-const MAX_HISTORY_CHARS = 200_000
+const MAX_PENDING_CHARS = 256_000
+const BUFFER_HEAD_CHARS = 100_000
+const BUFFER_TAIL_CHARS = 300_000
 const STOP_WAIT_MS = 2_000
 const SETTLED_RETENTION_MS = 5 * 60 * 1_000
 
@@ -19,11 +22,16 @@ interface BackgroundJobBase {
   done: boolean
   detail: string
   delivery: DeliveryState
+  stoppedByUser: boolean
   completion: Promise<void>
   stop(): void
 }
 
-export type BackgroundJobRecord = { status: "saved"; path: string } | { status: "failed"; message: string }
+export type BackgroundJobRecord =
+  | { status: "saved"; path: string; complete: true }
+  | { status: "saved"; path: string; complete: false; reason: "capped" }
+  | { status: "saved"; path: string; complete: false; reason: "unavailable"; message: string }
+  | { status: "failed"; message: string }
 
 export type ProcessTermination =
   | { status: "exited"; exitCode: number }
@@ -35,45 +43,43 @@ export interface BackgroundProcessJob extends BackgroundJobBase {
   command: string
   pending: string
   dropped: boolean
-  history: string
+  history: JobBuffer
   termination?: ProcessTermination
   record?: BackgroundJobRecord
   waiters: Set<() => void>
+  kill(): void
 }
 
 export type BackgroundAgentOutcome =
   { status: "completed"; report: string } | { status: "failed" } | { status: "interrupted" } | { status: "timed_out" }
+
+export type JobSendSource = "parent" | "user"
 
 export interface BackgroundAgentControls {
   id?: string
   ownerId: string
   task: string
   stop(): void
-  send(message: string): boolean
+  send(message: string, source: JobSendSource): boolean
 }
 
 export interface BackgroundAgentJob extends BackgroundJobBase {
   kind: "agent"
   task: string
   phase: "queued" | "running"
+  runningAt?: number
   deadlineAt?: number
   lastActivityAt: number
-  transcript: string
+  transcript: JobBuffer
   activity: string
   outcome?: BackgroundAgentOutcome
   record?: BackgroundJobRecord
-  send(message: string): boolean
+  send(message: string, source: JobSendSource): boolean
 }
 
 export type BackgroundJob = BackgroundProcessJob | BackgroundAgentJob
 
 export type CollectedAgentOutcome = BackgroundAgentOutcome | { status: "already_collected" }
-
-export interface ProcessLog {
-  path: string
-  append(text: string): void
-  close(): Promise<void>
-}
 
 export interface BackgroundDeliverySink {
   deliver(job: BackgroundJob): Promise<boolean> | boolean
@@ -82,7 +88,7 @@ export interface BackgroundDeliverySink {
 const jobs = new Map<string, BackgroundJob>()
 const completions = new WeakMap<BackgroundJob, () => void>()
 const redactors = new WeakMap<BackgroundJob, RedactedStream>()
-const processLogs = new WeakMap<BackgroundProcessJob, ProcessLog>()
+const jobLogs = new WeakMap<BackgroundJob, JobLog>()
 const finishing = new WeakSet<BackgroundProcessJob>()
 const evictions = new Map<string, ReturnType<typeof setTimeout>>()
 const sinks = new Map<string, BackgroundDeliverySink>()
@@ -146,6 +152,7 @@ function createBase(
       done: false,
       detail: "still running",
       delivery: "none",
+      stoppedByUser: false,
       completion,
       stop,
     },
@@ -166,6 +173,7 @@ export function createProcessJob(
   ownerId: string,
   command: string,
   stop: () => void,
+  kill: () => void = stop,
 ): BackgroundProcessJob {
   const created = createBase(prefix, ownerId, stop)
   const job: BackgroundProcessJob = {
@@ -174,8 +182,9 @@ export function createProcessJob(
     command: redactText(command),
     pending: "",
     dropped: false,
-    history: "",
+    history: createJobBuffer(BUFFER_HEAD_CHARS, BUFFER_TAIL_CHARS),
     waiters: new Set(),
+    kill,
   }
   registerJob(job, created.complete)
   return job
@@ -189,7 +198,7 @@ export function createAgentJob(prefix: string, controls: BackgroundAgentControls
     task: redactText(controls.task),
     phase: "queued",
     lastActivityAt: created.base.startedAt,
-    transcript: "",
+    transcript: createJobBuffer(BUFFER_HEAD_CHARS, BUFFER_TAIL_CHARS),
     activity: "Initializing…",
     send: controls.send,
   }
@@ -197,8 +206,12 @@ export function createAgentJob(prefix: string, controls: BackgroundAgentControls
   return job
 }
 
-export function attachProcessLog(job: BackgroundProcessJob, log: ProcessLog): void {
-  processLogs.set(job, log)
+export function attachJobLog(job: BackgroundJob, log: JobLog): void {
+  jobLogs.set(job, log)
+}
+
+export function jobLogOf(job: BackgroundJob): JobLog | undefined {
+  return jobLogs.get(job)
 }
 
 function redactorOf(job: BackgroundJob): RedactedStream {
@@ -209,19 +222,18 @@ function redactorOf(job: BackgroundJob): RedactedStream {
 
 function wakeProcess(job: BackgroundProcessJob): void {
   for (const waiter of [...job.waiters]) waiter()
-  backgroundTasksChanged()
+  backgroundTasksChanged("progress")
 }
 
 function appendProcess(job: BackgroundProcessJob, text: string): void {
   if (!text) return
-  processLogs.get(job)?.append(text)
+  jobLogs.get(job)?.append(text)
   job.pending += text
   if (job.pending.length > MAX_PENDING_CHARS) {
     job.pending = job.pending.slice(-MAX_PENDING_CHARS)
     job.dropped = true
   }
-  job.history += text
-  if (job.history.length > MAX_HISTORY_CHARS * 2) job.history = job.history.slice(-MAX_HISTORY_CHARS)
+  job.history.append(text)
   wakeProcess(job)
 }
 
@@ -231,12 +243,13 @@ export function appendProcessOutput(job: BackgroundProcessJob, text: string): vo
 
 function appendTranscript(job: BackgroundAgentJob, text: string): void {
   if (!text) return
-  job.transcript += text
-  if (job.transcript.length > MAX_HISTORY_CHARS * 2) job.transcript = job.transcript.slice(-MAX_HISTORY_CHARS)
-  backgroundTasksChanged()
+  jobLogs.get(job)?.append(text)
+  job.transcript.append(text)
+  backgroundTasksChanged("progress")
 }
 
 export function appendAgentTranscript(job: BackgroundAgentJob, text: string): void {
+  if (job.done) return
   job.lastActivityAt = Date.now()
   appendTranscript(job, redactorOf(job).write(text))
 }
@@ -244,14 +257,17 @@ export function appendAgentTranscript(job: BackgroundAgentJob, text: string): vo
 export function setAgentActivity(job: BackgroundAgentJob, activity: string): void {
   job.lastActivityAt = Date.now()
   job.activity = redactText(activity)
-  backgroundTasksChanged()
+  backgroundTasksChanged("progress")
 }
 
 export function startAgentJob(job: BackgroundAgentJob, timeoutMs: number): void {
   if (job.done) return
   job.phase = "running"
+  job.runningAt = Date.now()
   job.deadlineAt = Date.now() + timeoutMs
-  setAgentActivity(job, "Initializing…")
+  job.lastActivityAt = Date.now()
+  job.activity = "Initializing…"
+  backgroundTasksChanged("lifecycle")
 }
 
 export function touchAgentActivity(job: BackgroundAgentJob): void {
@@ -267,15 +283,18 @@ export function sealAgentTranscript(job: BackgroundAgentJob): void {
 }
 
 export function setAgentRecord(job: BackgroundAgentJob, record: BackgroundJobRecord): void {
-  job.record = record.status === "saved" ? record : { status: "failed", message: redactText(record.message) }
-  backgroundTasksChanged()
+  job.record =
+    record.status === "failed" || (record.status === "saved" && !record.complete && record.reason === "unavailable")
+      ? { ...record, message: redactText(record.message) }
+      : record
+  backgroundTasksChanged("lifecycle")
 }
 
 function settleDelivery(job: BackgroundJob, state: "delivered" | "suppressed" | "dead_lettered"): void {
   deliveryReservations.delete(job)
   job.delivery = state
-  if (job.done && (job.kind === "agent" || state === "dead_lettered")) scheduleEviction(job)
-  backgroundTasksChanged()
+  if (job.done) scheduleEviction(job)
+  backgroundTasksChanged("lifecycle")
 }
 
 function deadLetter(job: BackgroundJob, reason: string): void {
@@ -331,7 +350,7 @@ function dispatchOwner(ownerId: string): void {
 
 function enqueueDelivery(job: BackgroundJob): void {
   if (job.delivery !== "none") {
-    if (job.kind === "agent" && (job.delivery === "suppressed" || job.delivery === "delivered")) scheduleEviction(job)
+    if (job.delivery === "suppressed" || job.delivery === "delivered") scheduleEviction(job)
     return
   }
   job.delivery = "pending"
@@ -358,7 +377,7 @@ export function reserveDelivery(job: BackgroundJob): symbol | undefined {
   const reservation = Symbol(job.id)
   deliveryReservations.set(job, reservation)
   job.delivery = "reserved"
-  backgroundTasksChanged()
+  backgroundTasksChanged("lifecycle")
   return reservation
 }
 
@@ -367,7 +386,7 @@ export function releaseDelivery(job: BackgroundJob, reservation: symbol): void {
   deliveryReservations.delete(job)
   job.delivery = "none"
   if (job.done) enqueueDelivery(job)
-  else backgroundTasksChanged()
+  else backgroundTasksChanged("lifecycle")
 }
 
 export function suppressDelivery(job: BackgroundJob): void {
@@ -387,18 +406,16 @@ function completeJob(
   job: BackgroundJob,
   detail: string,
   outcome: "completed" | "failed" | "interrupted" | "timed_out",
-  remove: boolean,
 ): void {
   const complete = completions.get(job)
   if (!complete) throw new Error(`background job ${job.id} has no completion resolver`)
   job.done = true
   job.finishedAt = Date.now()
-  job.detail = redactText(detail)
+  job.detail = redactText(job.stoppedByUser ? `${detail}; stopped by the user` : detail)
   profileJobFinished(job.id, outcome)
   completions.delete(job)
   complete()
-  if (remove) removeBackgroundTask(job.id)
-  else backgroundTasksChanged()
+  backgroundTasksChanged("lifecycle")
 }
 
 function processDetail(termination: ProcessTermination, logFailure: string | undefined): string {
@@ -417,7 +434,7 @@ export async function finishProcessJob(job: BackgroundProcessJob, termination: P
   appendProcess(job, redactorOf(job).end())
   redactors.delete(job)
   job.termination = termination
-  const log = processLogs.get(job)
+  const log = jobLogs.get(job)
   let logFailure: string | undefined
   if (log) {
     try {
@@ -425,7 +442,11 @@ export async function finishProcessJob(job: BackgroundProcessJob, termination: P
     } catch (error) {
       logFailure = describeError(error)
     }
-    job.record = logFailure ? { status: "failed", message: logFailure } : { status: "saved", path: log.path }
+    job.record = logFailure
+      ? { status: "failed", message: logFailure }
+      : log.capped()
+        ? { status: "saved", path: log.path, complete: false, reason: "capped" }
+        : { status: "saved", path: log.path, complete: true }
   }
   completeJob(
     job,
@@ -435,7 +456,6 @@ export async function finishProcessJob(job: BackgroundProcessJob, termination: P
       : termination.status === "exited" && termination.exitCode === 0 && !logFailure
         ? "completed"
         : "failed",
-    true,
   )
   wakeProcess(job)
   enqueueDelivery(job)
@@ -445,7 +465,7 @@ export function finishAgentJob(job: BackgroundAgentJob, outcome: BackgroundAgent
   if (job.done) return
   sealAgentTranscript(job)
   job.outcome = outcome.status === "completed" ? { status: "completed", report: redactText(outcome.report) } : outcome
-  completeJob(job, detail, outcome.status, false)
+  completeJob(job, detail, outcome.status)
   enqueueDelivery(job)
 }
 
@@ -491,7 +511,7 @@ export function readProcessOutput(job: BackgroundProcessJob): { text: string; dr
   const { pending, dropped } = job
   job.pending = ""
   job.dropped = false
-  backgroundTasksChanged()
+  backgroundTasksChanged("progress")
   return { text: pending, dropped }
 }
 
@@ -508,14 +528,6 @@ export function collectAgentOutcome(job: BackgroundAgentJob, reservation?: symbo
   return job.outcome
 }
 
-export function discardSettledAgentJobs(ownerId: string): void {
-  for (const job of [...jobs.values()]) {
-    if (job.kind !== "agent" || job.ownerId !== ownerId || !job.done) continue
-    suppressDelivery(job)
-    removeBackgroundTask(job.id)
-  }
-}
-
 export async function reapOwnerJobs(ownerId: string, graceMs: number): Promise<void> {
   const deadline = Date.now() + graceMs
   while (true) {
@@ -526,16 +538,23 @@ export async function reapOwnerJobs(ownerId: string, graceMs: number): Promise<v
       job.stop()
     }
     const wait = deadline - Date.now()
-    const settled =
-      wait > 0 &&
-      (await Promise.race([
+    if (wait > 0) {
+      const settled = await Promise.race([
         Promise.all(running.map((job) => job.completion)).then(() => true),
         sleep(wait, false, { ref: false }),
-      ]))
-    if (!settled) {
-      const stuck = running.filter((job) => !job.done).map((job) => job.id)
-      if (stuck.length > 0) {
-        throw new Error(`background job cleanup is stuck; still running: ${stuck.join(", ")}`)
+      ])
+      if (settled) continue
+    }
+    const stuck = runningJobs(ownerId)
+    for (const job of stuck) killJob(job)
+    const killed = await Promise.race([
+      Promise.all(stuck.map((job) => job.completion)).then(() => true),
+      sleep(STOP_WAIT_MS, false, { ref: false }),
+    ])
+    if (!killed) {
+      const survivors = runningJobs(ownerId).map((job) => job.id)
+      if (survivors.length > 0) {
+        throw new Error(`background job cleanup is stuck; still running: ${survivors.join(", ")}`)
       }
     }
   }
@@ -582,16 +601,42 @@ export async function waitForAgentCompletion(
   }
 }
 
-export async function stopJob(job: BackgroundJob): Promise<void> {
+export type JobStopOrigin = "user" | "model"
+
+function killJob(job: BackgroundJob): void {
+  switch (job.kind) {
+    case "process":
+      job.kill()
+      return
+    case "agent":
+      job.stop()
+      return
+  }
+}
+
+export async function stopJob(job: BackgroundJob, origin: JobStopOrigin): Promise<void> {
   if (job.done) return
+  if (origin === "user") job.stoppedByUser = true
   if (job.kind === "agent") {
-    suppressDelivery(job)
     setAgentActivity(job, "Stopping…")
+    if (origin === "model") suppressDelivery(job)
   }
   job.stop()
+  await Promise.race([job.completion, sleep(STOP_WAIT_MS, undefined, { ref: false })])
+  if (job.done) return
+  killJob(job)
   await Promise.race([job.completion, sleep(STOP_WAIT_MS, undefined, { ref: false })])
 }
 
 export function jobStatus(job: BackgroundJob): string {
   return job.done ? job.detail : "still running"
+}
+
+export function sendAgentGuidance(job: BackgroundAgentJob, message: string, source: JobSendSource): boolean {
+  if (job.done) return false
+  if (!job.send(message, source)) return false
+  const label = source === "user" ? "User" : "Parent"
+  appendAgentTranscript(job, `\n> ${label} guidance\n${message}\n`)
+  setAgentActivity(job, `${label} guidance queued…`)
+  return true
 }

@@ -2,6 +2,7 @@ import type { KeyEvent } from "@opentui/core"
 import { asStringArray, isRecord } from "../../lib/json"
 
 export type ShortcutAction =
+  | "agents.open"
   | "agents.stop-all"
   | "app.cancel"
   | "composer.clear"
@@ -12,6 +13,7 @@ export type ShortcutAction =
   | "display.toggle-details"
   | "display.toggle-todos"
   | "history.open"
+  | "jobs.background"
   | "session.next-mode"
   | "thinking.decrease"
   | "thinking.increase"
@@ -48,6 +50,12 @@ export type ShortcutResolution =
   | { type: "action"; action: ShortcutAction; binding: string }
 
 const definitions: Record<ShortcutAction, ShortcutDefinition> = {
+  "agents.open": {
+    defaults: ["ctrl+x ctrl+a"],
+    description: "view agents & jobs",
+    sequenceTimeoutMs: 2_000,
+    pendingNotice: true,
+  },
   "agents.stop-all": {
     defaults: ["ctrl+x ctrl+k"],
     description: "stop all agents",
@@ -68,6 +76,7 @@ const definitions: Record<ShortcutAction, ShortcutDefinition> = {
     helpBindings: 2,
     sequenceTimeoutMs: 500,
   },
+  "jobs.background": { defaults: ["ctrl+b"], description: "background the running command" },
   "session.next-mode": { defaults: ["shift+tab"], description: "change mode" },
   "thinking.decrease": { defaults: ["alt+,"], description: "decrease thinking" },
   "thinking.increase": { defaults: ["alt+."], description: "increase thinking" },
@@ -75,6 +84,7 @@ const definitions: Record<ShortcutAction, ShortcutDefinition> = {
 
 function isShortcutAction(value: string): value is ShortcutAction {
   switch (value) {
+    case "agents.open":
     case "agents.stop-all":
     case "app.cancel":
     case "composer.clear":
@@ -85,6 +95,7 @@ function isShortcutAction(value: string): value is ShortcutAction {
     case "display.toggle-details":
     case "display.toggle-todos":
     case "history.open":
+    case "jobs.background":
     case "session.next-mode":
     case "thinking.decrease":
     case "thinking.increase":

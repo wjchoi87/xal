@@ -3,6 +3,7 @@ import type { Command } from "../../commands/types"
 import type { PluginContext } from "../types"
 
 interface TuiCommandActions {
+  agents(): void
   config(): void
   terminal(): string[]
   quit(): void
@@ -35,6 +36,16 @@ const configCommand: Command = {
   },
 }
 
+const agentsCommand: Command = {
+  name: "agents",
+  aliases: ["jobs"],
+  describe: "view running agents and background jobs",
+  async run() {
+    if (!actions) throw new Error("tui is not running")
+    actions.agents()
+  },
+}
+
 async function exitTui(): Promise<void> {
   if (!actions) throw new Error("tui is not running")
   actions.quit()
@@ -48,6 +59,7 @@ const quitCommand: Command = {
 }
 
 export function registerTuiCommands(ctx: PluginContext): void {
+  ctx.registerCommand(agentsCommand)
   ctx.registerCommand(configCommand)
   ctx.registerCommand(terminalCommand)
   ctx.registerCommand(quitCommand)

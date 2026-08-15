@@ -1,14 +1,13 @@
 import {
   acknowledgeDelivery,
   collectAgentOutcome,
-  appendAgentTranscript,
   getJob,
   jobStatus,
   listJobs,
   readProcessOutput,
   releaseDelivery,
   reserveDelivery,
-  setAgentActivity,
+  sendAgentGuidance,
   stopJob,
   waitForAgentCompletion,
   waitForProcessOutput,
@@ -46,7 +45,7 @@ function unreadProcessOutput(job: BackgroundProcessJob): string {
 function processRecordNotice(job: BackgroundProcessJob): string {
   if (!job.record) return ""
   return job.record.status === "saved"
-    ? `\nFull log: ${job.record.path}`
+    ? `\nFull log: ${job.record.path}${job.record.complete ? "" : " (capped)"}`
     : `\nFull log unavailable: ${job.record.message}`
 }
 
@@ -81,10 +80,13 @@ async function agentOutput(job: BackgroundAgentJob, wait: number, signal: AbortS
 }
 
 function agentRecord(job: BackgroundAgentJob): string {
-  if (!job.record) return ""
-  return job.record.status === "saved"
-    ? `\nTask record: ${job.record.path}`
-    : `\nTask record unavailable: ${job.record.message}`
+  const record = job.record
+  if (!record) return ""
+  if (record.status === "failed") return `\nTask record unavailable: ${record.message}`
+  if (record.complete) return `\nTask record: ${record.path}`
+  return record.reason === "capped"
+    ? `\nTask record: ${record.path} (transcript capped)`
+    : `\nTask record: ${record.path} (full transcript unavailable: ${record.message})`
 }
 
 function duration(ms: number): string {
@@ -97,10 +99,15 @@ function duration(ms: number): string {
 
 function agentStatus(job: BackgroundAgentJob, now: number): string {
   const state = job.done ? job.detail : job.phase
-  const elapsed = duration((job.finishedAt ?? now) - job.startedAt)
+  const queuedMs = (job.runningAt ?? job.finishedAt ?? now) - job.startedAt
+  const queued = queuedMs >= 1_000 ? ` · queued ${duration(queuedMs)}` : ""
+  const timing =
+    job.runningAt === undefined
+      ? `queued ${duration(queuedMs)}`
+      : `${duration((job.finishedAt ?? now) - job.runningAt)}${queued}`
   const activity = job.done ? "" : ` · activity: ${job.activity} · idle ${duration(now - job.lastActivityAt)}`
   const deadline = job.done || job.deadlineAt === undefined ? "" : ` · deadline in ${duration(job.deadlineAt - now)}`
-  return `${job.id} [${state}] ${elapsed}${activity}${deadline}\n  ${job.task.split("\n", 1)[0]}`
+  return `${job.id} [${state}] ${timing}${activity}${deadline}\n  ${job.task.split("\n", 1)[0]}`
 }
 
 function statusOutput(id: string | undefined, ownerId: string): string {
@@ -119,7 +126,7 @@ function statusOutput(id: string | undefined, ownerId: string): string {
 export const jobOutputTool: SessionTool = {
   name: "job_output",
   description:
-    "Collect a background job explicitly. For a process, returns new output and waits for new output or exit. Task-agent results normally deliver automatically; explicitly collecting one waits for completion, returns its report once, and suppresses duplicate automatic delivery.",
+    "Collect a background job explicitly. For a process, returns new output and waits for new output or exit. Task-agent results normally deliver automatically; explicitly collecting one waits for completion, returns its report once, and suppresses duplicate automatic delivery. Prefer one long wait over repeated short polls.",
   parameters: {
     type: "object",
     properties: {
@@ -172,7 +179,7 @@ export const jobKillTool: SessionTool = {
     const job = jobOf(args, ctx.session.id)
     const alreadyDone = job.done
     if (job.kind === "process") acknowledgeDelivery(job)
-    if (!alreadyDone) await stopJob(job)
+    if (!alreadyDone) await stopJob(job, "model")
     const pendingCheck = job.kind === "agent" ? "check it with job_status" : "check it with job_output"
     const headline = alreadyDone
       ? `Job ${job.id} had already finished (${jobStatus(job)}).`
@@ -251,9 +258,7 @@ export const jobSendTool: SessionTool = {
     if (message.length > MAX_MESSAGE_LENGTH) {
       throw new Error(`message must be at most ${MAX_MESSAGE_LENGTH} characters`)
     }
-    if (!job.send(message)) throw new Error(`${job.id} did not accept the message`)
-    appendAgentTranscript(job, `\n> Parent guidance\n${message}\n`)
-    setAgentActivity(job, "Parent guidance queued…")
+    if (!sendAgentGuidance(job, message, "parent")) throw new Error(`${job.id} did not accept the message`)
     return { output: `Queued guidance for ${job.id}.` }
   },
 }

@@ -31,6 +31,7 @@ export interface ProcessBackgroundResult {
   exitCode?: number
   signal?: string
   record?: string
+  recordCapped?: boolean
 }
 
 export type BackgroundResult = AgentBackgroundResult | ProcessBackgroundResult

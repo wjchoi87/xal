@@ -3,9 +3,11 @@ import { modeDefinition } from "../../permissions/modes"
 import { registerPolicyRule } from "../../permissions/service"
 import { registerTool } from "../../tools/registry"
 import type { SessionTool } from "../../tools/types"
+import { registerToolRenderer } from "../../ui/extension"
 import { registerPrompt } from "../prompt/registry"
+import { settings } from "../../config/settings"
 import { contextFrom, tasksFrom, MAX_BATCH_TASKS, MAX_CONTEXT_LENGTH, MAX_TASK_LENGTH } from "./parse"
-import { spawnTask, MAX_CONCURRENT_TASKS } from "./spawn"
+import { spawnTask } from "./spawn"
 
 function taskToolTitle(args: Record<string, unknown>): string {
   if (!Array.isArray(args.tasks) || args.tasks.length === 0) return "Dispatch tasks"
@@ -23,7 +25,9 @@ function taskToolTitle(args: Record<string, unknown>): string {
 
 export const taskTool: SessionTool = {
   name: "task",
-  description: `Dispatch a batch of independent tasks to background agents. The call returns agent ids immediately, runs up to ${MAX_CONCURRENT_TASKS} agents at once, queues the rest, and automatically delivers each result back into this session. Agents start without conversation history. Read agents cannot modify files; write agents use the shared checkout or an isolated Git worktree.`,
+  get description() {
+    return `Dispatch a batch of independent tasks to background agents. The call returns agent ids immediately, runs up to ${settings().agents.maxConcurrent} agents at once, queues the rest, and automatically delivers each result back into this session. Agents start without conversation history. Read agents cannot modify files; write agents use the shared checkout or an isolated Git worktree.`
+  },
   parameters: {
     type: "object",
     properties: {
@@ -77,7 +81,7 @@ export const taskTool: SessionTool = {
     additionalProperties: false,
   },
   prompt:
-    "Use task for substantial independent work that can proceed while you continue. Dispatch related work together in one tasks batch and put shared background and cross-task contracts in context. Give every task exact targets, explicit non-goals, and observable acceptance criteria. Give concurrent shared write tasks disjoint files; use worktree isolation when edits may overlap. Isolated changes stay in the reported checkout and branch until you integrate them, then remove the checkout with worktree_remove. Agents start blank, so do not rely on conversation history. Results auto-deliver into your session; do not poll them. Continue useful non-overlapping work or end the current response while they run. Use job_status only to diagnose a stuck task, job_send to correct a running task, and job_kill when it is no longer useful. Run the project's required checks once after all writing agents finish, not inside every task.",
+    "Use task for substantial independent work that can proceed while you continue. Dispatch related work together in one tasks batch and put shared background and cross-task contracts in context. Give every task exact targets, explicit non-goals, and observable acceptance criteria. Give concurrent shared write tasks disjoint files; use worktree isolation when edits may overlap. Isolated changes stay in the reported checkout and branch until you integrate them, then remove the checkout with worktree_remove. Agents start blank, so do not rely on conversation history. Results auto-deliver into your session; do not poll them. Continue useful non-overlapping work or end the current response while they run. Use job_status only to diagnose a stuck task, job_send to correct a running task, and job_kill when it is no longer useful. Never work on a dispatched task's files or duplicate its work while it runs. Run the project's required checks once after all writing agents finish, not inside every task.",
   sessionAware: true,
   available(ctx) {
     return ctx.kind === "primary" && ctx.interactive
@@ -120,10 +124,19 @@ export function registerTaskAgents(): void {
       return [
         "You are a one-shot task agent working for a primary coding agent. Your first user message contains all shared context and your complete assignment.",
         "Complete only that assignment, work independently with the available tools, and do not ask the user or attempt further delegation.",
+        "You may be one of several agents running concurrently; other agents may be editing other files, so stay within your assignment's scope.",
         "Managed background Bash (background:true) is available for long commands; keep working while they run, and their results are delivered back into this conversation automatically. Your task cannot finish while a managed job is running, so stop every long-lived server or watcher with job_kill before your final report. Never detach processes with nohup, setsid, or a trailing &.",
         "Return a concise, self-contained final report with the result, evidence, changed files, and verification relevant to the assignment. A report produced before a background result arrives is discarded, so account for every delivered result. Report failures clearly.",
       ].join("\n")
     },
   })
   registerTool(taskTool)
+  registerToolRenderer({
+    tool: taskTool.name,
+    summarize(output) {
+      const spawned = /^Spawned (\d+) background/.exec(output)
+      if (!spawned) return "dispatched"
+      return `${spawned[1]} ${spawned[1] === "1" ? "agent" : "agents"}`
+    },
+  })
 }

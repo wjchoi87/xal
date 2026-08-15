@@ -1,9 +1,7 @@
-import { backgroundTasksChanged } from "../../background/registry"
 import { toolFailed } from "../../tools/output"
 import type { AgentEvent } from "../events"
 import { backgroundResultSection } from "../session/async"
 import type { AgentSession } from "../session/session"
-import type { Usage } from "../../providers/types"
 
 const UNAVAILABLE_APPROVAL = "Task-agent actions that require separate approval are unavailable."
 
@@ -12,7 +10,6 @@ export interface ActivityState {
   activity: string
   toolCalls: Set<string>
   updatedCalls: Set<string>
-  usage?: Usage
 }
 
 function toolActivity(tool: string, title: string): string {
@@ -68,13 +65,16 @@ export function activity(
       record(`\n${event.tool} requires unavailable approval and was denied.\n`)
       child.deny("policy", UNAVAILABLE_APPROVAL)
       break
-    case "retry_scheduled":
-      state.activity = `Retrying in ${Math.ceil(event.delayMs / 1_000)}s`
-      record(`\nRetrying in ${Math.ceil(event.delayMs / 1_000)}s: ${event.message}\n`)
+    case "retry_scheduled": {
+      const retry = `retrying ${event.attempt}/${event.maxAttempts} in ${Math.ceil(event.delayMs / 1_000)}s`
+      state.activity = `${retry}: ${event.message.split("\n", 1)[0]}`
+      record(
+        `\nRetrying ${event.attempt}/${event.maxAttempts} in ${Math.ceil(event.delayMs / 1_000)}s: ${event.message}\n`,
+      )
       break
+    }
     case "turn_failed":
       state.activity = "Failed"
-      state.usage = event.usage
       record(`\nTask agent failed: ${event.message}\n`)
       break
     case "turn_interrupted":
@@ -86,20 +86,14 @@ export function activity(
       record(`\n${event.message}\n`)
       break
     case "state_changed":
-      if (event.state === "streaming") {
-        state.activity = "Thinking…"
-        backgroundTasksChanged()
-      }
+      if (event.state === "streaming") state.activity = "Thinking…"
       break
     case "hook_finished":
       state.activity = `Hook ${event.hook}: ${event.event} ${event.action}`
       record(`\n> hook: ${event.hook} · ${event.event} · ${event.action} · ${event.elapsedMs}ms\n`)
-      backgroundTasksChanged()
       break
     case "turn_ended":
       state.activity = "Report ready"
-      state.usage = event.usage
-      backgroundTasksChanged()
       break
     case "background_results":
       state.activity = "Reconciling background results"

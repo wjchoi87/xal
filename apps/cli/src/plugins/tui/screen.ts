@@ -1,6 +1,6 @@
 import type { BoxRenderable, CliRenderer } from "@opentui/core"
 import type { AgentSession } from "../../agent/session/session"
-import type { BackgroundAgentTask } from "../../background/registry"
+import { backgroundCounts, type BackgroundTask } from "../../background/registry"
 import { runCommand } from "../../commands/run"
 import type { CommandContext, SelectRequest } from "../../commands/types"
 import { describeError } from "../../lib/error"
@@ -10,7 +10,7 @@ import type { ThinkingEffort, UserInput } from "../../providers/types"
 import { protectSecretValue, redactText } from "../../secrets/redactor"
 import type { ElicitationQuestion } from "../../tools/types"
 import { AgentSummary } from "./components/agent-summary"
-import { AgentViewer } from "./components/agent-viewer"
+import { JobViewer } from "./components/job-viewer"
 import { BackgroundTasks } from "./components/background-tasks"
 import { Composer } from "./components/composer"
 import { ConfigPopover } from "./components/config-popover"
@@ -25,6 +25,7 @@ import { ShortcutHelp } from "./components/shortcut-help"
 import { StatusBar, STATUS_ROWS } from "./components/status-bar"
 import { TaskList } from "./components/task-list"
 import { saveTuiConfig, type TuiConfig } from "./config"
+import { formatBackgroundSummary } from "./lib/format"
 import { column } from "./lib/renderables"
 import type { MessageHistory } from "./message-history"
 import { Scrollback } from "./scrollback/scrollback"
@@ -42,7 +43,7 @@ export class Screen {
   private readonly mainPanel: BoxRenderable
   readonly scrollback: Scrollback
   readonly agentSummary: AgentSummary
-  readonly agentViewer: AgentViewer
+  readonly jobViewer: JobViewer
   readonly live: LiveTools
   readonly queued: QueuedInputs
   readonly permission: PermissionPopover
@@ -60,7 +61,6 @@ export class Screen {
   private paletteBelow = true
   private reserved = 0
   private agentActivityDirty = false
-  private agentReplayPending = false
   private sessionTitle: string | undefined
   private cwd: string
 
@@ -86,8 +86,8 @@ export class Screen {
       if (this.agentSummary.height > 0) this.agentActivityDirty = true
       this.syncFooter()
     })
-    this.agentViewer = new AgentViewer(renderer)
-    this.live = new LiveTools(renderer, () => this.syncFooter())
+    this.jobViewer = new JobViewer(renderer, (message) => this.statusBar.setNotice(message))
+    this.live = new LiveTools(renderer, () => this.syncFooter(), shortcuts.help("jobs.background"))
     this.queued = new QueuedInputs(renderer, () => this.syncFooter())
     this.taskList = new TaskList(renderer, () => this.syncFooter())
     this.permission = new PermissionPopover(renderer, actions)
@@ -158,16 +158,19 @@ export class Screen {
       renderer,
       {
         changed: () => {
-          this.agentViewer.refresh()
+          this.jobViewer.refresh()
+          this.statusBar.setBackground(formatBackgroundSummary(backgroundCounts(), shortcuts.help("agents.open")))
           this.syncFooter()
         },
         released: () => {
           if (!this.overlayVisible) this.composer.focus()
         },
-        viewAgent: (task) => this.viewAgent(task),
+        viewJob: (task) => this.viewJob(task),
+        scrollViewer: (name) => this.jobViewer.scrollKey(name),
         error: (message) => this.scrollback.append({ kind: "error", text: message }),
       },
       shortcuts.help("agents.stop-all"),
+      () => this.session.id,
     )
 
     this.mainPanel = column(renderer, { paddingLeft: 2, paddingRight: 2 })
@@ -181,7 +184,7 @@ export class Screen {
     this.view.add(this.secret.view)
     this.view.add(this.picker.view)
     this.view.add(this.config.view)
-    this.view.add(this.agentViewer.view)
+    this.view.add(this.jobViewer.view)
     this.view.add(this.composer.view)
     this.view.add(this.shortcutHelp.view)
     this.view.add(this.palette.view)
@@ -242,8 +245,7 @@ export class Screen {
     this.statusBar.resetTurnElapsed()
     this.taskList.set([])
     this.agentActivityDirty = false
-    this.agentReplayPending = false
-    this.viewAgent(undefined)
+    if (!this.tasks.closeViewer()) this.viewJob(undefined)
     this.scrollback.clear()
     this.scrollback.appendHeader({ kind: "banner", model, cwd: compactPath(cwd) })
   }
@@ -294,29 +296,34 @@ export class Screen {
     this.syncFooter()
   }
 
+  openAgents(): void {
+    if (this.tasks.count === 0) {
+      this.scrollback.append({ kind: "info", text: "No background work." })
+      return
+    }
+    this.palette.dismiss()
+    this.composer.blur()
+    this.tasks.focus()
+    this.syncFooter()
+  }
+
   settleAgentActivity(): void {
     if (!this.agentActivityDirty) return
     this.agentActivityDirty = false
-    if (this.agentViewer.visible) {
-      this.agentReplayPending = true
-      return
-    }
+    if (this.jobViewer.visible) return
     this.replayAgentActivity()
   }
 
   private replayAgentActivity(): void {
     queueMicrotask(() => {
-      if (this.agentViewer.visible) {
-        this.agentReplayPending = true
-        return
-      }
+      if (this.jobViewer.visible) return
       this.syncFooter()
       this.scrollback.replay()
     })
   }
 
   private elicitationAvailableHeight(): number {
-    const siblingRows = this.agentViewer.visible
+    const siblingRows = this.jobViewer.visible
       ? STATUS_ROWS + this.tasks.height
       : this.agentSummary.height +
         this.live.height +
@@ -356,13 +363,13 @@ export class Screen {
           : this.picker.visible
             ? this.picker.height
             : this.config.height
-    if (this.agentViewer.visible) {
+    if (this.jobViewer.visible) {
       this.palette.dismiss()
       this.reserved = 0
       const chrome =
         (overlaid ? overlayRows : this.composer.rows + this.shortcutHelp.height) + STATUS_ROWS + this.tasks.height
-      this.agentViewer.resize(this.renderer.terminalHeight - chrome)
-      this.renderer.footerHeight = this.agentViewer.height + chrome
+      this.jobViewer.resize(this.renderer.terminalHeight - chrome)
+      this.renderer.footerHeight = this.jobViewer.height + chrome
       return
     }
     const paletteRows = this.palette.visible ? this.palette.height : 0
@@ -386,8 +393,8 @@ export class Screen {
   }
 
   private closedFooterRows(): number {
-    if (this.agentViewer.visible) {
-      return this.agentViewer.height + this.composer.rows + this.shortcutHelp.height + STATUS_ROWS + this.tasks.height
+    if (this.jobViewer.visible) {
+      return this.jobViewer.height + this.composer.rows + this.shortcutHelp.height + STATUS_ROWS + this.tasks.height
     }
     return (
       this.agentSummary.height +
@@ -417,7 +424,7 @@ export class Screen {
   }
 
   private placePalette(): void {
-    if (this.agentViewer.visible) return
+    if (this.jobViewer.visible) return
     const below = this.spaceBelowFooter() > PALETTE_CHROME_ROWS
     if (below === this.paletteBelow) return
     this.paletteBelow = below
@@ -451,17 +458,14 @@ export class Screen {
     })
   }
 
-  private viewAgent(task: BackgroundAgentTask | undefined): void {
-    const wasVisible = this.agentViewer.visible
-    if (task) this.agentViewer.show(task)
-    else this.agentViewer.hide()
+  private viewJob(task: BackgroundTask | undefined): void {
+    const wasVisible = this.jobViewer.visible
+    if (task) this.jobViewer.show(task)
+    else this.jobViewer.hide()
     const mainVisible = task === undefined
     this.mainPanel.visible = mainVisible
     if (!mainVisible) this.palette.dismiss()
     this.syncFooter()
-    if (mainVisible && wasVisible) {
-      this.agentReplayPending = false
-      this.replayAgentActivity()
-    }
+    if (mainVisible && wasVisible) this.replayAgentActivity()
   }
 }

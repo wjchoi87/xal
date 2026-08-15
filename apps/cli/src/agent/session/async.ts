@@ -19,10 +19,13 @@ const MAX_RESULT_CHARS = 12_000
 const REAP_GRACE_MS = 10_000
 
 function agentRecordNotice(job: BackgroundAgentJob): string {
-  if (!job.record) return "Task record was not created."
-  return job.record.status === "saved"
-    ? `Full task record: ${job.record.path}`
-    : `Task record unavailable: ${job.record.message}`
+  const record = job.record
+  if (!record) return "Task record was not created."
+  if (record.status === "failed") return `Task record unavailable: ${record.message}`
+  if (record.complete) return `Full task record: ${record.path}`
+  return record.reason === "capped"
+    ? `Full task record: ${record.path} (transcript capped)`
+    : `Task record: ${record.path} (full transcript unavailable: ${record.message})`
 }
 
 function boundedAgentResult(output: string, job: BackgroundAgentJob): string {
@@ -75,7 +78,9 @@ function formatProcessResult(job: BackgroundProcessJob): ProcessBackgroundResult
     output: `${bounded || "(no unread output)"}\n(${job.detail})`,
     ...(termination.status === "exited" ? { exitCode: termination.exitCode } : {}),
     ...(termination.status === "signaled" ? { signal: termination.signal } : {}),
-    ...(job.record?.status === "saved" ? { record: job.record.path } : {}),
+    ...(job.record?.status === "saved"
+      ? { record: job.record.path, recordCapped: !job.record.complete && job.record.reason === "capped" }
+      : {}),
   }
 }
 
@@ -99,7 +104,8 @@ export function backgroundResultSection(result: BackgroundResult): string {
             ? ""
             : ` (${result.signal})`
           : ` (exit code ${result.exitCode})`
-      const record = result.record === undefined ? "" : `\nFull log: ${result.record}`
+      const record =
+        result.record === undefined ? "" : `\nFull log: ${result.record}${result.recordCapped ? " (capped)" : ""}`
       return `## ${result.id} · ${result.status}${termination}\nCommand: ${result.command.split("\n", 1)[0]}\n\n${result.output}${record}`
     }
   }

@@ -334,7 +334,7 @@ test("does not wake the parent after a running task is cancelled", async () => {
     const job = getJob("cancel_child")
     if (!job || job.kind !== "agent") throw new Error("cancellable task job was not registered")
 
-    await stopJob(job)
+    await stopJob(job, "model")
     await job.completion
     await Promise.resolve()
 

@@ -108,16 +108,16 @@ export class AgentEventController {
         break
       case "background_results":
         for (const result of event.results) {
-          const label =
-            result.kind === "agent"
-              ? `background task ${result.id} · ${result.status}`
-              : `background job ${result.id} · ${result.status}${result.exitCode === undefined ? "" : ` · exit ${result.exitCode}`}${result.signal === undefined ? "" : ` · ${result.signal}`}`
-          const output =
-            result.kind === "process" && result.record !== undefined
-              ? `${result.output}\nFull log: ${result.record}`
-              : result.output
-          scrollback.append({ kind: "info", text: label })
-          scrollback.append({ kind: result.status === "completed" ? "text" : "error", text: output })
+          scrollback.append({
+            kind: "background",
+            id: result.id,
+            label: result.kind === "agent" ? result.task : result.command,
+            status: result.status,
+            output: result.output,
+            ...(result.kind === "process" && result.record !== undefined
+              ? { record: `${result.record}${result.recordCapped ? " (capped)" : ""}` }
+              : {}),
+          })
         }
         break
       case "text_delta":

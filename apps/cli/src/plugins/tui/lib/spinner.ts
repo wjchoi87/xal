@@ -1,28 +1,46 @@
 import { terminalGlyph } from "./text"
 
 const FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+const TICK_MS = 80
 
-export class Spinner {
-  private frame = 0
-  private timer: ReturnType<typeof setInterval> | undefined
+const listeners = new Set<() => void>()
+let timer: ReturnType<typeof setInterval> | undefined
 
-  constructor(private readonly intervalMs = 110) {}
+export function spinnerGlyph(): string {
+  return terminalGlyph(FRAMES[Math.floor(Date.now() / TICK_MS) % FRAMES.length]!, "*")
+}
 
-  get glyph(): string {
-    return terminalGlyph(FRAMES[this.frame]!, "*")
+function subscribe(onTick: () => void): () => void {
+  listeners.add(onTick)
+  if (!timer) {
+    timer = setInterval(() => {
+      for (const listener of listeners) listener()
+    }, TICK_MS)
+    timer.unref()
   }
-
-  start(onTick: () => void): void {
-    if (this.timer) return
-    this.timer = setInterval(() => {
-      this.frame = (this.frame + 1) % FRAMES.length
-      onTick()
-    }, this.intervalMs)
+  return () => {
+    listeners.delete(onTick)
+    if (listeners.size === 0 && timer) {
+      clearInterval(timer)
+      timer = undefined
+    }
   }
+}
 
-  stop(): void {
-    if (this.timer) clearInterval(this.timer)
-    this.timer = undefined
-    this.frame = 0
+export interface SpinnerHandle {
+  start(): void
+  stop(): void
+}
+
+export function spinnerHandle(onTick: () => void): SpinnerHandle {
+  let unsubscribe: (() => void) | undefined
+  return {
+    start() {
+      unsubscribe ??= subscribe(onTick)
+    },
+    stop() {
+      unsubscribe?.()
+      unsubscribe = undefined
+    },
   }
 }

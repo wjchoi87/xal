@@ -7,16 +7,13 @@ import {
   type TextRenderable,
 } from "@opentui/core"
 import { listBackgroundTasks, subscribeBackgroundTasks, type BackgroundAgentTask } from "../../../background/registry"
-import { occupiedContext } from "../../../providers/types"
 import { redactText } from "../../../secrets/redactor"
-import { formatTokens } from "../lib/format"
+import { formatDuration, formatTokens } from "../lib/format"
 import { column, label, row } from "../lib/renderables"
-import { Spinner } from "../lib/spinner"
+import { spinnerGlyph, spinnerHandle } from "../lib/spinner"
 import { firstLine, terminalGlyph } from "../lib/text"
 import { COLORS } from "../theme/colors"
 import { muted, paint } from "../theme/styles"
-
-const TICK_MS = 100
 
 interface AgentRow {
   view: BoxRenderable
@@ -31,7 +28,7 @@ export class AgentSummary {
   private readonly spinnerLabel: TextRenderable
   private readonly heading: TextRenderable
   private readonly rows = new Map<string, AgentRow>()
-  private readonly spinner = new Spinner(TICK_MS)
+  private readonly spinner = spinnerHandle(() => this.render())
   private agents: BackgroundAgentTask[] = []
 
   constructor(
@@ -64,7 +61,7 @@ export class AgentSummary {
       agents.length !== this.agents.length || agents.some((agent, index) => agent.id !== this.agents[index]?.id)
     this.agents = agents
     if (changed) this.rebuild()
-    if (agents.length > 0) this.spinner.start(() => this.render())
+    if (agents.length > 0) this.spinner.start()
     else this.spinner.stop()
     this.render()
     this.onChange()
@@ -106,7 +103,7 @@ export class AgentSummary {
 
   private render(): void {
     if (this.agents.length === 0) return
-    this.spinnerLabel.content = this.spinner.glyph
+    this.spinnerLabel.content = spinnerGlyph()
     const noun = this.agents.length === 1 ? "agent" : "agents"
     this.heading.content = new StyledText([
       paint(COLORS.foreground, `Running ${this.agents.length} ${noun}…`),
@@ -120,8 +117,8 @@ export class AgentSummary {
       entry.branch.content = `${terminalGlyph(last ? "└" : "├", last ? "`" : "|")} `
       entry.title.content = firstLine(redactText(agent.title))
       const toolCount = `${snapshot.toolCount} tool ${snapshot.toolCount === 1 ? "use" : "uses"}`
-      const tokens = snapshot.usage ? ` · ${formatTokens(occupiedContext(snapshot.usage))} tokens` : ""
-      entry.metrics.content = `${toolCount}${tokens}`
+      const tokens = snapshot.contextTokens ? ` · ${formatTokens(snapshot.contextTokens)} tokens` : ""
+      entry.metrics.content = snapshot.queued ? `queued ${formatDuration(snapshot.queuedMs)}` : `${toolCount}${tokens}`
       entry.activity.content = redactText(`${terminalGlyph("└", "`")} ${snapshot.activity}`)
     })
   }

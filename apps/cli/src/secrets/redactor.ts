@@ -111,6 +111,7 @@ export class RedactedStream {
 
 const redactor = new SecretRedactor()
 const enteredSecrets = new Set<string>()
+let version = 0
 
 export function protectSecretValue(value: string): void {
   enteredSecrets.add(value)
@@ -120,6 +121,11 @@ export function protectSecretValue(value: string): void {
 
 export function replaceSecretValues(source: string, values: string[]): void {
   redactor.replace(source, values)
+  version += 1
+}
+
+export function secretsVersion(): number {
+  return version
 }
 
 export function redactText(text: string): string {
