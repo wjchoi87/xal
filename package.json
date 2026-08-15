@@ -1,38 +1,24 @@
 {
-  "name": "xal",
-  "version": "0.0.1",
-  "module": "src/index.ts",
-  "type": "module",
+  "name": "xal-monorepo",
   "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "packageManager": "bun@1.3.14",
   "scripts": {
-    "dev": "bun run --watch src/index.ts",
-    "test": "bun test --isolate",
-    "release:local": "bun build --compile src/index.ts --outfile \"dist/$npm_package_name\" && install -d \"$HOME/.local/bin\" && install -m 755 \"dist/$npm_package_name\" \"$HOME/.local/bin/$npm_package_name\"",
-    "typecheck": "tsc --noEmit",
-    "lint": "eslint .",
-    "lint:fix": "eslint . --fix",
+    "dev": "bun run --watch apps/cli/src/index.ts",
+    "test": "turbo run test --",
+    "release:local": "turbo run release:local --filter=xal",
+    "typecheck": "turbo run typecheck",
+    "lint": "turbo run lint",
+    "lint:fix": "turbo run lint:fix",
     "format": "prettier --check .",
     "format:fix": "prettier --write .",
     "checks": "bun run typecheck && bun run lint && bun run format && bun run test",
     "checks:fix": "bun run lint:fix && bun run format:fix && bun run checks"
   },
   "devDependencies": {
-    "@eslint/js": "^10.0.1",
-    "@types/bun": "latest",
-    "@types/turndown": "^5.0.6",
-    "eslint": "^10.8.0",
-    "eslint-config-prettier": "^10.1.8",
-    "globals": "^17.9.0",
     "prettier": "^3.9.6",
-    "typescript": "5.9.3",
-    "typescript-eslint": "^8.66.0"
-  },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.30.0",
-    "@opentui/core": "^0.5.1",
-    "ajv": "^8.17.1",
-    "ajv-formats": "^3.0.1",
-    "turndown": "^7.2.4",
-    "zod": "^4.2.0"
+    "turbo": "^2.10.10"
   }
 }

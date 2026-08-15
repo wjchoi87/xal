@@ -1,0 +1,33 @@
+{
+  "name": "xal",
+  "version": "0.0.1",
+  "module": "src/index.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "bun run --watch src/index.ts",
+    "test": "bun test --isolate",
+    "release:local": "bun build --compile src/index.ts --outfile \"../../dist/$npm_package_name\" && install -d \"$HOME/.local/bin\" && install -m 755 \"../../dist/$npm_package_name\" \"$HOME/.local/bin/$npm_package_name\"",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/bun": "latest",
+    "@types/turndown": "^5.0.6",
+    "eslint": "^10.8.0",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.9.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "^8.66.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@opentui/core": "^0.5.1",
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
+    "turndown": "^7.2.4",
+    "zod": "^4.2.0"
+  }
+}

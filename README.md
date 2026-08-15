@@ -2,6 +2,10 @@
 
 A small, customizable terminal coding harness built around a headless agent core and plugins.
 
+## Workspace
+
+This repository is a Bun workspace managed by Turborepo. The terminal application lives in `apps/cli`; additional applications belong under `apps/`.
+
 ## Development
 
 ```bash
