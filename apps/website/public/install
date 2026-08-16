@@ -1,0 +1,97 @@
+#!/bin/sh
+set -eu
+
+CHANNEL=${XAL_CHANNEL:-stable}
+INSTALL_DIR=${XAL_INSTALL_DIR:-"$HOME/.local/bin"}
+
+for arg in "$@"; do
+  case "$arg" in
+    --stable) CHANNEL=stable ;;
+    --beta) CHANNEL=beta ;;
+    *) printf 'xal: unknown installer option: %s\n' "$arg" >&2; exit 1 ;;
+  esac
+done
+
+case "$CHANNEL" in
+  stable) BASE=https://github.com/xal-sh/xal/releases/latest/download ;;
+  beta) BASE=https://github.com/xal-sh/xal/releases/download/beta ;;
+  *) printf 'xal: XAL_CHANNEL must be stable or beta\n' >&2; exit 1 ;;
+esac
+
+OS=$(uname -s)
+case "$OS" in
+  Darwin) PLATFORM=darwin; EXT= ;;
+  Linux) PLATFORM=linux; EXT= ;;
+  MINGW*|MSYS*|CYGWIN*) PLATFORM=windows; EXT=.exe ;;
+  *) printf 'xal: unsupported operating system: %s\n' "$OS" >&2; exit 1 ;;
+esac
+
+MACHINE=$(uname -m)
+case "$MACHINE" in
+  x86_64|amd64) ARCH=x64 ;;
+  arm64|aarch64) ARCH=arm64 ;;
+  *) printf 'xal: unsupported architecture: %s\n' "$MACHINE" >&2; exit 1 ;;
+esac
+
+LIBC=
+if [ "$PLATFORM" = linux ]; then
+  if [ -f /etc/alpine-release ] || (command -v ldd >/dev/null 2>&1 && ldd --version 2>&1 | grep -qi musl); then
+    LIBC=-musl
+  fi
+fi
+
+ASSET="xal-$PLATFORM-$ARCH$LIBC$EXT"
+VERSION=$(curl -fsSL "$BASE/version.txt")
+if [ "$CHANNEL" = beta ]; then
+  if ! printf '%s\n' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$'; then
+    printf 'xal: beta channel returned an invalid version: %s\n' "$VERSION" >&2
+    exit 1
+  fi
+  BASE="https://github.com/xal-sh/xal/releases/download/v$VERSION"
+  RELEASE_VERSION=$(curl -fsSL "$BASE/version.txt")
+  if [ "$RELEASE_VERSION" != "$VERSION" ]; then
+    printf 'xal: beta channel version does not match its release\n' >&2
+    exit 1
+  fi
+elif ! printf '%s\n' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+  printf 'xal: stable channel returned an invalid version: %s\n' "$VERSION" >&2
+  exit 1
+fi
+CHECKSUMS=$(curl -fsSL "$BASE/SHA256SUMS")
+EXPECTED=$(printf '%s\n' "$CHECKSUMS" | awk -v asset="$ASSET" '$2 == asset { print $1 }')
+if [ -z "$EXPECTED" ]; then
+  printf 'xal: release checksums do not contain %s\n' "$ASSET" >&2
+  exit 1
+fi
+
+TMP_FILE=$(mktemp "${TMPDIR:-/tmp}/xal.XXXXXX")
+trap 'rm -f "$TMP_FILE"' 0 HUP INT TERM
+
+printf 'downloading xal %s (%s, %s)...\n' "$VERSION" "$ASSET" "$CHANNEL"
+curl -fL --progress-bar "$BASE/$ASSET" -o "$TMP_FILE"
+
+if command -v sha256sum >/dev/null 2>&1; then
+  ACTUAL=$(sha256sum "$TMP_FILE" | awk '{ print $1 }')
+elif command -v shasum >/dev/null 2>&1; then
+  ACTUAL=$(shasum -a 256 "$TMP_FILE" | awk '{ print $1 }')
+elif command -v openssl >/dev/null 2>&1; then
+  ACTUAL=$(openssl dgst -sha256 "$TMP_FILE" | awk '{ print $NF }')
+else
+  printf 'xal: sha256sum, shasum, or openssl is required to verify the download\n' >&2
+  exit 1
+fi
+
+if [ "$ACTUAL" != "$EXPECTED" ]; then
+  printf 'xal: checksum mismatch for %s\n' "$ASSET" >&2
+  exit 1
+fi
+
+mkdir -p "$INSTALL_DIR"
+chmod 755 "$TMP_FILE"
+mv -f "$TMP_FILE" "$INSTALL_DIR/xal$EXT"
+
+printf 'installed → %s/xal%s\n' "$INSTALL_DIR" "$EXT"
+case ":$PATH:" in
+  *":$INSTALL_DIR:"*) ;;
+  *) printf 'add %s to PATH, then run xal\n' "$INSTALL_DIR" ;;
+esac

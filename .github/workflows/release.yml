@@ -1,0 +1,105 @@
+name: Release stable
+
+on:
+  workflow_dispatch:
+    inputs:
+      beta_tag:
+        description: Beta tag to promote, such as v0.0.1-beta.42
+        required: true
+        type: string
+      version:
+        description: Stable version to publish in X.Y.Z format
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      ref: ${{ steps.validate.outputs.ref }}
+      version: ${{ steps.validate.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate promotion
+        id: validate
+        env:
+          BETA_TAG: ${{ inputs.beta_tag }}
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          if ! [[ "$BETA_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]; then
+            echo "beta_tag must look like vX.Y.Z-beta.N"
+            exit 1
+          fi
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "version must be in X.Y.Z format"
+            exit 1
+          fi
+          if ! [[ "$BETA_TAG" =~ ^v${VERSION//./\.}-beta\.[0-9]+$ ]]; then
+            echo "beta_tag must be a beta of v$VERSION"
+            exit 1
+          fi
+          if ! git rev-parse "$BETA_TAG^{commit}" >/dev/null 2>&1; then
+            echo "beta tag not found: $BETA_TAG"
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$BETA_TAG^{commit}" origin/main; then
+            echo "beta tag is not reachable from main: $BETA_TAG"
+            exit 1
+          fi
+          PRERELEASE=$(gh release view "$BETA_TAG" --repo "$GITHUB_REPOSITORY" --json isPrerelease --jq .isPrerelease)
+          if [ "$PRERELEASE" != true ]; then
+            echo "tag is not a published beta release: $BETA_TAG"
+            exit 1
+          fi
+          if git rev-parse "v$VERSION" >/dev/null 2>&1 || gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "stable release already exists: v$VERSION"
+            exit 1
+          fi
+          echo "ref=$(git rev-parse "$BETA_TAG^{commit}")" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: validate
+    uses: ./.github/workflows/build-release.yml
+    with:
+      ref: ${{ needs.validate.outputs.ref }}
+      version: ${{ needs.validate.outputs.version }}
+
+  release:
+    needs: [validate, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+
+      - name: Create release metadata
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          chmod 755 release/xal-darwin-* release/xal-linux-*
+          printf '%s\n' "$VERSION" > release/version.txt
+          (cd release && sha256sum xal-* > SHA256SUMS)
+
+      - name: Publish stable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ needs.validate.outputs.ref }}
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          gh release create "v$VERSION" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$REF" \
+            --title "Xal v$VERSION" \
+            --generate-notes \
+            release/*

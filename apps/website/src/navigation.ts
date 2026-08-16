@@ -15,7 +15,7 @@ export function navigation(pathname: string): string {
     { href: "/tools", label: "/tools" },
     { href: "/plugins", label: "/plugins" },
     { href: "/docs", label: "/docs" },
-    { href: "/install", label: "/install" },
+    { href: "/get", label: "/install" },
   ]
     .map(({ href, label }) => {
       const current = path === href

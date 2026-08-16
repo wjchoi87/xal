@@ -29,6 +29,7 @@ import { discoverSkills, registerSkills } from "./skills/register"
 import { registerTasks } from "./tasks/register"
 import { registerBash } from "./tools/bash/register"
 import { getUi } from "./ui/registry"
+import { registerUpdateCli } from "./update/cli"
 
 const ctx: CliContext = {
   print(line) {
@@ -92,6 +93,11 @@ async function main(input: string[]): Promise<void> {
   const options = parseGlobalOptions(input)
   startProfiler(options.profile)
   const args = normalize(options.args)
+  registerUpdateCli()
+  if (args[0] === "update" || args[0] === "--version" || args[0] === "-v" || args[0] === "version") {
+    await runCli(args, ctx)
+    return
+  }
   const trusted = await ensureWorkspaceTrust({
     print: args.length === 0 ? ctx.print : ctx.error,
     choose: args.length === 0 && process.stdin.isTTY ? chooseOption : undefined,

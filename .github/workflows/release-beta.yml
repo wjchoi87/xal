@@ -1,0 +1,102 @@
+name: Release beta
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: release-beta
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      ref: ${{ steps.version.outputs.ref }}
+      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - run: bun install --frozen-lockfile
+      - run: bun checks
+
+      - name: Resolve beta version
+        id: version
+        run: |
+          BASE=$(jq -r .version apps/cli/package.json)
+          if ! [[ "$BASE" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "apps/cli/package.json version must be X.Y.Z, got '$BASE'"
+            exit 1
+          fi
+          BUILD=$(git rev-list --count HEAD)
+          VERSION="$BASE-beta.$BUILD"
+          echo "ref=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: validate
+    uses: ./.github/workflows/build-release.yml
+    with:
+      ref: ${{ needs.validate.outputs.ref }}
+      version: ${{ needs.validate.outputs.version }}
+
+  release:
+    needs: [validate, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+
+      - name: Create release metadata
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          chmod 755 release/xal-darwin-* release/xal-linux-*
+          printf '%s\n' "$VERSION" > release/version.txt
+          (cd release && sha256sum xal-* > SHA256SUMS)
+
+      - name: Publish beta releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ needs.validate.outputs.ref }}
+          TAG: ${{ needs.validate.outputs.tag }}
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "beta release already exists: $TAG"
+            exit 1
+          fi
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$REF" \
+            --title "Xal $VERSION" \
+            --prerelease \
+            --generate-notes \
+            release/*
+
+          if gh release view beta --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload beta --repo "$GITHUB_REPOSITORY" --clobber release/version.txt
+          else
+            gh release create beta \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$REF" \
+              --title "Xal beta channel" \
+              --prerelease \
+              --notes "Pointer to the newest versioned Xal beta release." \
+              release/version.txt
+          fi

@@ -16,6 +16,7 @@ export type Command = {
   name: string
   describe: string
   routable?: boolean
+  route?: string
   run(context: CommandContext, args: string): Promise<void>
 }
 
@@ -60,6 +61,7 @@ export const commands: Command[] = [
   {
     name: "/install",
     routable: true,
+    route: "/get",
     describe: "one binary, no runtime",
     run: async (context) => {
       await context.print(content.installIntro, content.installPending)
@@ -138,4 +140,8 @@ export const commands: Command[] = [
 export function findCommand(input: string): Command | undefined {
   const name = input.split(/\s+/)[0]?.toLowerCase()
   return commands.find((command) => command.name === name)
+}
+
+export function findRoutedCommand(path: string): Command | undefined {
+  return commands.find((command) => command.routable && (command.route ?? command.name) === path)
 }

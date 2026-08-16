@@ -11,6 +11,30 @@ bun install
 bun dev
 ```
 
+## Install
+
+Install the latest stable release on macOS, Linux, or Windows from a POSIX shell:
+
+```bash
+curl -fsSL https://xal.sh/install | sh
+```
+
+Install the beta channel instead:
+
+```bash
+curl -fsSL https://xal.sh/install | sh -s -- --beta
+```
+
+The installer supports x64 and arm64, including glibc and musl Linux. On Windows, run it from Git Bash, MSYS2, or Cygwin. It installs to `~/.local/bin` by default.
+
+Update within the installed channel:
+
+```bash
+xal update
+```
+
+Use `xal update --beta` or `xal update --stable` to switch channels. See the [installation and release guide](docs/install.md) for custom paths and the release process.
+
 ## Install Locally
 
 ```bash

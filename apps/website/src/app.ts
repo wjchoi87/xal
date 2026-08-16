@@ -1,5 +1,5 @@
 import { playBoot } from "./boot.ts"
-import { commands, findCommand, type Command, type CommandContext } from "./content/commands.ts"
+import { commands, findCommand, findRoutedCommand, type Command, type CommandContext } from "./content/commands.ts"
 import * as content from "./content/sections.ts"
 import { setNavigationPath } from "./navigation.ts"
 import type { Block } from "./tui/blocks.ts"
@@ -70,14 +70,14 @@ export async function startApp(root: HTMLElement): Promise<void> {
   }
 
   function navigate(command: Command): void {
-    const path = command.routable ? command.name : command.name === "/clear" ? "/" : undefined
+    const path = command.routable ? (command.route ?? command.name) : command.name === "/clear" ? "/" : undefined
     if (path && location.pathname !== path) history.pushState(null, "", path)
     setNavigationPath(location.pathname)
   }
 
   function routedCommand(): Command | undefined {
     const path = location.pathname.replace(/\/+$/, "")
-    return path ? findCommand(path) : undefined
+    return path ? findRoutedCommand(path) : undefined
   }
 
   async function submit(value: string, options: { routed?: boolean } = {}): Promise<void> {

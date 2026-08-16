@@ -87,12 +87,13 @@ for (const command of commands) {
   )
 
   const label = command.name.slice(1)
+  const path = command.route ?? command.name
   await emit(
-    command.name,
+    path,
     shell({
       title: `${label} · xal`,
       description: `${command.describe} — xal, a terminal coding harness with a headless agent core.`,
-      path: command.name,
+      path,
       body: stream([content.banner, { kind: "user", text: command.name, at: "" }, ...blocks]),
     }),
   )
