@@ -51,6 +51,7 @@ export interface SessionStartedEvent {
   resumed: boolean
   title?: string
   provider: string
+  profile?: string
   model: string
   thinking?: ThinkingEffort
   mode: PermissionMode
@@ -75,7 +76,7 @@ export type AgentEvent =
   | { type: "workspace_changed"; cwd: string; previous: string }
   | { type: "state_changed"; state: AgentState }
   | { type: "mode_changed"; mode: PermissionMode }
-  | { type: "model_changed"; provider: string; model: string }
+  | { type: "model_changed"; provider: string; profile?: string; model: string }
   | { type: "thinking_changed"; thinking?: ThinkingEffort }
   | { type: "user_message"; messageId?: string; text: string; imageCount: number; sentAt: number }
   | {

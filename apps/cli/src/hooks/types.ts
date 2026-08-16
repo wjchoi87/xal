@@ -12,6 +12,7 @@ export interface HookSession {
   kind: SessionKind
   cwd: string
   provider: string
+  profile: string
   model: string
   mode: PermissionMode
 }

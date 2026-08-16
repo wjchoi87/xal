@@ -43,6 +43,7 @@ export async function setupAgentSessionTests(prefix: string): Promise<AgentSessi
     createSession: (provider, options = {}) =>
       new AgentSessionClass({
         provider,
+        profileId: "test-profile",
         model: "test-model",
         cwd: options.cwd,
         persist: false,
@@ -86,10 +87,6 @@ export class ScriptedProvider implements Provider {
     private readonly contextWindow?: number,
   ) {}
 
-  async isLoggedIn(): Promise<boolean> {
-    return true
-  }
-
   async listModels(): Promise<ModelCatalog> {
     return {
       models: [{ id: "test-model", name: "Test model", contextWindow: this.contextWindow, inputModalities: ["text"] }],
@@ -101,7 +98,7 @@ export class ScriptedProvider implements Provider {
     return "test-model"
   }
 
-  async *stream(request: StreamRequest): AsyncGenerator<StreamEvent> {
+  async *stream(_profileId: string, request: StreamRequest): AsyncGenerator<StreamEvent> {
     this.requests.push(request)
     const providerRound = this.rounds[this.index]
     this.index += 1

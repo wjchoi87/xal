@@ -11,6 +11,7 @@ export interface AgentSessionDeps {
   kind?: SessionKind
   cwd?: string
   provider: Provider
+  profileId?: string
   model: string
   modelInputModalities?: ModelInputModality[]
   thinking?: ThinkingEffort
@@ -28,6 +29,7 @@ export interface ResumeTarget {
   path: string
   cwd: string
   provider: Provider
+  profileId?: string
   model: string
   modelInputModalities?: ModelInputModality[]
   thinking?: ThinkingEffort

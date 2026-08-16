@@ -4,11 +4,12 @@ import type { PermissionMode } from "../permissions/types"
 import type { ThinkingEffort } from "../providers/types"
 
 export interface SessionMeta {
-  version: 1
+  version: 2
   id: string
   parentId?: string
   cwd: string
   provider: string
+  profile?: string
   model: string
   thinking?: ThinkingEffort
   mode: PermissionMode

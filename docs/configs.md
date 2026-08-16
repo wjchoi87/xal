@@ -25,6 +25,7 @@ Commands that save model, thinking, or TUI display preferences write the user fi
 | -------------- | ---------- | ------------------------ | --------------------------------------------------------------------------- |
 | `plugins`      | `string[]` | `[]`                     | Additional modules described in [Plugins and hooks](/docs/plugins).         |
 | `provider`     | `string`   | Last registered provider | Provider ID or alias used for new sessions.                                 |
+| `profile`      | `string`   | Selected connection      | Internal ID of the named provider profile used for new sessions.            |
 | `model`        | `string`   | Provider default         | Model ID used for new sessions.                                             |
 | `ui`           | `string`   | `"tui"`                  | UI ID started when Xal runs without a command.                              |
 | `permissions`  | `object`   | `{}`                     | Global rules described in [Permissions and security](/docs/permissions).    |
@@ -34,6 +35,8 @@ Commands that save model, thinking, or TUI display preferences write the user fi
 | `agents`       | `object`   | `{}`                     | Limits described in [Background work](/docs/background-work#configuration). |
 | `pluginConfig` | `object`   | `{}`                     | Configuration keyed by plugin name.                                         |
 | `thinking`     | `object`   | `{}`                     | Thinking effort keyed by provider ID and model ID.                          |
+
+The `profile` value is managed by `/connect` and `/model`. Profile names remain user-facing and may be renamed without changing this ID.
 
 Malformed `permissions`, `modes`, `goal`, `redaction`, or `agents` configuration fails startup instead of silently running without those rules.
 

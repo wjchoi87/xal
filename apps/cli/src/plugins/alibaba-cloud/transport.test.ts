@@ -96,7 +96,7 @@ describe("Alibaba Cloud transport", () => {
       ]),
     )
 
-    expect(await collect(streamResponse(request()))).toEqual([
+    expect(await collect(streamResponse("test-profile", request()))).toEqual([
       { type: "reasoning_summary_delta", text: "Think " },
       { type: "text_delta", text: "Done" },
       {
@@ -176,7 +176,7 @@ describe("Alibaba Cloud transport", () => {
     withoutThinking.model = "qwen3-coder-plus"
     withoutThinking.thinking = undefined
 
-    await collect(streamResponse(withoutThinking))
+    await collect(streamResponse("test-profile", withoutThinking))
 
     const captured = requests[0]
     if (!captured || typeof captured.init.body !== "string") {

@@ -331,9 +331,10 @@ function parseEvent(raw: unknown): AgentEvent | undefined {
     }
     case "model_changed": {
       const provider = asString(raw.provider)
+      const profile = raw.profile === undefined ? undefined : asString(raw.profile)
       const model = asString(raw.model)
-      if (!provider || !model) return undefined
-      return { type: "model_changed", provider, model }
+      if (!provider || (raw.profile !== undefined && !profile) || !model) return undefined
+      return { type: "model_changed", provider, profile, model }
     }
     case "thinking_changed":
       return { type: "thinking_changed", thinking: parseThinking(raw.thinking) }
@@ -349,11 +350,12 @@ function parseEvent(raw: unknown): AgentEvent | undefined {
 
 function parseMeta(raw: unknown): SessionMeta | undefined {
   if (!isRecord(raw)) return undefined
-  if (asNumber(raw.version) !== 1) return undefined
+  if (asNumber(raw.version) !== 2) return undefined
   const id = asString(raw.id)
   const parentId = asString(raw.parentId)
   const cwd = asString(raw.cwd)
   const provider = asString(raw.provider)
+  const profile = asString(raw.profile)
   const model = asString(raw.model)
   const mode = asString(raw.mode)
   const modeBeforePlan = asString(raw.modeBeforePlan)
@@ -362,6 +364,7 @@ function parseMeta(raw: unknown): SessionMeta | undefined {
     (raw.parentId !== undefined && !parentId) ||
     !cwd ||
     !provider ||
+    (raw.profile !== undefined && !profile) ||
     !model ||
     !mode ||
     (raw.modeBeforePlan !== undefined && !modeBeforePlan)
@@ -369,11 +372,12 @@ function parseMeta(raw: unknown): SessionMeta | undefined {
     return undefined
   }
   return {
-    version: 1,
+    version: 2,
     id,
     ...(parentId ? { parentId } : {}),
     cwd,
     provider,
+    ...(profile ? { profile } : {}),
     model,
     thinking: parseThinking(raw.thinking),
     mode: isPermissionMode(mode) ? mode : defaultPermissionMode,

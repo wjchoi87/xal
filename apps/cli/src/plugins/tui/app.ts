@@ -218,8 +218,8 @@ export async function startTui(events: EventService, config: TuiConfig, options:
   } else {
     screen.scrollback.appendHeader({ kind: "banner", model, cwd: compactPath(session.currentWorkingDirectory) })
   }
-  if (!(await session.currentProvider.isLoggedIn().catch(() => false))) {
-    screen.scrollback.appendHeader({ kind: "info", text: "not connected — run /connect" })
+  if (!session.currentProfileId) {
+    screen.scrollback.appendHeader({ kind: "info", text: "not connected; run /connect" })
   }
 
   screen.view.on(RenderableEvents.DESTROYED, () => {

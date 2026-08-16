@@ -89,6 +89,7 @@ export interface ToolRunnerHost {
   mode(): PermissionMode
   outputDirectory(): string
   provider(): Provider
+  profileId(): string
   model(): string
   modelInputModalities(): ModelInputModality[] | undefined
   thinking(): ThinkingEffort | undefined
@@ -382,6 +383,7 @@ export class ToolCallRunner {
                   cwd: this.host.cwd(),
                   directory: this.host.outputDirectory(),
                   provider: this.host.provider(),
+                  profileId: this.host.profileId(),
                   model: this.host.model(),
                   modelInputModalities: this.host.modelInputModalities(),
                   thinking: this.host.thinking(),

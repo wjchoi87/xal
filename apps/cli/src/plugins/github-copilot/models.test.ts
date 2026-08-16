@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { appEnvVar, appInfo } from "../../app-info"
-import { saveCredential } from "../../config/credentials"
+import { createProfile, saveCredential } from "../../config/credentials"
 import type { ModelInfo } from "../../providers/types"
 import { replaceSecretValues } from "../../secrets/redactor"
 import { setDomain } from "./api"
@@ -41,8 +41,8 @@ function responseModel(id: string): Record<string, unknown> {
   }
 }
 
-async function saveTestCredential(accessToken: string): Promise<void> {
-  await saveCredential("github-copilot", { type: "api_key", key: accessToken })
+async function createTestProfile(accessToken: string): Promise<string> {
+  return (await createProfile("github-copilot", "test", { type: "api_key", key: accessToken })).id
 }
 
 test("Copilot model caches are bound to the credential that discovered them", async () => {
@@ -50,11 +50,11 @@ test("Copilot model caches are bound to the credential that discovered them", as
     const cached: ModelInfo[] = [
       { id: "account-a-model", name: "Account A Model", contextWindow: 128_000, inputModalities: ["text"] },
     ]
-    await saveTestCredential("token-a")
-    await cacheDiscoveredModels("token-a", cached)
-    expect(await listModels(false)).toEqual({ models: cached, source: "cache" })
+    const profileId = await createTestProfile("token-a")
+    await cacheDiscoveredModels(profileId, "token-a", cached)
+    expect(await listModels(profileId, false)).toEqual({ models: cached, source: "cache" })
 
-    await saveTestCredential("token-b")
+    await saveCredential("github-copilot", profileId, { type: "api_key", key: "token-b" })
     const inheritedFetch = globalThis.fetch
     const requestHeaders: Headers[] = []
     const urls: string[] = []
@@ -67,7 +67,7 @@ test("Copilot model caches are bound to the credential that discovered them", as
       },
     })
     try {
-      expect(await listModels(false)).toEqual({
+      expect(await listModels(profileId, false)).toEqual({
         models: [
           {
             id: "account-b-model",
@@ -96,7 +96,7 @@ test("Copilot model caches are bound to the credential that discovered them", as
 
 test("Copilot model discovery fails without a matching validated cache", async () => {
   await withHome(async () => {
-    await saveTestCredential("token")
+    const profileId = await createTestProfile("token")
     const inheritedFetch = globalThis.fetch
     Object.defineProperty(globalThis, "fetch", {
       configurable: true,
@@ -105,7 +105,7 @@ test("Copilot model discovery fails without a matching validated cache", async (
       },
     })
     try {
-      await expect(listModels(false)).rejects.toThrow("no validated cache is available")
+      await expect(listModels(profileId, false)).rejects.toThrow("no validated cache is available")
     } finally {
       Object.defineProperty(globalThis, "fetch", { configurable: true, value: inheritedFetch })
     }

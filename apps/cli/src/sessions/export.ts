@@ -95,7 +95,7 @@ function renderEvent(event: AgentEvent): string | undefined {
     case "workspace_changed":
       return `## Workspace changed\n\n${event.previous} → ${event.cwd}`
     case "model_changed":
-      return `## Model changed\n\n${event.provider} / ${event.model}`
+      return `## Model changed\n\n${event.profile ? `${event.provider} / ${event.profile} / ${event.model}` : `${event.provider} / disconnected`}`
     case "thinking_changed":
       return `## Thinking changed\n\n${event.thinking ?? "default"}`
     case "mode_changed":

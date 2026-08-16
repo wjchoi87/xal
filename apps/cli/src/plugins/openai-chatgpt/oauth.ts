@@ -1,6 +1,6 @@
 import { setTimeout as sleep } from "node:timers/promises"
 import { appInfo } from "../../app-info"
-import { loadCredential, saveCredential, type OAuthCredential } from "../../config/credentials"
+import { loadCredential, replaceCredential, type OAuthCredential } from "../../config/credentials"
 import { asNumber, asString, isRecord } from "../../lib/json"
 import type { ConnectContext } from "../../providers/types"
 import { protectSecretValue } from "../../secrets/redactor"
@@ -54,7 +54,6 @@ interface DeviceToken {
 }
 
 const refreshPromises = new Map<string, Promise<OAuthCredential>>()
-let credentialWrite = Promise.resolve()
 
 function base64url(bytes: Uint8Array): string {
   return Buffer.from(bytes).toString("base64").replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "")
@@ -126,30 +125,14 @@ function toCredential(tokens: TokenResponse, previous?: OAuthCredential): OAuthC
   }
 }
 
-function serializeCredentialWrite<T>(write: () => Promise<T>): Promise<T> {
-  const result = credentialWrite.then(write)
-  credentialWrite = result.then(
-    () => undefined,
-    () => undefined,
-  )
-  return result
-}
-
-async function saveRefreshedCredential(tokens: TokenResponse, source: OAuthCredential): Promise<OAuthCredential> {
-  return serializeCredentialWrite(async () => {
-    const current = await loadCredential(PROVIDER_ID)
-    if (
-      current?.type !== "oauth" ||
-      current.access !== source.access ||
-      current.refresh !== source.refresh ||
-      current.accountId !== source.accountId
-    ) {
-      throw new Error("ChatGPT credentials changed while refreshing — retry the request")
-    }
-    const next = toCredential(tokens, current)
-    await saveCredential(PROVIDER_ID, next)
-    return next
-  })
+async function saveRefreshedCredential(
+  profileId: string,
+  tokens: TokenResponse,
+  source: OAuthCredential,
+): Promise<OAuthCredential> {
+  const next = toCredential(tokens, source)
+  await replaceCredential(PROVIDER_ID, profileId, source, next)
+  return next
 }
 
 function buildAuthorizeUrl(challenge: string, state: string): string {
@@ -377,9 +360,9 @@ async function deviceTokens(ctx: ConnectContext): Promise<TokenResponse> {
   )
 }
 
-export async function login(ctx: ConnectContext): Promise<boolean> {
+export async function login(ctx: ConnectContext): Promise<OAuthCredential | undefined> {
   const method = await selectMethod(ctx)
-  if (!method) return false
+  if (!method) return undefined
 
   let tokens: TokenResponse
   if (method === "headless") {
@@ -390,7 +373,7 @@ export async function login(ctx: ConnectContext): Promise<boolean> {
     const authorizeUrl = buildAuthorizeUrl(challenge, state)
     const code =
       method === "browser" ? await browserCode(ctx, authorizeUrl, state) : await pastedCode(ctx, authorizeUrl, state)
-    if (code === undefined) return false
+    if (code === undefined) return undefined
     protectSecretValue(code)
     tokens = await requestTokens(
       new URLSearchParams({
@@ -404,23 +387,21 @@ export async function login(ctx: ConnectContext): Promise<boolean> {
   }
 
   const credential = toCredential(tokens)
-  await serializeCredentialWrite(() => saveCredential(PROVIDER_ID, credential))
   ctx.print(`signed in (account ${credential.accountId})`)
-  return true
+  return credential
 }
 
-export async function isLoggedIn(): Promise<boolean> {
-  return (await loadCredential(PROVIDER_ID))?.type === "oauth"
-}
-
-export async function ensureAccessToken(forceRefresh = false): Promise<{ access: string; accountId: string }> {
-  const credential = await loadCredential(PROVIDER_ID)
+export async function ensureAccessToken(
+  profileId: string,
+  forceRefresh = false,
+): Promise<{ access: string; accountId: string }> {
+  const credential = await loadCredential(PROVIDER_ID, profileId)
   if (credential?.type !== "oauth") throw new Error(`not logged in — run: ${appInfo.name} connect chatgpt`)
   if (!credential.accountId) throw new Error("stored ChatGPT credentials have no account id; run /connect again")
   if (!forceRefresh && credential.expires - 60_000 > Date.now()) {
     return { access: credential.access, accountId: credential.accountId }
   }
-  let refresh = refreshPromises.get(credential.refresh)
+  let refresh = refreshPromises.get(profileId)
   if (!refresh) {
     refresh = requestTokens(
       new URLSearchParams({
@@ -429,11 +410,11 @@ export async function ensureAccessToken(forceRefresh = false): Promise<{ access:
         refresh_token: credential.refresh,
       }),
     )
-      .then((tokens) => saveRefreshedCredential(tokens, credential))
+      .then((tokens) => saveRefreshedCredential(profileId, tokens, credential))
       .finally(() => {
-        refreshPromises.delete(credential.refresh)
+        refreshPromises.delete(profileId)
       })
-    refreshPromises.set(credential.refresh, refresh)
+    refreshPromises.set(profileId, refresh)
   }
   const next = await refresh
   if (!next.accountId) throw new Error("refreshed ChatGPT credentials have no account id")

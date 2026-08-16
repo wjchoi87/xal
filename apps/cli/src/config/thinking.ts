@@ -2,17 +2,22 @@ import type { Provider, ThinkingEffort, ThinkingOptions } from "../providers/typ
 import { modelCatalog } from "../providers/catalog"
 import { saveSettings, settings } from "./settings"
 
-export async function thinkingOptions(provider: Provider, model: string): Promise<ThinkingOptions | undefined> {
-  const catalog = await modelCatalog(provider)
+export async function thinkingOptions(
+  provider: Provider,
+  profileId: string,
+  model: string,
+): Promise<ThinkingOptions | undefined> {
+  const catalog = await modelCatalog(provider, profileId)
   return catalog.models.find((info) => info.id === model)?.thinking
 }
 
 export async function resolveThinking(
   provider: Provider,
+  profileId: string,
   model: string,
   preferred?: ThinkingEffort,
 ): Promise<ThinkingEffort | undefined> {
-  const available = await thinkingOptions(provider, model)
+  const available = await thinkingOptions(provider, profileId, model)
   if (!available) return undefined
   const saved = preferred ?? settings().thinking[provider.id]?.[model]
   return saved && available.options.includes(saved) ? saved : available.default

@@ -3,6 +3,7 @@ import { ProviderError } from "../../providers/errors"
 import type { StreamEvent, StreamRequest } from "../../providers/types"
 
 interface CapturedRequest {
+  profileId: string
   path: string
   init: RequestInit
 }
@@ -11,8 +12,8 @@ const requests: CapturedRequest[] = []
 const responses: Response[] = []
 
 mock.module("./api", () => ({
-  async chatGptFetch(path: string, init: RequestInit = {}): Promise<Response> {
-    requests.push({ path, init })
+  async chatGptFetch(profileId: string, path: string, init: RequestInit = {}): Promise<Response> {
+    requests.push({ profileId, path, init })
     const response = responses.shift()
     if (!response) throw new Error("missing mocked ChatGPT response")
     return response
@@ -99,6 +100,7 @@ describe("ChatGPT transport", () => {
 
     const events = await collect(
       streamResponse(
+        "test-profile",
         request([
           { type: "user_message", text: "continue", images: [] },
           {
@@ -140,6 +142,7 @@ describe("ChatGPT transport", () => {
     expect(requests).toHaveLength(1)
     const captured = requests[0]
     if (!captured) throw new Error("ChatGPT request was not captured")
+    expect(captured.profileId).toBe("test-profile")
     expect(captured.path).toBe("/responses")
     expect(captured.init.method).toBe("POST")
     expect(new Headers(captured.init.headers).get("session-id")).toBe("session-123")
@@ -181,7 +184,7 @@ describe("ChatGPT transport", () => {
 
     let thrown: unknown
     try {
-      await collect(streamResponse(request()))
+      await collect(streamResponse("test-profile", request()))
     } catch (error) {
       thrown = error
     }
@@ -195,7 +198,7 @@ describe("ChatGPT transport", () => {
   test("rejects a stream that ends before a terminal event", async () => {
     responses.push(sse([{ type: "response.output_text.delta", delta: "partial" }]))
 
-    await expect(collect(streamResponse(request()))).rejects.toMatchObject({
+    await expect(collect(streamResponse("test-profile", request()))).rejects.toMatchObject({
       message: "ChatGPT stream ended unexpectedly",
       retryable: true,
     })

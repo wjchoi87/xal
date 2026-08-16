@@ -1,14 +1,18 @@
-import { listProviders } from "./registry"
+import { listProfiles, type ProviderProfile } from "../config/credentials"
+import { describeError } from "../lib/error"
+import { getProvider, listProviders } from "./registry"
 import type { ModelCatalog, ModelCatalogSource, ModelInfo, Provider } from "./types"
 
 export interface ModelChoice {
   provider: Provider
+  profile: ProviderProfile
   model: ModelInfo
   source: ModelCatalogSource
 }
 
 export interface CatalogNotice {
   provider: Provider
+  profile: ProviderProfile
   message: string
 }
 
@@ -19,20 +23,30 @@ export interface ModelChoices {
 
 export interface ConnectTarget {
   provider: Provider
-  connected: boolean
+  profiles: number
+}
+
+export function providerLabel(provider: Provider): string {
+  return provider.aliases[0] ?? provider.id
+}
+
+export function profileProviderLabel(profile: ProviderProfile): string {
+  return getProvider(profile.provider)?.name ?? `${profile.provider} · unavailable`
 }
 
 export async function listConnectTargets(): Promise<ConnectTarget[]> {
-  const targets = await Promise.all(
-    listProviders().map(async (provider): Promise<ConnectTarget[]> => {
-      if (!provider.connect) return []
-      return [{ provider, connected: await provider.isLoggedIn().catch(() => false) }]
-    }),
-  )
-  return targets.flat()
+  const profiles = await listProfiles()
+  return listProviders().flatMap((provider) => {
+    if (!provider.connect) return []
+    return [{ provider, profiles: profiles.filter((profile) => profile.provider === provider.id).length }]
+  })
 }
 
 const catalogs = new Map<string, Promise<ModelCatalog>>()
+
+function catalogKey(provider: Provider, profileId: string): string {
+  return `${provider.id}:${profileId}`
+}
 
 function validateCatalog(provider: Provider, catalog: ModelCatalog): ModelCatalog {
   const ids = new Set<string>()
@@ -51,28 +65,40 @@ function validateCatalog(provider: Provider, catalog: ModelCatalog): ModelCatalo
   return catalog
 }
 
-export function modelCatalog(provider: Provider, refresh = false): Promise<ModelCatalog> {
-  if (refresh) catalogs.delete(provider.id)
-  const cached = catalogs.get(provider.id)
+export function clearModelCatalog(profileId: string): void {
+  for (const key of catalogs.keys()) {
+    if (key.endsWith(`:${profileId}`)) catalogs.delete(key)
+  }
+}
+
+export function modelCatalog(provider: Provider, profileId: string, refresh = false): Promise<ModelCatalog> {
+  const key = catalogKey(provider, profileId)
+  if (refresh) catalogs.delete(key)
+  const cached = catalogs.get(key)
   if (cached) return cached
 
   const lookup = Promise.resolve()
-    .then(() => provider.listModels(refresh))
+    .then(() => provider.listModels(profileId, refresh))
     .then((catalog) => validateCatalog(provider, catalog))
     .catch((error) => {
-      if (catalogs.get(provider.id) === lookup) catalogs.delete(provider.id)
+      if (catalogs.get(key) === lookup) catalogs.delete(key)
       throw error
     })
-  catalogs.set(provider.id, lookup)
+  catalogs.set(key, lookup)
   return lookup
 }
 
-export async function contextWindow(provider: Provider, model: string): Promise<number | undefined> {
-  return (await findModel(provider, model))?.contextWindow
+export async function contextWindow(provider: Provider, profileId: string, model: string): Promise<number | undefined> {
+  return (await findModel(provider, profileId, model))?.contextWindow
 }
 
-export async function findModel(provider: Provider, model: string, refresh = false): Promise<ModelInfo | undefined> {
-  const catalog = await modelCatalog(provider, refresh)
+export async function findModel(
+  provider: Provider,
+  profileId: string,
+  model: string,
+  refresh = false,
+): Promise<ModelInfo | undefined> {
+  const catalog = await modelCatalog(provider, profileId, refresh)
   return catalog.models.find((info) => info.id === model)
 }
 
@@ -86,13 +112,17 @@ export function modelSummary(model: ModelInfo, listReasoning = false): string {
 
 export async function listModelChoices(refresh = false): Promise<ModelChoices> {
   const grouped = await Promise.all(
-    listProviders().map(async (provider): Promise<ModelChoices> => {
-      const connected = await provider.isLoggedIn().catch(() => false)
-      if (!connected) return { choices: [], notices: [] }
-      const catalog = await modelCatalog(provider, refresh)
-      return {
-        choices: catalog.models.map((model) => ({ provider, model, source: catalog.source })),
-        notices: catalog.warning ? [{ provider, message: catalog.warning }] : [],
+    (await listProfiles()).map(async (profile): Promise<ModelChoices> => {
+      const provider = getProvider(profile.provider)
+      if (!provider) return { choices: [], notices: [] }
+      try {
+        const catalog = await modelCatalog(provider, profile.id, refresh)
+        return {
+          choices: catalog.models.map((model) => ({ provider, profile, model, source: catalog.source })),
+          notices: catalog.warning ? [{ provider, profile, message: catalog.warning }] : [],
+        }
+      } catch (error) {
+        return { choices: [], notices: [{ provider, profile, message: describeError(error) }] }
       }
     }),
   )

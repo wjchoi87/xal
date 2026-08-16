@@ -19,18 +19,22 @@ interface ForkTarget {
   startedAt: number
   cwd: string
   provider: string
+  profile: string
   model: string
   thinking: SessionMeta["thinking"]
   mode: SessionMeta["mode"]
   modeBeforePlan: SessionMeta["modeBeforePlan"]
 }
 
-type ForkState = Pick<ForkTarget, "cwd" | "provider" | "model" | "thinking" | "mode" | "modeBeforePlan">
+type ForkState = Pick<ForkTarget, "cwd" | "provider" | "model" | "thinking" | "mode" | "modeBeforePlan"> & {
+  profile?: string
+}
 
 function replayState(meta: SessionMeta, events: AgentEvent[]): ForkState {
   const state: ForkState = {
     cwd: meta.cwd,
     provider: meta.provider,
+    profile: meta.profile,
     model: meta.model,
     thinking: meta.thinking,
     mode: meta.mode,
@@ -40,6 +44,7 @@ function replayState(meta: SessionMeta, events: AgentEvent[]): ForkState {
     if (event.type === "workspace_changed") state.cwd = event.cwd
     if (event.type === "model_changed") {
       state.provider = event.provider
+      state.profile = event.profile
       state.model = event.model
     }
     if (event.type === "thinking_changed") state.thinking = event.thinking
@@ -57,8 +62,8 @@ function stateCorrections(recorded: ForkState, target: ForkState): AgentEvent[] 
   if (recorded.cwd !== target.cwd) {
     events.push({ type: "workspace_changed", previous: recorded.cwd, cwd: target.cwd })
   }
-  if (recorded.provider !== target.provider || recorded.model !== target.model) {
-    events.push({ type: "model_changed", provider: target.provider, model: target.model })
+  if (recorded.provider !== target.provider || recorded.profile !== target.profile || recorded.model !== target.model) {
+    events.push({ type: "model_changed", provider: target.provider, profile: target.profile, model: target.model })
   }
   if (recorded.thinking !== target.thinking) events.push({ type: "thinking_changed", thinking: target.thinking })
   if (recorded.mode !== target.mode) {
@@ -76,6 +81,7 @@ function sameState(left: ForkState, right: ForkState): boolean {
   return (
     left.cwd === right.cwd &&
     left.provider === right.provider &&
+    left.profile === right.profile &&
     left.model === right.model &&
     left.thinking === right.thinking &&
     left.mode === right.mode &&

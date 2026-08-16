@@ -1,7 +1,7 @@
 import { appInfo } from "../../app-info"
 import { readBgLease } from "../../bg/state"
+import { getProfile, listProfiles, loadCredentialSecrets, type ProviderProfile } from "../../config/credentials"
 import { settings } from "../../config/settings"
-import { loadCredentialSecrets } from "../../config/credentials"
 import { resolveThinking } from "../../config/thinking"
 import { pathExists } from "../../lib/fs"
 import type { PermissionMode } from "../../permissions/types"
@@ -20,6 +20,7 @@ export interface SessionSetup {
 
 export interface SessionOptions {
   provider?: string
+  connection?: string
   model?: string
   persist?: boolean
   interactive?: boolean
@@ -27,28 +28,78 @@ export interface SessionOptions {
   outputSchema?: OutputSchema
 }
 
-function resolveProvider(id?: string): Provider {
-  const wanted = id ?? settings().provider
+interface ProviderTarget {
+  provider: Provider
+  profile?: ProviderProfile
+}
+
+async function resolveTarget(options: SessionOptions): Promise<ProviderTarget> {
+  const profiles = await listProfiles()
+  const named = options.connection
+    ? profiles.find((profile) => profile.name.toLowerCase() === options.connection?.trim().toLowerCase())
+    : undefined
+  if (options.connection && !named) throw new Error(`unknown connection: ${options.connection}`)
+  if (named && options.provider) {
+    const requested = getProvider(options.provider)
+    if (!requested) throw new Error(`unknown provider: ${options.provider}`)
+    if (requested.id !== named.provider) {
+      throw new Error(`connection ${named.name} belongs to ${named.provider}, not ${requested.id}`)
+    }
+  }
+  if (named) {
+    const provider = getProvider(named.provider)
+    if (!provider) throw new Error(`provider ${named.provider} for connection ${named.name} is not available`)
+    return { provider, profile: named }
+  }
+
+  if (options.provider) {
+    const provider = getProvider(options.provider)
+    if (!provider) throw new Error(`unknown provider: ${options.provider}`)
+    const available = profiles.filter((profile) => profile.provider === provider.id)
+    const configured = available.find((profile) => profile.id === settings().profile)
+    if (configured) return { provider, profile: configured }
+    if (available.length === 1) return { provider, profile: available[0] }
+    if (available.length > 1) throw new Error(`${provider.name} has multiple connections; select one with --connection`)
+    return { provider }
+  }
+
+  const configured = profiles.find((profile) => profile.id === settings().profile)
+  if (configured) {
+    const provider = getProvider(configured.provider)
+    if (provider) return { provider, profile: configured }
+  }
+
+  const wanted = settings().provider
   if (wanted) {
     const provider = getProvider(wanted)
     if (!provider) throw new Error(`unknown provider: ${wanted}`)
-    return provider
+    return { provider, profile: profiles.find((profile) => profile.provider === provider.id) }
   }
+
+  for (const profile of profiles) {
+    const provider = getProvider(profile.provider)
+    if (provider) return { provider, profile }
+  }
+  if (profiles.length > 0) throw new Error("no connected profile has an available provider")
+
   const provider = listProviders().at(-1)
   if (!provider) throw new Error("no provider registered")
-  return provider
+  return { provider }
 }
 
 export async function createSession(options: SessionOptions = {}): Promise<SessionSetup> {
   await loadCredentialSecrets()
-  const provider = resolveProvider(options.provider)
+  const { provider, profile } = await resolveTarget(options)
+  const configuredModel =
+    options.provider === undefined && options.connection === undefined ? settings().model : undefined
   const model =
-    options.model ?? (options.provider === undefined ? settings().model : undefined) ?? (await provider.defaultModel())
-  const thinking = await resolveThinking(provider, model)
-  const modelInfo = await findModel(provider, model)
+    options.model ?? configuredModel ?? (profile ? await provider.defaultModel(profile.id) : "not-connected")
+  const thinking = profile ? await resolveThinking(provider, profile.id, model) : undefined
+  const modelInfo = profile ? await findModel(provider, profile.id, model) : undefined
   return {
     session: new AgentSession({
       provider,
+      profileId: profile?.id,
       model,
       modelInputModalities: modelInfo?.inputModalities,
       thinking,
@@ -64,6 +115,7 @@ export async function createSession(options: SessionOptions = {}): Promise<Sessi
 function lastState(loaded: LoadedSession): {
   cwd: string
   provider: string
+  profile?: string
   model: string
   thinking?: ThinkingEffort
   mode: PermissionMode
@@ -71,6 +123,7 @@ function lastState(loaded: LoadedSession): {
   const state = {
     cwd: loaded.meta.cwd,
     provider: loaded.meta.provider,
+    profile: loaded.meta.profile,
     model: loaded.meta.model,
     thinking: loaded.meta.thinking,
     mode: loaded.meta.mode,
@@ -79,6 +132,7 @@ function lastState(loaded: LoadedSession): {
     switch (event.type) {
       case "model_changed":
         state.provider = event.provider
+        state.profile = event.profile
         state.model = event.model
         break
       case "thinking_changed":
@@ -151,19 +205,20 @@ export async function resumeSession(
 
   const notices: string[] = []
   const last = lastState(loaded)
-  const recorded = getProvider(last.provider)
-  const provider = recorded ?? session.currentProvider
-  const model = recorded ? last.model : session.currentModel
-  const thinking = await resolveThinking(provider, model, last.thinking)
-  const modelInfo = await findModel(provider, model)
+  if (!last.profile) throw new Error("session has no provider profile")
+  const profile = await getProfile(last.profile)
+  if (!profile) throw new Error(`provider profile ${last.profile} used by this session no longer exists`)
+  if (profile.provider !== last.provider) throw new Error("session provider profile does not match its provider")
+  const provider = getProvider(last.provider)
+  if (!provider) throw new Error(`provider ${last.provider} used by this session is not available`)
+  const model = last.model
+  const thinking = await resolveThinking(provider, profile.id, model, last.thinking)
+  const modelInfo = await findModel(provider, profile.id, model)
   let cwd = last.cwd
   if (!(await pathExists(cwd))) {
     const fallback = (await pathExists(loaded.meta.cwd)) ? loaded.meta.cwd : process.cwd()
     notices.push(`recorded workspace ${cwd} is unavailable — continuing in ${fallback}`)
     cwd = fallback
-  }
-  if (!recorded) {
-    notices.push(`provider ${last.provider} is not available — continuing with ${provider.id} · ${model}`)
   }
   if (cwd !== process.cwd()) {
     notices.push(`this session was working in ${cwd} — paths may not match ${process.cwd()}`)
@@ -175,6 +230,7 @@ export async function resumeSession(
       path: summary.path,
       cwd,
       provider,
+      profileId: profile.id,
       model,
       modelInputModalities: modelInfo?.inputModalities,
       thinking,

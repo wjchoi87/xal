@@ -38,6 +38,7 @@ export interface GoalSettings {
 export interface Settings {
   plugins: string[]
   provider?: string
+  profile?: string
   model?: string
   ui?: string
   permissions: PermissionSettings
@@ -190,6 +191,7 @@ function parseSettings(raw: Record<string, unknown>): Settings {
   return {
     plugins,
     provider: asString(raw.provider),
+    profile: asString(raw.profile),
     model: asString(raw.model),
     ui: asString(raw.ui),
     permissions: {

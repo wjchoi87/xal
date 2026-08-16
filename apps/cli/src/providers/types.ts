@@ -1,3 +1,4 @@
+import type { Credential } from "../config/credentials"
 import type { JsonObject } from "../lib/json"
 
 export interface ProviderReplay {
@@ -144,9 +145,8 @@ export interface Provider {
   name: string
   aliases: string[]
   capabilities: { imageInput: boolean }
-  isLoggedIn(): Promise<boolean>
-  connect?(ctx: ConnectContext): Promise<boolean>
-  listModels(refresh: boolean): Promise<ModelCatalog>
-  defaultModel(): Promise<string>
-  stream(request: StreamRequest): AsyncIterable<StreamEvent>
+  connect?(ctx: ConnectContext): Promise<Credential | undefined>
+  listModels(profileId: string, refresh: boolean): Promise<ModelCatalog>
+  defaultModel(profileId: string): Promise<string>
+  stream(profileId: string, request: StreamRequest): AsyncIterable<StreamEvent>
 }

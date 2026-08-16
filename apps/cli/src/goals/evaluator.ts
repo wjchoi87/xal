@@ -27,6 +27,7 @@ export interface GoalEvaluatorTarget {
 
 export interface GoalEvaluationContext {
   provider: Provider
+  profileId: string
   sessionModel: string
   evaluatorModel: string
   thinking: ThinkingEffort | undefined
@@ -47,11 +48,12 @@ export interface GoalEvaluationResult {
 
 export async function resolveGoalEvaluatorTarget(
   provider: Provider,
+  profileId: string,
   sessionModel: string,
 ): Promise<GoalEvaluatorTarget> {
   const configured = settings().goal.evaluatorModels[provider.id]
   const model = configured ?? sessionModel
-  const info = await findModel(provider, model)
+  const info = await findModel(provider, profileId, model)
   if (configured && !info)
     throw new Error(`${provider.name} does not offer configured goal evaluator model ${configured}`)
   if (!info?.thinking) return { model, thinking: undefined }
@@ -77,6 +79,7 @@ export async function evaluateGoal(request: GoalEvaluationRequest): Promise<Goal
   input.push(evaluationMessage(request.condition))
   const result = await collectStreamedText({
     provider: request.provider,
+    profileId: request.profileId,
     kind: request.kind,
     phase: "goal_evaluation",
     emptyResponseMessage: `${request.provider.name} returned an empty goal verdict`,

@@ -10,10 +10,11 @@ import { loadSession } from "./store"
 import type { SessionMeta } from "./types"
 
 const meta: SessionMeta = {
-  version: 1,
+  version: 2,
   id: "session-1",
   cwd: "/workspace",
   provider: "provider",
+  profile: "profile",
   model: "model",
   mode: "normal",
   startedAt: 123,

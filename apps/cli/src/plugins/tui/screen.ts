@@ -281,6 +281,12 @@ export class Screen {
     return index === undefined ? undefined : options[index]?.value
   }
 
+  async ask(question: string): Promise<string | undefined> {
+    this.config.hide()
+    this.picker.hide()
+    return this.secret.show(redactText(question), false)
+  }
+
   async askSecret(question: string): Promise<string | undefined> {
     this.config.hide()
     this.picker.hide()
@@ -451,6 +457,7 @@ export class Screen {
       busy: (label) => this.statusBar.setLoading(label),
       select: <T>(request: SelectRequest<T>) => this.select(request),
       restore: (input) => this.composer.restore([input]),
+      ask: (question) => this.ask(question),
       askSecret: (question) => this.askSecret(question),
     }
   }

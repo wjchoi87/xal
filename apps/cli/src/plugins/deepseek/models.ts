@@ -26,8 +26,8 @@ function modelInfo(id: string): ModelInfo {
   return bundled ? { ...bundled } : { id, name: id, inputModalities: ["text"] }
 }
 
-async function discoverModels(): Promise<ModelInfo[]> {
-  const response = await deepSeekFetch("/models", await apiKey(), { signal: AbortSignal.timeout(15_000) })
+async function discoverModels(profileId: string): Promise<ModelInfo[]> {
+  const response = await deepSeekFetch("/models", await apiKey(profileId), { signal: AbortSignal.timeout(15_000) })
   const raw: unknown = await response.json()
   if (!isRecord(raw) || !Array.isArray(raw.data)) throw new Error("DeepSeek models response was invalid")
   const models: ModelInfo[] = []
@@ -41,10 +41,10 @@ async function discoverModels(): Promise<ModelInfo[]> {
   return models
 }
 
-export async function listModels(refresh: boolean): Promise<ModelCatalog> {
+export async function listModels(profileId: string, refresh: boolean): Promise<ModelCatalog> {
   if (!refresh) return { models: BUNDLED_MODELS, source: "bundled" }
   try {
-    return { models: await discoverModels(), source: "runtime" }
+    return { models: await discoverModels(profileId), source: "runtime" }
   } catch (error) {
     return {
       models: BUNDLED_MODELS,

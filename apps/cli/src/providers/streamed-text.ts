@@ -11,6 +11,7 @@ import type { Provider, StreamRequest, Usage } from "./types"
 
 export interface StreamedTextRequest {
   provider: Provider
+  profileId: string
   request: StreamRequest
   phase: ProviderPhase
   kind?: SessionKind
@@ -38,7 +39,7 @@ export async function collectStreamedText(input: StreamedTextRequest): Promise<S
   let received = false
   let usage: Usage | undefined
   try {
-    for await (const event of input.provider.stream(redactStreamRequest(input.request))) {
+    for await (const event of input.provider.stream(input.profileId, redactStreamRequest(input.request))) {
       if (!received) {
         received = true
         profileProviderFirstEvent(profile, event.type)

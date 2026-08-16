@@ -57,11 +57,18 @@ export class AgentEventController {
 
   trackContextWindow(): void {
     const provider = this.session.currentProvider
+    const profileId = this.session.currentProfileId
     const model = this.session.currentModel
     this.screen.statusBar.setContextWindow(undefined)
-    void contextWindow(provider, model)
+    if (!profileId) return
+    void contextWindow(provider, profileId, model)
       .then((window) => {
-        if (this.session.currentProvider !== provider || this.session.currentModel !== model) return
+        if (
+          this.session.currentProvider !== provider ||
+          this.session.currentProfileId !== profileId ||
+          this.session.currentModel !== model
+        )
+          return
         this.screen.statusBar.setContextWindow(window)
       })
       .catch((error) => {
@@ -206,7 +213,10 @@ export class AgentEventController {
       case "model_changed":
         statusBar.setModel(event.model)
         this.trackContextWindow()
-        scrollback.append({ kind: "info", text: `model: ${event.model} · ${event.provider}` })
+        scrollback.append({
+          kind: "info",
+          text: event.profile ? `model: ${event.model} · ${event.provider}` : `disconnected: ${event.provider}`,
+        })
         break
       case "thinking_changed":
         statusBar.setThinking(event.thinking)

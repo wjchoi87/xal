@@ -16,6 +16,7 @@ export class SecretInput {
   private readonly prompt: TextRenderable
   private readonly masked: TextRenderable
   private value = ""
+  private maskedValue = true
   private settle: ((value: string | undefined) => void) | undefined
 
   get visible(): boolean {
@@ -46,10 +47,11 @@ export class SecretInput {
     this.view.add(label(ctx, { content: "Enter · Esc", flexShrink: 0, marginLeft: 1, color: COLORS.faint }))
   }
 
-  show(question: string): Promise<string | undefined> {
+  show(question: string, masked = true): Promise<string | undefined> {
     this.close(undefined)
     this.prompt.content = new StyledText([paint(COLORS.agent, `${question}:`)])
     this.value = ""
+    this.maskedValue = masked
     this.render()
     this.view.visible = true
     this.onChange()
@@ -108,7 +110,10 @@ export class SecretInput {
   }
 
   private render(): void {
-    const count = Array.from(this.value).length
-    this.masked.content = count === 0 ? new StyledText([muted("paste or type token")]) : "•".repeat(count)
+    if (!this.value) {
+      this.masked.content = new StyledText([muted(this.maskedValue ? "paste or type token" : "type a value")])
+      return
+    }
+    this.masked.content = this.maskedValue ? "•".repeat(Array.from(this.value).length) : this.value
   }
 }

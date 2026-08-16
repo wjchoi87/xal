@@ -20,8 +20,8 @@ function headers(access: string, accountId: string, extra: Record<string, string
   }
 }
 
-export async function chatGptFetch(path: string, init: ChatGptRequest = {}): Promise<Response> {
-  let auth = await ensureAccessToken()
+export async function chatGptFetch(profileId: string, path: string, init: ChatGptRequest = {}): Promise<Response> {
+  let auth = await ensureAccessToken(profileId)
   const send = () =>
     providerFetch(
       "ChatGPT",
@@ -35,7 +35,7 @@ export async function chatGptFetch(path: string, init: ChatGptRequest = {}): Pro
 
   let response = await send()
   if (response.status !== 401) return response
-  auth = await ensureAccessToken(true)
+  auth = await ensureAccessToken(profileId, true)
   response = await send()
   return response
 }

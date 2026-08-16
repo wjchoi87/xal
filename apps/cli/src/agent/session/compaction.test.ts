@@ -95,6 +95,7 @@ test("summarizes the active history with the dedicated request contract", async 
 
   const summary = await summarizeHistory({
     provider,
+    profileId: "test-profile",
     model: "test-model",
     thinking: "high",
     prompt,
@@ -132,6 +133,7 @@ test("falls back to streamed summary text and rejects an empty summary", async (
   expect(
     await summarizeHistory({
       provider: streamed,
+      profileId: "test-profile",
       model: "test-model",
       thinking: undefined,
       prompt,
@@ -146,6 +148,7 @@ test("falls back to streamed summary text and rejects an empty summary", async (
   await expect(
     summarizeHistory({
       provider: empty,
+      profileId: "test-profile",
       model: "test-model",
       thinking: undefined,
       prompt,

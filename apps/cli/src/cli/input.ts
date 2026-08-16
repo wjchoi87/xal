@@ -1,6 +1,6 @@
-export async function askSecret(question: string): Promise<string | undefined> {
+export async function askLine(question: string, masked: boolean): Promise<string | undefined> {
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    throw new Error("a terminal is required to enter a secret")
+    throw new Error(`a terminal is required to enter ${masked ? "a secret" : "a value"}`)
   }
 
   return new Promise((resolve) => {
@@ -39,7 +39,7 @@ export async function askSecret(question: string): Promise<string | undefined> {
         }
         if (character < " ") continue
         value += character
-        process.stdout.write("•")
+        process.stdout.write(masked ? "•" : character)
       }
     }
 

@@ -5,9 +5,9 @@ import { join } from "node:path"
 import { appEnvVar, appInfo } from "../app-info"
 import { REDACTION_MARKER, redactText, replaceSecretValues } from "../secrets/redactor"
 import {
+  createProfile,
   loadCredential,
   loadCredentialSecrets,
-  saveCredential,
   type ApiKeyCredential,
   type OAuthCredential,
 } from "./credentials"
@@ -40,17 +40,17 @@ test("round-trips multiple credential types without replacing other providers", 
       accountId: "account-id",
     }
 
-    await saveCredential("api-provider", apiKey)
-    await saveCredential("oauth-provider", oauth)
+    const apiProfile = await createProfile("api-provider", "API", apiKey)
+    const oauthProfile = await createProfile("oauth-provider", "OAuth", oauth)
 
-    expect(await loadCredential("api-provider")).toEqual(apiKey)
-    expect(await loadCredential("oauth-provider")).toEqual(oauth)
+    expect(await loadCredential("api-provider", apiProfile.id)).toEqual(apiKey)
+    expect(await loadCredential("oauth-provider", oauthProfile.id)).toEqual(oauth)
     const path = join(home, "credentials.json")
     const persisted: unknown = JSON.parse(await readFile(path, "utf8"))
     expect(persisted).toEqual({
-      providers: {
-        "api-provider": apiKey,
-        "oauth-provider": oauth,
+      profiles: {
+        [apiProfile.id]: { name: "API", provider: "api-provider", credential: apiKey },
+        [oauthProfile.id]: { name: "OAuth", provider: "oauth-provider", credential: oauth },
       },
     })
     expect((await stat(path)).mode & 0o777).toBe(0o600)
@@ -61,15 +61,19 @@ test("rejects a malformed provider without changing the credential file", async 
   await withCredentialsHome(async (home) => {
     const path = join(home, "credentials.json")
     const contents = `${JSON.stringify({
-      providers: {
-        valid: { type: "api_key", key: "valid-secret" },
-        broken: { type: "oauth", access: "access", refresh: "", expires: 123, accountId: "account" },
+      profiles: {
+        valid: { name: "Valid", provider: "api-provider", credential: { type: "api_key", key: "valid-secret" } },
+        broken: {
+          name: "Broken",
+          provider: "oauth-provider",
+          credential: { type: "oauth", access: "access", refresh: "", expires: 123, accountId: "account" },
+        },
       },
     })}\n`
     await writeFile(path, contents)
 
-    await expect(loadCredential("valid")).rejects.toThrow(
-      `${path} has a malformed credential for broken — fix or delete it`,
+    await expect(loadCredential("api-provider", "valid")).rejects.toThrow(
+      `${path} has a malformed profile for broken; fix or delete it`,
     )
     expect(await readFile(path, "utf8")).toBe(contents)
   })
@@ -78,20 +82,35 @@ test("rejects a malformed provider without changing the credential file", async 
 test("refreshes registered credential secrets when the file changes", async () => {
   await withCredentialsHome(async (home) => {
     const path = join(home, "credentials.json")
-    await writeFile(path, `${JSON.stringify({ providers: { first: { type: "api_key", key: "retired-secret" } } })}\n`)
+    await writeFile(
+      path,
+      `${JSON.stringify({
+        profiles: {
+          first: {
+            name: "First",
+            provider: "api-provider",
+            credential: { type: "api_key", key: "retired-secret" },
+          },
+        },
+      })}\n`,
+    )
     await loadCredentialSecrets()
     expect(redactText("retired-secret")).toBe(REDACTION_MARKER)
 
     await writeFile(
       path,
       `${JSON.stringify({
-        providers: {
+        profiles: {
           second: {
-            type: "oauth",
-            access: "current-access",
-            refresh: "current-refresh",
-            expires: 654321,
-            accountId: "visible-account",
+            name: "Second",
+            provider: "oauth-provider",
+            credential: {
+              type: "oauth",
+              access: "current-access",
+              refresh: "current-refresh",
+              expires: 654321,
+              accountId: "visible-account",
+            },
           },
         },
       })}\n`,

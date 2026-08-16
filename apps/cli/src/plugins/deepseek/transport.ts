@@ -20,26 +20,28 @@ function requestThinking(effort: ThinkingEffort | undefined): JsonObject {
   }
 }
 
-const provider: ChatCompletionProvider = {
-  id: PROVIDER_ID,
-  name: "DeepSeek",
-  async fetch(body, signal) {
-    return deepSeekFetch("/chat/completions", await apiKey(), {
-      method: "POST",
-      headers: { accept: "text/event-stream" },
-      body,
-      signal,
-    })
-  },
-  requestOptions(request) {
-    return { user_id: request.sessionId, ...requestThinking(request.thinking) }
-  },
-  finishReasonError(finishReason) {
-    if (finishReason !== "insufficient_system_resource") return undefined
-    return new ProviderError("DeepSeek had insufficient capacity to complete the response", { retryable: true })
-  },
+function provider(profileId: string): ChatCompletionProvider {
+  return {
+    id: PROVIDER_ID,
+    name: "DeepSeek",
+    async fetch(body, signal) {
+      return deepSeekFetch("/chat/completions", await apiKey(profileId), {
+        method: "POST",
+        headers: { accept: "text/event-stream" },
+        body,
+        signal,
+      })
+    },
+    requestOptions(request) {
+      return { user_id: request.sessionId, ...requestThinking(request.thinking) }
+    },
+    finishReasonError(finishReason) {
+      if (finishReason !== "insufficient_system_resource") return undefined
+      return new ProviderError("DeepSeek had insufficient capacity to complete the response", { retryable: true })
+    },
+  }
 }
 
-export function streamResponse(request: StreamRequest): AsyncIterable<StreamEvent> {
-  return streamChatCompletions(request, provider)
+export function streamResponse(profileId: string, request: StreamRequest): AsyncIterable<StreamEvent> {
+  return streamChatCompletions(request, provider(profileId))
 }

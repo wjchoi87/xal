@@ -5,8 +5,8 @@ import { registerTaskAgents } from "./agent/task/tool"
 import { registerJobTools } from "./background/register"
 import { registerBgClis } from "./bg/cli"
 import { chooseOption } from "./cli/choose"
+import { askLine } from "./cli/input"
 import { runCli } from "./cli/run"
-import { askSecret } from "./cli/secret"
 import type { CliContext } from "./cli/types"
 import { loadCredentialSecrets } from "./config/credentials"
 import { loadSettings, type Settings } from "./config/settings"
@@ -39,8 +39,11 @@ const ctx: CliContext = {
   error(line) {
     console.error(redactText(line))
   },
+  ask(question) {
+    return askLine(redactText(question), false)
+  },
   async askSecret(question) {
-    const value = await askSecret(redactText(question))
+    const value = await askLine(redactText(question), true)
     if (value !== undefined) protectSecretValue(value)
     return value
   },

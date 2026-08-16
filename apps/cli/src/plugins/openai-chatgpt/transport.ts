@@ -56,8 +56,8 @@ async function raiseForStatus(response: Response): Promise<never> {
   throw httpError("ChatGPT", response, detail)
 }
 
-export async function* streamResponse(request: StreamRequest): AsyncGenerator<StreamEvent> {
-  const response = await chatGptFetch("/responses", {
+export async function* streamResponse(profileId: string, request: StreamRequest): AsyncGenerator<StreamEvent> {
+  const response = await chatGptFetch(profileId, "/responses", {
     method: "POST",
     headers: buildHeaders(request.sessionId),
     body: buildBody(request),

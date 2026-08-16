@@ -9,22 +9,24 @@ function requestThinking(effort: ThinkingEffort | undefined): JsonObject {
   return { enable_thinking: effort !== "none" }
 }
 
-const provider: ChatCompletionProvider = {
-  id: PROVIDER_ID,
-  name: "Alibaba Cloud",
-  async fetch(body, signal) {
-    return alibabaCloudFetch("/chat/completions", await apiKey(), {
-      method: "POST",
-      headers: { accept: "text/event-stream" },
-      body,
-      signal,
-    })
-  },
-  requestOptions(request) {
-    return requestThinking(request.thinking)
-  },
+function provider(profileId: string): ChatCompletionProvider {
+  return {
+    id: PROVIDER_ID,
+    name: "Alibaba Cloud",
+    async fetch(body, signal) {
+      return alibabaCloudFetch("/chat/completions", await apiKey(profileId), {
+        method: "POST",
+        headers: { accept: "text/event-stream" },
+        body,
+        signal,
+      })
+    },
+    requestOptions(request) {
+      return requestThinking(request.thinking)
+    },
+  }
 }
 
-export function streamResponse(request: StreamRequest): AsyncIterable<StreamEvent> {
-  return streamChatCompletions(request, provider)
+export function streamResponse(profileId: string, request: StreamRequest): AsyncIterable<StreamEvent> {
+  return streamChatCompletions(request, provider(profileId))
 }

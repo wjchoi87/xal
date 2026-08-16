@@ -21,8 +21,9 @@ export interface PluginRuntime {
   app: { name: string; version: string }
   paths: { home: string; cache: string }
   credentials: {
-    load(providerId: string): Promise<Credential | undefined>
-    save(providerId: string, credential: Credential): Promise<void>
+    load(providerId: string, profileId: string): Promise<Credential | undefined>
+    save(providerId: string, profileId: string, credential: Credential): Promise<void>
+    replace(providerId: string, profileId: string, expected: Credential, credential: Credential): Promise<void>
   }
   protectSecret(value: string): void
 }

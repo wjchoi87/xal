@@ -20,9 +20,11 @@ export interface KeymapDeps {
 async function stepThinking(session: AgentSession, direction: -1 | 1): Promise<string | undefined> {
   if (session.currentState !== "idle") return "Cannot change thinking while a turn is running"
 
+  const profileId = session.currentProfileId
+  if (!profileId) return "No active profile; run /connect first"
   const provider = session.currentProvider
   const model = session.currentModel
-  const available = await thinkingOptions(provider, model)
+  const available = await thinkingOptions(provider, profileId, model)
   if (!available) return `${model} does not support configurable thinking`
 
   const current = session.currentThinking ?? available.default

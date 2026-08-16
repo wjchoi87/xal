@@ -15,7 +15,7 @@ function context(): PluginContext {
     runtime: {
       app: { name: "xal", version: "test" },
       paths: { home: "/tmp/xal", cache: "/tmp/xal/cache" },
-      credentials: { load: async () => undefined, save: async () => {} },
+      credentials: { load: async () => undefined, save: async () => {}, replace: async () => {} },
       protectSecret() {},
     },
     signal: new AbortController().signal,

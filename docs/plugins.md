@@ -24,7 +24,7 @@ Plugin registration is transactional. If importing, validating, or registering a
 
 ## Lifecycle
 
-`ctx.runtime` exposes the app name and version, app home and cache paths, coordinated credential loading and saving, and transient secret protection. Provider plugins should use this runtime instead of reading or rewriting Xal's shared credential file directly.
+`ctx.runtime` exposes the app name and version, app home and cache paths, profile-aware credential loading, saving, and compare-and-swap replacement, plus transient secret protection. Credential operations require both the provider ID and immutable profile ID. Provider plugins should use this runtime instead of reading or rewriting Xal's shared credential file directly. Provider model discovery and streaming also receive the profile ID, while `connect` returns a credential for the core to store under the user-provided profile name.
 
 Plugins can contribute slash commands with `ctx.registerCommand`. Commands known synchronously belong in `register`; commands discovered from files or services may be added during `bootstrap`, before interactive input is released.
 

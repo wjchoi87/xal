@@ -16,6 +16,7 @@ function context(): HookContext {
       kind: "primary",
       cwd: "/workspace",
       provider: "provider",
+      profile: "profile",
       model: "model",
       mode: "normal",
     },

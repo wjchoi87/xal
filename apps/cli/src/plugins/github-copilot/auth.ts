@@ -1,10 +1,9 @@
 import { setTimeout as sleep } from "node:timers/promises"
 import { appInfo } from "../../app-info"
-import { saveCredential, type ApiKeyCredential } from "../../config/credentials"
+import type { ApiKeyCredential } from "../../config/credentials"
 import type { ConnectContext } from "../../providers/types"
 import { protectSecretValue } from "../../secrets/redactor"
-import { copilotFetch, githubDomain, isPersonalCopilotEndpoint, PROVIDER_ID } from "./api"
-import { cacheDiscoveredModels } from "./models"
+import { copilotFetch, githubDomain, isPersonalCopilotEndpoint } from "./api"
 import { parseCopilotModels, parseDeviceAuthorization, parseDeviceToken, type DeviceAuthorization } from "./wire"
 
 const CLIENT_ID = "Ov23liczUGMpBbj2dzAn"
@@ -74,7 +73,7 @@ async function pollForAccessToken(device: DeviceAuthorization): Promise<string> 
   throw new Error("GitHub device login timed out")
 }
 
-export async function connect(ctx: ConnectContext): Promise<boolean> {
+export async function connect(ctx: ConnectContext): Promise<ApiKeyCredential> {
   const device = await startDeviceFlow()
   ctx.print(`open ${device.verificationUri}`)
   ctx.print(`enter code: ${device.userCode}`)
@@ -83,10 +82,7 @@ export async function connect(ctx: ConnectContext): Promise<boolean> {
   const accessToken = await pollForAccessToken(device)
   protectSecretValue(accessToken)
   const response = await copilotFetch("/models", accessToken, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
-  const models = parseCopilotModels(await response.json(), isPersonalCopilotEndpoint())
-  await cacheDiscoveredModels(accessToken, models)
-  const credential: ApiKeyCredential = { type: "api_key", key: accessToken }
-  await saveCredential(PROVIDER_ID, credential)
+  parseCopilotModels(await response.json(), isPersonalCopilotEndpoint())
   ctx.print(`connected to GitHub Copilot${githubDomain() === "github.com" ? "" : ` on ${githubDomain()}`}`)
-  return true
+  return { type: "api_key", key: accessToken }
 }

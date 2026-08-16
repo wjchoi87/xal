@@ -199,6 +199,7 @@ export function redactSessionStartedEvent(event: SessionStartedEvent): SessionSt
     ...event,
     cwd: redactPath(event.cwd),
     provider: redactText(event.provider),
+    ...(event.profile === undefined ? {} : { profile: redactText(event.profile) }),
     model: redactText(event.model),
     ...(event.title === undefined ? {} : { title: redactText(event.title) }),
   }
@@ -222,7 +223,12 @@ export function redactAgentEvent(event: AgentEvent): AgentEvent {
     case "workspace_changed":
       return { ...event, cwd: redactPath(event.cwd), previous: redactPath(event.previous) }
     case "model_changed":
-      return { ...event, provider: redactText(event.provider), model: redactText(event.model) }
+      return {
+        ...event,
+        provider: redactText(event.provider),
+        ...(event.profile === undefined ? {} : { profile: redactText(event.profile) }),
+        model: redactText(event.model),
+      }
     case "user_message":
       return { ...event, text: redactText(event.text) }
     case "tool_call_updated":

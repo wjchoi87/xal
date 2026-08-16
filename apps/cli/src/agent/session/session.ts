@@ -121,6 +121,7 @@ export class AgentSession {
   private cwd: string
   private workspaceUndo: WorkspaceUndo
   private provider: Provider
+  private profileId: string | undefined
   private model: string
   private modelInputModalities: ModelInputModality[] | undefined
   private thinking: ThinkingEffort | undefined
@@ -153,6 +154,7 @@ export class AgentSession {
     this.trackUndoPrompts = deps.trackUndoPrompts ?? true
     this.inheritedDenyMode = deps.inheritedDenyMode
     this.provider = deps.provider
+    this.profileId = deps.profileId
     this.model = deps.model
     this.modelInputModalities = deps.modelInputModalities
     this.thinking = deps.thinking
@@ -204,6 +206,7 @@ export class AgentSession {
       mode: () => this.mode,
       outputDirectory: () => this.outputDirectory,
       provider: () => this.provider,
+      profileId: () => this.selectedProfileId(),
       model: () => this.model,
       modelInputModalities: () => this.modelInputModalities,
       thinking: () => this.thinking,
@@ -255,6 +258,7 @@ export class AgentSession {
     return {
       kind: this.kind,
       sessionId: () => this.sessionId,
+      profileId: () => this.selectedProfileId(),
       history: () => this.items,
       prompt: (model) => this.providerPrompt(model),
       contextTokens: () => this.contextTokens,
@@ -321,6 +325,15 @@ export class AgentSession {
     return this.provider
   }
 
+  get currentProfileId(): string | undefined {
+    return this.profileId
+  }
+
+  private selectedProfileId(): string {
+    if (!this.profileId) throw new Error("no provider profile selected; run /connect")
+    return this.profileId
+  }
+
   get currentThinking(): ThinkingEffort | undefined {
     return this.thinking
   }
@@ -338,7 +351,7 @@ export class AgentSession {
     if (this.kind !== "primary") return false
     const validation = goalConditionError(condition)
     if (validation) throw new Error(validation)
-    const target = await resolveGoalEvaluatorTarget(this.provider, this.model)
+    const target = await resolveGoalEvaluatorTarget(this.provider, this.selectedProfileId(), this.model)
     if (this.movingHistory || this.state === "evaluating_goal") return false
     if (this.state === "awaiting_approval" || this.state === "awaiting_input") return false
     if (!this.turnActive && this.state !== "idle") return false
@@ -388,6 +401,7 @@ export class AgentSession {
       resumed,
       title: this.title,
       provider: this.provider.id,
+      ...(this.profileId ? { profile: this.profileId } : {}),
       model: this.model,
       thinking: this.thinking,
       mode: this.mode,
@@ -407,11 +421,12 @@ export class AgentSession {
 
   private meta(): SessionMeta {
     return {
-      version: 1,
+      version: 2,
       id: this.sessionId,
       ...(this.parentId ? { parentId: this.parentId } : {}),
       cwd: redactText(this.cwd),
       provider: redactText(this.provider.id),
+      ...(this.profileId ? { profile: redactText(this.profileId) } : {}),
       model: redactText(this.model),
       thinking: this.thinking,
       mode: this.mode,
@@ -463,11 +478,12 @@ export class AgentSession {
     if (this.items.length === 0) return { status: "empty" }
     if (!this.recorder) return { status: "unavailable" }
 
+    const current = this.meta()
+    if (!current.profile) throw new Error("cannot fork a session without a provider profile")
     this.movingHistory = true
     const parentId = this.sessionId
     const id = crypto.randomUUID()
     const startedAt = Date.now()
-    const current = this.meta()
     try {
       const forked = await this.recorder.fork(
         {
@@ -476,6 +492,7 @@ export class AgentSession {
           startedAt,
           cwd: current.cwd,
           provider: current.provider,
+          profile: current.profile,
           model: current.model,
           thinking: current.thinking,
           mode: current.mode,
@@ -558,6 +575,7 @@ export class AgentSession {
     this.acceptingQueuedInput = false
     this.paused = false
     this.provider = target.provider
+    this.profileId = target.profileId
     this.model = target.model
     this.modelInputModalities = target.modelInputModalities
     this.thinking = target.thinking
@@ -582,22 +600,35 @@ export class AgentSession {
   }
 
   setModel(
+    profileId: string,
     provider: Provider,
     model: string,
     thinking?: ThinkingEffort,
     inputModalities?: ModelInputModality[],
   ): boolean {
     if (this.currentState !== "idle") return false
-    if (this.provider === provider && this.model === model) {
+    if (this.profileId === profileId && this.provider === provider && this.model === model) {
       this.modelInputModalities = inputModalities
       return this.setThinking(thinking)
     }
+    this.profileId = profileId
     this.provider = provider
     this.model = model
     this.modelInputModalities = inputModalities
     this.thinking = thinking
-    this.emit({ type: "model_changed", provider: provider.id, model })
+    this.emit({ type: "model_changed", provider: provider.id, profile: profileId, model })
     this.emit({ type: "thinking_changed", thinking })
+    return true
+  }
+
+  disconnectProfile(profileId: string): boolean {
+    if (this.profileId !== profileId) return true
+    if (this.currentState !== "idle") return false
+    this.profileId = undefined
+    this.modelInputModalities = undefined
+    this.thinking = undefined
+    this.emit({ type: "model_changed", provider: this.provider.id, model: this.model })
+    this.emit({ type: "thinking_changed" })
     return true
   }
 
@@ -789,11 +820,12 @@ export class AgentSession {
   private async runGoalEvaluation(goalId: string, summary: TurnSummary, controller: AbortController): Promise<void> {
     let outcome: GoalEvaluationOutcome | undefined
     try {
-      const target = await resolveGoalEvaluatorTarget(this.provider, this.model)
+      const target = await resolveGoalEvaluatorTarget(this.provider, this.selectedProfileId(), this.model)
       outcome = await this.goals.evaluate(
         goalId,
         {
           provider: this.provider,
+          profileId: this.selectedProfileId(),
           sessionModel: this.model,
           evaluatorModel: target.model,
           thinking: target.thinking,
@@ -1160,6 +1192,7 @@ export class AgentSession {
         kind: this.kind,
         cwd: this.cwd,
         provider: this.provider.id,
+        profile: this.selectedProfileId(),
         model: this.model,
         mode: this.mode,
       },
@@ -1237,6 +1270,7 @@ export class AgentSession {
       kind: this.kind,
       buffer: this.buffer,
       sessionId: () => this.sessionId,
+      profileId: () => this.selectedProfileId(),
       emit: (event) => this.emit(event),
       pushItem: (item) => this.pushItem(item),
       buildRequest: (provider, model, thinking, signal) => this.buildStreamRequest(provider, model, thinking, signal),

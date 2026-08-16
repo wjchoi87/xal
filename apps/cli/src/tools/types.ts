@@ -97,6 +97,7 @@ export interface SessionToolContext {
     cwd: string
     directory: string
     provider: Provider
+    profileId: string
     model: string
     modelInputModalities?: ModelInputModality[]
     thinking?: ThinkingEffort

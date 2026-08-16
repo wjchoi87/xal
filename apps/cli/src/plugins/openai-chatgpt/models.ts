@@ -88,8 +88,8 @@ export function setContextWindowCap(cap: number | undefined): void {
   contextWindowCap = cap ?? DEFAULT_CONTEXT_WINDOW
 }
 
-function cachePath(): string {
-  return join(cacheDir(), "openai-chatgpt-models.json")
+function cachePath(profileId: string): string {
+  return join(cacheDir(), `openai-chatgpt-models-${encodeURIComponent(profileId)}.json`)
 }
 
 function inputModalities(raw: unknown): ModelInputModality[] {
@@ -145,8 +145,8 @@ function parseRuntimeModel(raw: unknown): { model: ChatGptModel; priority: numbe
   }
 }
 
-async function discoverModels(): Promise<ChatGptModel[]> {
-  const response = await chatGptFetch(`/models?client_version=${MODEL_CATALOG_COMPATIBILITY_VERSION}`, {
+async function discoverModels(profileId: string): Promise<ChatGptModel[]> {
+  const response = await chatGptFetch(profileId, `/models?client_version=${MODEL_CATALOG_COMPATIBILITY_VERSION}`, {
     signal: AbortSignal.timeout(5_000),
   })
   if (!response.ok) {
@@ -188,14 +188,16 @@ function parseCachedModel(raw: unknown): ChatGptModel | undefined {
   }
 }
 
-async function readCache(): Promise<ChatGptModel[] | undefined> {
-  const raw = await readJsonFile(cachePath())
+async function readCache(profileId: string): Promise<ChatGptModel[] | undefined> {
+  const raw = await readJsonFile(cachePath(profileId))
   if (raw === undefined) return undefined
-  if (!isRecord(raw) || !Array.isArray(raw.models)) throw new Error(`${cachePath()} is malformed — fix or delete it`)
+  if (!isRecord(raw) || !Array.isArray(raw.models)) {
+    throw new Error(`${cachePath(profileId)} is malformed; fix or delete it`)
+  }
   const models: ChatGptModel[] = []
   for (const entry of raw.models) {
     const model = parseCachedModel(entry)
-    if (!model) throw new Error(`${cachePath()} is malformed — fix or delete it`)
+    if (!model) throw new Error(`${cachePath(profileId)} is malformed; fix or delete it`)
     models.push(model)
   }
   return models.length > 0 ? models : undefined
@@ -215,11 +217,11 @@ function withFastVariants(models: ChatGptModel[]): ModelInfo[] {
   )
 }
 
-async function refreshModels(): Promise<ModelCatalog> {
+async function refreshModels(profileId: string): Promise<ModelCatalog> {
   try {
-    const models = await discoverModels()
+    const models = await discoverModels(profileId)
     try {
-      await writeSecureJson(cachePath(), { models })
+      await writeSecureJson(cachePath(profileId), { models })
       return { models: withFastVariants(capped(models)), source: "runtime" }
     } catch (error) {
       return {
@@ -230,7 +232,7 @@ async function refreshModels(): Promise<ModelCatalog> {
     }
   } catch (discoveryError) {
     try {
-      const cached = await readCache()
+      const cached = await readCache(profileId)
       if (cached) {
         return {
           models: withFastVariants(capped(cached)),
@@ -253,20 +255,20 @@ async function refreshModels(): Promise<ModelCatalog> {
   }
 }
 
-export async function listModels(refresh: boolean): Promise<ModelCatalog> {
-  if (refresh) return refreshModels()
+export async function listModels(profileId: string, refresh: boolean): Promise<ModelCatalog> {
+  if (refresh) return refreshModels(profileId)
   try {
-    const cached = await readCache()
+    const cached = await readCache(profileId)
     if (cached) return { models: withFastVariants(capped(cached)), source: "cache" }
   } catch (cacheError) {
-    const refreshed = await refreshModels()
+    const refreshed = await refreshModels(profileId)
     if (refreshed.warning) return refreshed
     return {
       ...refreshed,
       warning: `cached catalog failed: ${describeError(cacheError)} — replaced with live models`,
     }
   }
-  return refreshModels()
+  return refreshModels(profileId)
 }
 
 export async function defaultModel(): Promise<string> {

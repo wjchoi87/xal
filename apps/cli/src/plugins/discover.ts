@@ -2,7 +2,7 @@ import { registerPrompt } from "../agent/prompt/registry"
 import { appInfo } from "../app-info"
 import { registerCli } from "../cli/registry"
 import { registerCommand } from "../commands/registry"
-import { loadCredential, saveCredential } from "../config/credentials"
+import { loadCredential, replaceCredential, saveCredential } from "../config/credentials"
 import { agentHome, cacheDir } from "../config/paths"
 import type { Settings } from "../config/settings"
 import { events, type PluginFailure, type PluginStatus } from "../events"
@@ -59,7 +59,7 @@ function contextFor(plugin: Plugin, settings: Settings, pluginOrder: number, sig
     runtime: {
       app: { name: appInfo.name, version: appInfo.version },
       paths: { home: agentHome(), cache: cacheDir() },
-      credentials: { load: loadCredential, save: saveCredential },
+      credentials: { load: loadCredential, save: saveCredential, replace: replaceCredential },
       protectSecret: protectSecretValue,
     },
     signal,

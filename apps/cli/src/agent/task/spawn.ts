@@ -180,6 +180,7 @@ async function runTask(
 
     const thinking = await resolveThinking(
       ctx.session.provider,
+      ctx.session.profileId,
       ctx.session.model,
       item.thinking ?? ctx.session.thinking,
     )
@@ -187,6 +188,7 @@ async function runTask(
       kind: "subagent",
       cwd: worktree?.cwd ?? ctx.session.cwd,
       provider: ctx.session.provider,
+      profileId: ctx.session.profileId,
       model: ctx.session.model,
       modelInputModalities: ctx.session.modelInputModalities,
       thinking,

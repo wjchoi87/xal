@@ -17,6 +17,7 @@ interface RunOptions {
   format: OutputFormat
   mode: PermissionMode
   provider?: string
+  connection?: string
   model?: string
   outputSchemaPath?: string
   prompt: string[]
@@ -35,7 +36,7 @@ interface SetupFailure {
 }
 
 function usage(): string {
-  return `${appInfo.name} run [--format text|json|jsonl] [--mode ${permissionModes().join("|")}] [--provider id] [--model id] [--output-schema file] [prompt]`
+  return `${appInfo.name} run [--format text|json|jsonl] [--mode ${permissionModes().join("|")}] [--provider id] [--connection name] [--model id] [--output-schema file] [prompt]`
 }
 
 function optionValue(args: string[], index: number, option: string): string {
@@ -74,6 +75,10 @@ function parseArgs(args: string[]): RunOptions {
       }
       case "--provider":
         options.provider = optionValue(args, index, arg)
+        index++
+        break
+      case "--connection":
+        options.connection = optionValue(args, index, arg)
         index++
         break
       case "--model":
@@ -222,6 +227,7 @@ const runCli: Cli = {
     try {
       const setup = await createSession({
         provider: options.provider,
+        connection: options.connection,
         model: options.model,
         interactive: false,
         outputSchema,

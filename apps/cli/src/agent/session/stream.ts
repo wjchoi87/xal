@@ -72,6 +72,7 @@ export interface StreamRoundHost {
   readonly kind: SessionKind
   readonly buffer: StreamBuffer
   sessionId(): string
+  profileId(): string
   emit(event: AgentEvent): void
   pushItem(item: ProviderOutputItem): void
   buildRequest(
@@ -188,7 +189,7 @@ async function consumeStream(
   }
 
   const rawReasoning = createRedactedStream()
-  for await (const event of provider.stream(host.buildRequest(provider, model, thinking, signal))) {
+  for await (const event of provider.stream(host.profileId(), host.buildRequest(provider, model, thinking, signal))) {
     if (!round.received) profileProviderFirstEvent(round.profile, event.type)
     round.received = true
     switch (event.type) {

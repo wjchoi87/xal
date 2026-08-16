@@ -1,6 +1,6 @@
 import type { Provider } from "../../providers/types"
 import { PROVIDER_ID } from "./api"
-import { connect, isLoggedIn } from "./auth"
+import { connect } from "./auth"
 import { defaultModel, listModels } from "./models"
 import { streamResponse } from "./transport"
 
@@ -9,7 +9,6 @@ export const alibabaCloudProvider: Provider = {
   name: "Alibaba Cloud Model Studio",
   aliases: ["dashscope"],
   capabilities: { imageInput: false },
-  isLoggedIn,
   connect,
   listModels,
   defaultModel,

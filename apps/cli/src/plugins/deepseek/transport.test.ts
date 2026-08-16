@@ -113,7 +113,7 @@ describe("DeepSeek transport", () => {
       ),
     )
 
-    const events = await collect(streamResponse(request()))
+    const events = await collect(streamResponse("test-profile", request()))
 
     expect(events).toEqual([
       { type: "text_delta", text: "Hel" },
@@ -224,7 +224,7 @@ describe("DeepSeek transport", () => {
       ),
     )
 
-    await expect(collect(streamResponse(request()))).rejects.toMatchObject({
+    await expect(collect(streamResponse("test-profile", request()))).rejects.toMatchObject({
       message: "DeepSeek had insufficient capacity to complete the response",
       retryable: true,
     })
@@ -235,7 +235,7 @@ describe("DeepSeek transport", () => {
 
     let thrown: unknown
     try {
-      await collect(streamResponse(request()))
+      await collect(streamResponse("test-profile", request()))
     } catch (error) {
       thrown = error
     }
@@ -255,7 +255,7 @@ describe("DeepSeek transport", () => {
       ]),
     )
 
-    await expect(collect(streamResponse(request()))).rejects.toMatchObject({
+    await expect(collect(streamResponse("test-profile", request()))).rejects.toMatchObject({
       message: "DeepSeek stream ended unexpectedly",
       retryable: true,
     })

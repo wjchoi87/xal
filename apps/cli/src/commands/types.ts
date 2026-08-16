@@ -20,6 +20,7 @@ export interface CommandContext {
   busy(label?: string): void
   select<T>(request: SelectRequest<T>): Promise<T | undefined>
   restore(input: UserInput): void
+  ask(question: string): Promise<string | undefined>
   askSecret(question: string): Promise<string | undefined>
 }
 

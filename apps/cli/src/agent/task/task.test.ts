@@ -65,16 +65,13 @@ test("inherits deny rules and durably delivers a bounded task report", async () 
     name: "Sub-agent test provider",
     aliases: [],
     capabilities: { imageInput: false },
-    async isLoggedIn() {
-      return true
-    },
     async listModels() {
       return modelCatalog()
     },
     async defaultModel() {
       return "test-model"
     },
-    async *stream(request: StreamRequest) {
+    async *stream(_profileId: string, request: StreamRequest) {
       let response: ProviderRound
       if (request.sessionId === parentSessionId) {
         parentRound += 1
@@ -175,16 +172,13 @@ test("holds the task open across nested background Bash and delivers only the fr
     name: "Sub-agent nested async test provider",
     aliases: [],
     capabilities: { imageInput: false },
-    async isLoggedIn() {
-      return true
-    },
     async listModels() {
       return modelCatalog()
     },
     async defaultModel() {
       return "test-model"
     },
-    async *stream(request: StreamRequest) {
+    async *stream(_profileId: string, request: StreamRequest) {
       let response: ProviderRound
       if (request.sessionId === parentSessionId) {
         parentRound += 1
@@ -277,16 +271,13 @@ test("does not wake the parent after a running task is cancelled", async () => {
     name: "Sub-agent cancellation test provider",
     aliases: [],
     capabilities: { imageInput: false },
-    async isLoggedIn() {
-      return true
-    },
     async listModels() {
       return modelCatalog()
     },
     async defaultModel() {
       return "test-model"
     },
-    async *stream(request: StreamRequest) {
+    async *stream(_profileId: string, request: StreamRequest) {
       if (request.sessionId === parentSessionId) {
         parentRound += 1
         const response =

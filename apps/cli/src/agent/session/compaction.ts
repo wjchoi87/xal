@@ -53,10 +53,14 @@ export function tailBudget(window: number | undefined, trigger: CompactionTrigge
   return trigger === "manual" ? Math.min(budget, MANUAL_TAIL_TOKENS) : budget
 }
 
-export async function resolveCompactionTarget(provider: Provider, model: string): Promise<CompactionTarget> {
+export async function resolveCompactionTarget(
+  provider: Provider,
+  profileId: string,
+  model: string,
+): Promise<CompactionTarget> {
   const fastModel = model.endsWith("-fast") ? model : `${model}-fast`
-  const requestModel = fastModel === model || (await findModel(provider, fastModel)) ? fastModel : model
-  return { model: requestModel, thinking: await resolveThinking(provider, requestModel, "low") }
+  const requestModel = fastModel === model || (await findModel(provider, profileId, fastModel)) ? fastModel : model
+  return { model: requestModel, thinking: await resolveThinking(provider, profileId, requestModel, "low") }
 }
 
 function textTokens(text: string): number {
@@ -136,6 +140,7 @@ export function splitForCompaction(items: HistoryItem[], tailTokens: number): Co
 
 export interface SummaryRequest {
   provider: Provider
+  profileId: string
   model: string
   historyModel?: string
   thinking: ThinkingEffort | undefined
@@ -157,6 +162,7 @@ export async function summarizeHistory(request: SummaryRequest): Promise<string>
   const input = prepareConversation([...activeHistory(request.history), summaryRequest(request.instructions)], target)
   const result = await collectStreamedText({
     provider: request.provider,
+    profileId: request.profileId,
     kind: request.kind,
     phase: "compaction",
     emptyResponseMessage: `${request.provider.name} returned an empty summary`,
@@ -179,6 +185,7 @@ const MAX_COMPACTION_FAILURES = 2
 export interface CompactionHost {
   readonly kind: SessionKind
   sessionId(): string
+  profileId(): string
   history(): HistoryItem[]
   prompt(model: string): ProviderPrompt
   contextTokens(): number | undefined
@@ -197,14 +204,16 @@ export async function runCompaction(
   trigger: CompactionTrigger,
   instructions?: string,
 ): Promise<boolean> {
-  const budget = tailBudget(await contextWindow(provider, model), trigger)
+  const profileId = host.profileId()
+  const budget = tailBudget(await contextWindow(provider, profileId, model), trigger)
   const { head, tail, replaced } = splitForCompaction(host.history(), budget)
   if (head.length === 0) return false
 
   host.setState("compacting")
-  const target = await resolveCompactionTarget(provider, model)
+  const target = await resolveCompactionTarget(provider, profileId, model)
   const summary = await summarizeHistory({
     provider,
+    profileId,
     model: target.model,
     historyModel: model,
     thinking: target.thinking,
@@ -230,7 +239,7 @@ export async function autoCompact(
 ): Promise<void> {
   if (host.compactionFailures() >= MAX_COMPACTION_FAILURES) return
   const tokens = host.contextTokens() ?? estimateHistoryTokens(activeHistory(host.history()))
-  const window = await contextWindow(provider, model)
+  const window = await contextWindow(provider, host.profileId(), model)
   if (window === undefined || tokens < window * COMPACTION_TRIGGER_RATIO) return
 
   try {

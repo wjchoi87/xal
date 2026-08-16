@@ -34,6 +34,6 @@ function provider(accessToken: string, request: StreamRequest): ChatCompletionPr
   }
 }
 
-export async function* streamResponse(request: StreamRequest): AsyncGenerator<StreamEvent> {
-  yield* streamChatCompletions(request, provider(await token(), request))
+export async function* streamResponse(profileId: string, request: StreamRequest): AsyncGenerator<StreamEvent> {
+  yield* streamChatCompletions(request, provider(await token(profileId), request))
 }
