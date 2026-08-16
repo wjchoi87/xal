@@ -52,7 +52,10 @@ function portable(item: ConversationItem, target: ConversationTarget): Conversat
   }
 }
 
-export function prepareConversation(items: ConversationItem[], target: ConversationTarget): ConversationItem[] {
+function normalizedConversation(
+  items: ConversationItem[],
+  target: ConversationTarget,
+): { result: ConversationItem[]; pending: ToolCallItem[] } {
   const projected = items.flatMap((item) => {
     const value = portable(item, target)
     return value ? [value] : []
@@ -91,6 +94,21 @@ export function prepareConversation(items: ConversationItem[], target: Conversat
     }
   }
 
-  finishPending()
-  return result
+  return { result, pending: [...pending.values()] }
+}
+
+export function pendingToolCalls(items: ConversationItem[], target: ConversationTarget): ToolCallItem[] {
+  return normalizedConversation(items, target).pending
+}
+
+export function prepareConversation(items: ConversationItem[], target: ConversationTarget): ConversationItem[] {
+  const normalized = normalizedConversation(items, target)
+  for (const call of normalized.pending) {
+    normalized.result.push({
+      type: "tool_result",
+      callId: call.callId,
+      output: "Tool execution was interrupted before returning a result.",
+    })
+  }
+  return normalized.result
 }

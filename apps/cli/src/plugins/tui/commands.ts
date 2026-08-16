@@ -1,5 +1,10 @@
 import { appInfo } from "../../app-info"
-import type { Command } from "../../commands/types"
+import { resumeSession } from "../../agent/session/compose"
+import { stopBackgroundWorker, takeOverBackgroundSession } from "../../bg/attach"
+import type { DetachOutcome } from "../../bg/launch"
+import { clearBackgroundSessions, listBackgroundSessions, type BgView } from "../../bg/state"
+import type { Command, CommandContext } from "../../commands/types"
+import { formatRelative } from "../../lib/time"
 import type { PluginContext } from "../types"
 
 interface TuiCommandActions {
@@ -7,6 +12,7 @@ interface TuiCommandActions {
   config(): void
   terminal(): string[]
   quit(): void
+  detach(): Promise<DetachOutcome>
 }
 
 let actions: TuiCommandActions | undefined
@@ -58,8 +64,103 @@ const quitCommand: Command = {
   run: exitTui,
 }
 
+type BgAction = "attach" | "stop" | "log" | "remove"
+
+async function attachHere(ctx: CommandContext, view: BgView): Promise<void> {
+  if (ctx.session.currentState !== "idle" || ctx.session.hasPendingAsyncWork()) {
+    throw new Error("finish or interrupt the current work before attaching another session")
+  }
+  ctx.busy("Attaching session")
+  try {
+    const takeover = await takeOverBackgroundSession(view.state.sessionId)
+    for (const notice of await resumeSession(ctx.session, takeover.summary, {
+      deferGoalResume: takeover.retryPendingTools,
+    }))
+      ctx.print(notice)
+    if (takeover.retryPendingTools && !ctx.session.retryPendingTools()) {
+      throw new Error("the pending background request could not be restored")
+    }
+    if (!takeover.retryPendingTools && takeover.continueWork) ctx.session.continueTurn()
+  } finally {
+    ctx.busy()
+  }
+}
+
+async function manageBackgroundSessions(ctx: CommandContext): Promise<void> {
+  const views = await listBackgroundSessions()
+  if (views.length === 0) {
+    ctx.print("no background sessions")
+    return
+  }
+  const view = await ctx.select({
+    search: "filter background sessions",
+    options: views.map((entry) => ({
+      label: entry.state.title ?? "untitled",
+      detail: formatRelative(entry.state.updatedAt),
+      note: `${entry.effective.replaceAll("_", " ")}${entry.state.activity ? ` · ${entry.state.activity}` : ""}`,
+      value: entry,
+    })),
+  })
+  if (!view) return
+  const short = view.state.sessionId.slice(0, 8)
+  const action = await ctx.select<BgAction>({
+    options: [
+      { label: "Attach here", detail: `take ${short} over into this TUI`, value: "attach" },
+      { label: "Stop", detail: "stop the background worker", value: "stop" },
+      { label: "Show log path", detail: view.state.log, value: "log" },
+      { label: "Remove entry", detail: "clear this entry once it is not running", value: "remove" },
+    ],
+  })
+  switch (action) {
+    case undefined:
+      return
+    case "attach":
+      if (view.state.sessionId === ctx.session.id) throw new Error("this session is already open here")
+      await attachHere(ctx, view)
+      return
+    case "stop": {
+      const outcome = await stopBackgroundWorker(view)
+      if (outcome === "not_running") ctx.print(`session ${short} is not running`)
+      if (outcome === "timeout") throw new Error(`session ${short} did not acknowledge the stop request`)
+      if (outcome === "stopped") ctx.print(`stopped ${short}`)
+      return
+    }
+    case "log":
+      ctx.print(view.state.log)
+      return
+    case "remove":
+      await clearBackgroundSessions(view.state.sessionId)
+      ctx.print(`cleared ${short}`)
+      return
+  }
+}
+
+const backgroundCommand: Command = {
+  name: "bg",
+  aliases: ["background"],
+  describe: "run this session in the background · /bg list to manage",
+  async run(args, ctx) {
+    if (args[0] === "list" && args.length === 1) {
+      await manageBackgroundSessions(ctx)
+      return
+    }
+    if (args.length > 0) throw new Error("usage: /bg or /bg list")
+    if (!actions) throw new Error("tui is not running")
+    ctx.busy("Backgrounding session")
+    let outcome: DetachOutcome
+    try {
+      outcome = await actions.detach()
+    } finally {
+      ctx.busy()
+    }
+    if (outcome.status === "blocked") throw new Error(outcome.reason)
+    if (outcome.status === "failed") throw new Error(`backgrounding failed: ${outcome.reason}`)
+  },
+}
+
 export function registerTuiCommands(ctx: PluginContext): void {
   ctx.registerCommand(agentsCommand)
+  ctx.registerCommand(backgroundCommand)
   ctx.registerCommand(configCommand)
   ctx.registerCommand(terminalCommand)
   ctx.registerCommand(quitCommand)

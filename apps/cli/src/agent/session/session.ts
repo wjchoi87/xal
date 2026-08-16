@@ -14,7 +14,7 @@ import type { PermissionMode, PermissionScope } from "../../permissions/types"
 import type { SessionPlan } from "../../plans/types"
 import { profileAgentEvent, profileSessionCreated } from "../../profiler/profiler"
 import { promptCacheKey } from "../../providers/cache"
-import { prepareConversation } from "../../providers/conversation"
+import { pendingToolCalls, prepareConversation } from "../../providers/conversation"
 import { occupiedContext } from "../../providers/types"
 import type {
   ModelInputModality,
@@ -69,6 +69,7 @@ import {
   type AgentSessionState,
   type CompactionOutcome,
   type ForkOutcome,
+  type PauseOutcome,
   type RedoOutcome,
   type ResumeTarget,
   type TurnUsage,
@@ -105,6 +106,7 @@ export class AgentSession {
   private readonly listeners = new Set<(event: AgentEvent) => void>()
   private readonly recorder: SessionRecorder | undefined
   private readonly interactive: boolean
+  private readonly deferInteractiveTools: boolean
   private readonly kind: SessionKind
   private readonly outputContract: OutputContract | undefined
   private readonly trackUndoPrompts: boolean
@@ -132,6 +134,8 @@ export class AgentSession {
   private turnActive = false
   private acceptingQueuedInput = false
   private promoteOnAbort = false
+  private paused = false
+  private pauseWaiters: Array<() => void> = []
   private readonly hookReporter: HookReporter = {
     started: (hook, event) => {
       this.setState("running_hook")
@@ -153,6 +157,7 @@ export class AgentSession {
     this.modelInputModalities = deps.modelInputModalities
     this.thinking = deps.thinking
     this.interactive = deps.interactive ?? false
+    this.deferInteractiveTools = deps.deferInteractiveTools ?? false
     this.outputContract = deps.outputSchema
       ? new OutputContract(parseOutputSchema(redactJsonObject(deps.outputSchema)))
       : undefined
@@ -191,6 +196,7 @@ export class AgentSession {
     return {
       kind: this.kind,
       interactive: this.interactive,
+      deferInteractiveTools: this.deferInteractiveTools,
       inheritedDenyMode: this.inheritedDenyMode,
       hookReporter: this.hookReporter,
       sessionId: () => this.sessionId,
@@ -224,6 +230,7 @@ export class AgentSession {
       outputContract: () => this.outputContract,
       queuedPromptNext: () => this.queue.promptFirst,
       asyncResultsQueued: () => this.asyncState.hasQueued(),
+      paused: () => this.paused,
       emit: (event) => this.emit(event),
       setState: (state) => this.setState(state),
       pushItem: (item) => this.pushItem(item),
@@ -444,6 +451,7 @@ export class AgentSession {
     this.goals.reset()
     this.buffer.reset()
     this.acceptingQueuedInput = false
+    this.paused = false
     this.asyncState.register()
     this.recorder?.start(this.meta(), this.cwd)
     this.emit(this.startEvent())
@@ -548,6 +556,7 @@ export class AgentSession {
     }
     this.buffer.reset()
     this.acceptingQueuedInput = false
+    this.paused = false
     this.provider = target.provider
     this.model = target.model
     this.modelInputModalities = target.modelInputModalities
@@ -565,7 +574,7 @@ export class AgentSession {
       this.notify({ type: "workspace_changed", cwd: this.cwd, previous: recordedCwd })
     }
     const resumedGoal = this.goals.resume()
-    if (resumedGoal)
+    if (resumedGoal && target.continueGoal)
       queueMicrotask(() =>
         this.startGoalContinuation(resumedGoal.id, "Resume the goal from the current session context."),
       )
@@ -683,7 +692,7 @@ export class AgentSession {
   }
 
   private startBackgroundResultTurn(): boolean {
-    if (!this.asyncState.hasQueued() || this.movingHistory || this.turnActive || this.state !== "idle") {
+    if (this.paused || !this.asyncState.hasQueued() || this.movingHistory || this.turnActive || this.state !== "idle") {
       return false
     }
     this.startPreparedTurn(() => Promise.resolve())
@@ -694,7 +703,8 @@ export class AgentSession {
     return this.startBackgroundResultTurn()
   }
 
-  private startPreparedTurn(prepare: (signal: AbortSignal) => Promise<void>): void {
+  private startPreparedTurn(prepare: (signal: AbortSignal) => Promise<void>, resumedCalls: ToolCallItem[] = []): void {
+    this.paused = false
     this.outputContract?.reset()
     const controller = new AbortController()
     const provider = this.provider
@@ -709,7 +719,7 @@ export class AgentSession {
     let summary: TurnSummary | undefined
     const usage: TurnUsage = {}
     void prepare(controller.signal)
-      .then(() => runTurn(this.turnHost(), controller.signal, provider, model, thinking, usage))
+      .then(() => runTurn(this.turnHost(), controller.signal, provider, model, thinking, usage, resumedCalls))
       .then((result) => {
         summary = result
       })
@@ -732,6 +742,8 @@ export class AgentSession {
     this.turnActive = false
     this.acceptingQueuedInput = false
     this.abortController = undefined
+
+    if (this.settlePause()) return
 
     if (controller.signal.aborted) {
       const active = this.goals.active()
@@ -823,18 +835,24 @@ export class AgentSession {
         this.finishGoalEvaluationIdle()
         return
       case "continue":
-        this.startGoalContinuation(outcome.goal.id, outcome.goal.lastReason ?? "Continue working toward the goal.")
+        if (
+          !this.startGoalContinuation(outcome.goal.id, outcome.goal.lastReason ?? "Continue working toward the goal.")
+        ) {
+          this.finishGoalEvaluationIdle()
+        }
         return
     }
   }
 
   private finishGoalEvaluationIdle(): void {
     this.setState("idle")
+    if (this.settlePause()) return
     if (this.queue.first !== undefined && this.startNextQueued()) return
     this.settleBackgroundAgents()
   }
 
   private startGoalContinuation(goalId: string, reason: string): boolean {
+    if (this.paused) return false
     const active = this.goals.active(goalId)
     if (!active || this.kind !== "primary" || this.movingHistory || this.turnActive) return false
     if (this.asyncState.hasPendingAsyncWork()) {
@@ -856,6 +874,7 @@ export class AgentSession {
   }
 
   private startDirectShell(input: UserInput): void {
+    this.paused = false
     const controller = new AbortController()
     this.abortController = controller
     this.turnActive = true
@@ -877,6 +896,7 @@ export class AgentSession {
         this.acceptingQueuedInput = false
         this.abortController = undefined
         this.setState("idle")
+        if (this.settlePause()) return
         if (!errored && (!controller.signal.aborted || this.promoteOnAbort) && this.startNextQueued()) return
         if (controller.signal.aborted) {
           this.queue.flush()
@@ -1071,6 +1091,59 @@ export class AgentSession {
     this.abortController?.abort()
     this.interactions.resolveApproval({ decision: "deny", cause: "user" })
     this.interactions.resolveElicitation({ status: "rejected" })
+  }
+
+  get persisted(): boolean {
+    return this.recorder !== undefined
+  }
+
+  recordSystemNotice(text: string): void {
+    this.pushItem({ type: "user_message", text: `<system-notice>\n${text}\n</system-notice>`, images: [] })
+  }
+
+  async pause(): Promise<PauseOutcome> {
+    if (this.movingHistory) return { status: "blocked", reason: "conversation history is being modified" }
+    if (this.state === "awaiting_approval" || this.state === "awaiting_input") {
+      return { status: "blocked", reason: "a pending request needs an answer" }
+    }
+    if (!this.turnActive && this.state === "evaluating_goal") {
+      this.paused = true
+      this.abortController?.abort()
+      await this.pauseSettled()
+      return { status: "paused", pending: this.queue.drain() }
+    }
+    if (!this.turnActive) {
+      if (this.state === "idle") return { status: "idle" }
+      return { status: "blocked", reason: `the session is ${this.state.replaceAll("_", " ")}` }
+    }
+    this.paused = true
+    await this.pauseSettled()
+    return { status: "paused", pending: this.queue.drain() }
+  }
+
+  continueTurn(): boolean {
+    if (this.movingHistory || this.turnActive || this.state !== "idle") return false
+    this.startPreparedTurn(() => Promise.resolve())
+    return true
+  }
+
+  retryPendingTools(): boolean {
+    if (this.movingHistory || this.turnActive || this.state !== "idle") return false
+    const calls = pendingToolCalls(activeHistory(this.items), { provider: this.provider.id, model: this.model })
+    if (calls.length === 0) return false
+    this.startPreparedTurn(() => Promise.resolve(), calls)
+    return true
+  }
+
+  private pauseSettled(): Promise<void> {
+    return new Promise((resolve) => this.pauseWaiters.push(resolve))
+  }
+
+  private settlePause(): boolean {
+    if (!this.paused) return false
+    this.setState("idle")
+    for (const waiter of this.pauseWaiters.splice(0)) waiter()
+    return true
   }
 
   private availableTools(): RegisteredTool[] {

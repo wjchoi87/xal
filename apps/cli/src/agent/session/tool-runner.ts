@@ -81,6 +81,7 @@ const subagentPlanDenial =
 export interface ToolRunnerHost {
   readonly kind: SessionKind
   readonly interactive: boolean
+  readonly deferInteractiveTools: boolean
   readonly inheritedDenyMode: PermissionMode | undefined
   readonly hookReporter: HookReporter
   sessionId(): string
@@ -330,6 +331,17 @@ export class ToolCallRunner {
           type: "outcome",
           outcome: this.outcome(call, title, readOnly, result.message ?? denialMessages[denial], denial),
         }
+      }
+    }
+
+    if (this.host.deferInteractiveTools && isInteractiveTool(tool)) {
+      this.host.setState("awaiting_input")
+      if (!signal.aborted) {
+        await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }))
+      }
+      return {
+        type: "outcome",
+        outcome: this.outcome(call, title, readOnly, "Interrupted before requesting interactive input."),
       }
     }
 

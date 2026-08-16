@@ -3,6 +3,7 @@ import { registerAgentClis } from "./agent/cli"
 import { registerAgentCommands } from "./agent/commands"
 import { registerTaskAgents } from "./agent/task/tool"
 import { registerJobTools } from "./background/register"
+import { registerBgClis } from "./bg/cli"
 import { chooseOption } from "./cli/choose"
 import { runCli } from "./cli/run"
 import { askSecret } from "./cli/secret"
@@ -67,6 +68,7 @@ function registerCore(settings: Settings): void {
   registerHookCommands()
   registerSessionCommands()
   registerSessionClis()
+  registerBgClis()
   registerTrustClis()
 }
 

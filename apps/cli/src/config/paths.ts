@@ -32,6 +32,17 @@ export function worktreesDir(): string {
   return join(agentHome(), "worktrees")
 }
 
+export function backgroundSessionsDir(): string {
+  return join(agentHome(), "bg")
+}
+
+export function backgroundSessionDir(sessionId: string): string {
+  if (!sessionId || sessionId === "." || sessionId === ".." || /[\\/]/.test(sessionId)) {
+    throw new Error(`invalid background session id: ${sessionId}`)
+  }
+  return join(backgroundSessionsDir(), sessionId)
+}
+
 export function profilerDir(): string {
   return join(agentHome(), "profiler")
 }

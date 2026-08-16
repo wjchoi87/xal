@@ -6,6 +6,7 @@ import { registerCli } from "../cli/registry"
 import type { Cli, CliContext } from "../cli/types"
 import { isMissingPathError } from "../lib/error"
 import { asString, isRecord } from "../lib/json"
+import { isStandalone } from "../lib/process"
 
 type UpdateChannel = "stable" | "beta"
 
@@ -159,10 +160,6 @@ async function removeDownload(path: string): Promise<void> {
   } catch (error) {
     if (!isMissingPathError(error)) throw error
   }
-}
-
-function isStandalone(): boolean {
-  return Bun.main.startsWith("/$bunfs/")
 }
 
 async function runUpdate(args: string[], ctx: CliContext): Promise<void> {

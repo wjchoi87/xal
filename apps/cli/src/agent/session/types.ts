@@ -16,6 +16,7 @@ export interface AgentSessionDeps {
   thinking?: ThinkingEffort
   persist?: boolean
   interactive?: boolean
+  deferInteractiveTools?: boolean
   outputSchema?: OutputSchema
   workspaceUndo?: WorkspaceUndo
   trackUndoPrompts?: boolean
@@ -31,9 +32,13 @@ export interface ResumeTarget {
   modelInputModalities?: ModelInputModality[]
   thinking?: ThinkingEffort
   mode: PermissionMode
+  continueGoal: boolean
 }
 
 export type CompactionOutcome = "compacted" | "nothing" | "busy" | "interrupted"
+
+export type PauseOutcome =
+  { status: "paused"; pending: UserInput[] } | { status: "idle" } | { status: "blocked"; reason: string }
 
 export type ForkOutcome = { status: "forked"; id: string } | { status: "busy" | "empty" | "unavailable" }
 

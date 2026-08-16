@@ -19,6 +19,7 @@ export interface TurnHost {
   outputContract(): OutputContract | undefined
   queuedPromptNext(): boolean
   asyncResultsQueued(): boolean
+  paused(): boolean
   emit(event: AgentEvent): void
   setState(state: AgentState): void
   pushItem(item: HistoryItem): void
@@ -45,33 +46,43 @@ export async function runTurn(
   model: string,
   thinking: ThinkingEffort | undefined,
   usage: TurnUsage,
+  pendingCalls: ToolCallItem[] = [],
 ): Promise<TurnSummary | undefined> {
   const toolLoops = new ToolLoopDetector()
   let usedTools = false
   let midWork = true
   let interjected = false
+  let resumedCalls = pendingCalls
 
   while (true) {
+    if (host.paused()) return
     if (host.drainBackgroundResults()) toolLoops.reset()
     await host.autoCompact(signal, provider, model)
     if (signal.aborted) {
       host.emit({ type: "turn_interrupted" })
       return
     }
+    if (host.paused()) return
     if (await host.drainQueue(signal, midWork)) {
       toolLoops.reset()
       interjected = midWork
     }
 
-    host.setState("streaming")
-    const round = host.streamRound(usage)
-    const items = await streamProviderTurn(round, signal, provider, model, thinking)
-    if (!items) return
+    let items: HistoryItem[] = []
+    let toolCalls = resumedCalls
+    const restoringCalls = resumedCalls.length > 0
+    resumedCalls = []
+    if (toolCalls.length === 0) {
+      host.setState("streaming")
+      const round = host.streamRound(usage)
+      const streamed = await streamProviderTurn(round, signal, provider, model, thinking)
+      if (!streamed) return
 
-    round.buffer.flush()
-    for (const item of items) host.pushItem(item)
-
-    const toolCalls = items.filter((item): item is ToolCallItem => item.type === "tool_call")
+      round.buffer.flush()
+      for (const item of streamed) host.pushItem(item)
+      items = streamed
+      toolCalls = streamed.filter((item): item is ToolCallItem => item.type === "tool_call")
+    }
     if (toolCalls.length === 0) {
       if (host.queuedPromptNext()) {
         midWork = false
@@ -102,7 +113,9 @@ export async function runTurn(
     let requiresContinuation = false
     let sharedEntries: ToolCallEntry[] = []
     for (const [index, call] of toolCalls.entries()) {
-      const entry = await host.toolRunner.applyBeforeToolHook(call, signal)
+      const entry: ToolCallEntry = restoringCalls
+        ? { type: "call", call }
+        : await host.toolRunner.applyBeforeToolHook(call, signal)
       if (host.toolRunner.concurrency(entry) === "shared") {
         sharedEntries.push(entry)
         continue

@@ -2,6 +2,8 @@ import type { SessionSummary } from "../sessions/types"
 
 export interface UiOptions {
   resume?: SessionSummary
+  continueWork?: boolean
+  retryPendingTools?: boolean
 }
 
 export interface Ui {

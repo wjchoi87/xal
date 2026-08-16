@@ -9,11 +9,14 @@ import {
   type TerminalCapabilities,
   type TerminalColors,
 } from "@opentui/core"
+import { appInfo } from "../../app-info"
 import { createSession, resumeSession } from "../../agent/session/compose"
+import { detachSession } from "../../bg/launch"
 import type { EventService } from "../../events"
 import { describeError } from "../../lib/error"
 import { compactPath } from "../../lib/path"
 import { findProjectRoot } from "../../project/root"
+import { redactText } from "../../secrets/redactor"
 import type { UiOptions } from "../../ui/registry"
 import { AgentEventController } from "./controllers/agent-events"
 import { AttentionController } from "./controllers/attention"
@@ -146,6 +149,7 @@ export async function startTui(events: EventService, config: TuiConfig, options:
     attentionController.destroy()
     terminalOutput.destroy()
   }
+  const exitNotes: string[] = []
   const quit = (): void => {
     stopAttention()
     renderer.destroy()
@@ -180,6 +184,16 @@ export async function startTui(events: EventService, config: TuiConfig, options:
     config: () => screen.openConfig(),
     terminal: () => describeTerminal(renderer.capabilities),
     quit,
+    detach: async () => {
+      const outcome = await detachSession(session)
+      if (outcome.status === "detached") {
+        const short = outcome.id.slice(0, 8)
+        exitNotes.push(`session ${short} continues in background; ${appInfo.name} bg attach ${short}`)
+        for (const pending of outcome.pending) exitNotes.push(`not sent: ${pending.text}`)
+        quit()
+      }
+      return outcome
+    },
   })
 
   const agentEvents = new AgentEventController(screen, session)
@@ -189,9 +203,15 @@ export async function startTui(events: EventService, config: TuiConfig, options:
 
   if (options.resume) {
     try {
-      for (const notice of await resumeSession(session, options.resume)) {
+      for (const notice of await resumeSession(session, options.resume, {
+        deferGoalResume: options.retryPendingTools,
+      })) {
         screen.scrollback.appendHeader({ kind: "info", text: notice })
       }
+      if (options.retryPendingTools && !session.retryPendingTools()) {
+        throw new Error("the pending background request could not be restored")
+      }
+      if (!options.retryPendingTools && options.continueWork) session.continueTurn()
     } catch (error) {
       screen.scrollback.appendHeader({ kind: "error", text: describeError(error) })
     }
@@ -268,4 +288,5 @@ export async function startTui(events: EventService, config: TuiConfig, options:
   await destroyed
   resetCommands()
   clearTimeout(replayTimer)
+  for (const note of exitNotes) console.log(redactText(note))
 }

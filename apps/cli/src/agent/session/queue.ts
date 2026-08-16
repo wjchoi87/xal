@@ -72,11 +72,16 @@ export class InputQueue {
     return inputs
   }
 
-  flush(): void {
-    if (this.queued.length === 0) return
+  drain(): UserInput[] {
+    if (this.queued.length === 0) return []
     const inputs = this.queued.splice(0)
     this.emit({ type: "queue_changed", entries: [] })
-    this.emit({ type: "queue_flushed", inputs })
+    return inputs
+  }
+
+  flush(): void {
+    const inputs = this.drain()
+    if (inputs.length > 0) this.emit({ type: "queue_flushed", inputs })
   }
 
   private changed(): void {

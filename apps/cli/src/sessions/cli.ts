@@ -1,3 +1,5 @@
+import { appInfo } from "../app-info"
+import { readBgLease } from "../bg/state"
 import { registerCli } from "../cli/registry"
 import type { Cli } from "../cli/types"
 import { settings } from "../config/settings"
@@ -12,6 +14,10 @@ const resumeCli: Cli = {
     const id = args[0]
     const summary = id ? await findSession(id) : await latestSession(process.cwd())
     if (!summary) throw new Error(id ? `unknown session: ${id}` : "no saved sessions for this directory")
+    if (await readBgLease(summary.id)) {
+      const short = summary.id.slice(0, 8)
+      throw new Error(`session ${short} is running in the background; use "${appInfo.name} bg attach ${short}"`)
+    }
 
     const uiId = settings().ui ?? "tui"
     const ui = getUi(uiId)

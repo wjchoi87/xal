@@ -1,3 +1,5 @@
+import { appInfo } from "../../app-info"
+import { readBgLease } from "../../bg/state"
 import { settings } from "../../config/settings"
 import { loadCredentialSecrets } from "../../config/credentials"
 import { resolveThinking } from "../../config/thinking"
@@ -21,6 +23,7 @@ export interface SessionOptions {
   model?: string
   persist?: boolean
   interactive?: boolean
+  deferInteractiveTools?: boolean
   outputSchema?: OutputSchema
 }
 
@@ -51,6 +54,7 @@ export async function createSession(options: SessionOptions = {}): Promise<Sessi
       thinking,
       persist: options.persist,
       interactive: options.interactive,
+      deferInteractiveTools: options.deferInteractiveTools,
       outputSchema: options.outputSchema,
     }),
     model,
@@ -126,7 +130,21 @@ function lastState(loaded: LoadedSession): {
   return state
 }
 
-export async function resumeSession(session: AgentSession, summary: SessionSummary): Promise<string[]> {
+export interface ResumeOptions {
+  backgroundWorkerId?: string
+  deferGoalResume?: boolean
+}
+
+export async function resumeSession(
+  session: AgentSession,
+  summary: SessionSummary,
+  options: ResumeOptions = {},
+): Promise<string[]> {
+  const lease = await readBgLease(summary.id)
+  if (lease && lease.workerId !== options.backgroundWorkerId) {
+    const short = summary.id.slice(0, 8)
+    throw new Error(`session ${short} is running in the background; use "${appInfo.name} bg attach ${short}"`)
+  }
   await session.flushPersistence()
   const loaded = await loadSession(summary.path)
   if (!loaded) throw new Error(`session is unreadable: ${summary.path}`)
@@ -161,6 +179,7 @@ export async function resumeSession(session: AgentSession, summary: SessionSumma
       modelInputModalities: modelInfo?.inputModalities,
       thinking,
       mode: last.mode,
+      continueGoal: !options.deferGoalResume,
     })
   ) {
     throw new Error("cannot resume while a turn or background job is unsettled")

@@ -1,6 +1,36 @@
 # Background work
 
-The agent can run work in the background in two forms: task agents dispatched with the `task` tool and background processes started with `bash` `background:true`. Both kinds are tracked as background jobs, deliver their results back into the conversation automatically, and share one set of TUI surfaces.
+Background work comes in two vocabularies. A _background session_ is a whole session that keeps working after you leave the terminal: `/bg` hands the running conversation to a detached worker process and returns you to the shell. _Background jobs_ are work inside a live session: task agents dispatched with the `task` tool and processes started with `bash` `background:true`. Jobs are tracked per session, deliver their results back into the conversation automatically, and share one set of TUI surfaces.
+
+## Background sessions
+
+`/bg` (alias `/background`) sends the current session to the background while it is working: the running turn pauses at a safe boundary (the in-flight model response and tool batch finish first), a detached worker process takes the session over, and the TUI exits to the shell with `session <id> continues in background; xal bg attach <id>`. `/bg` needs work in progress and refuses while a permission request or question is waiting for an answer. Anything still queued in the composer when the handoff happens is printed as `not sent: <text>` so nothing disappears silently.
+
+In-flight background jobs cannot move between processes: they are stopped at detach and the stop is recorded in the transcript, so the model knows on resume. This also works when the main turn is idle and only task agents or background processes remain. The worker continues from the handoff notice, survives the terminal closing, and keeps state in `~/.xal/bg/<session-id>/`: `lease.json` with exclusive worker ownership, `state.json` with current status and activity, `control.json` for authenticated handoff and stop requests, and `worker.log` with the event stream. Workers are never respawned automatically; a session goes to the background only when you send it there.
+
+Manage background sessions from the shell:
+
+| Command                  | Purpose                                                                           |
+| ------------------------ | --------------------------------------------------------------------------------- |
+| `xal bg` / `xal bg list` | List background sessions with status, title, and activity.                        |
+| `xal bg attach <id>`     | Take a background session back into the TUI.                                      |
+| `xal bg stop <id>`       | Ask a worker to stop gracefully and report if it does not acknowledge within 15s. |
+| `xal bg clear [id]`      | Remove finished entries (or one entry) from the list.                             |
+
+Ids accept unique prefixes. Statuses:
+
+| Status        | Meaning                                                                          |
+| ------------- | -------------------------------------------------------------------------------- |
+| `running`     | The worker is executing turns; the activity column shows what it is doing.       |
+| `done`        | The work finished; the worker exited.                                            |
+| `needs input` | The agent hit a permission request or question and stopped; attach to answer it. |
+| `stopped`     | Stopped with `xal bg stop` (a pending request is denied as part of the stop).    |
+| `failed`      | The turn or the worker failed; the detail column has the reason.                 |
+| `died`        | The worker vanished without writing a final status; the row shows the log path.  |
+
+Attach is a takeover handoff: a running worker pauses at the next safe boundary and exits, then the TUI resumes the session in place and continues the work. A pending permission request or interactive tool is re-raised interactively on attach. Interactive tools are deferred before execution, so work before a question is never replayed. Nothing is auto-denied while a session runs in the background, which also means the permission mode governs unattended progress: a session in a mode that asks for approval stops at the first request with `needs input`. Inside the TUI, `/bg list` opens the same manager as a picker: attach here, stop, show the log path, or remove an entry.
+
+A background session stays an ordinary session. Once the worker cleanly releases its lease, `xal resume <id>` works as usual. While a lease is active, resuming is refused so two processes never write one transcript. If a worker dies without releasing its lease, attach the `died` entry to recover it safely.
 
 ## Task agents
 
