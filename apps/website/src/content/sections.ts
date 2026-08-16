@@ -142,7 +142,10 @@ export const safety: Block[] = [
     meta: "Question 1 of 1",
     question: "Review the implementation plan above. What should Xal do?",
     options: [
-      { label: "Approve and build", description: "Switch to normal mode and begin implementing this plan." },
+      {
+        label: "Approve and build",
+        description: "Restore the previous writable mode, or normal mode, and begin implementing.",
+      },
       { label: "Request changes", description: "Keep plan mode active so the proposal can be revised." },
     ],
     hint: "←→ questions · ↑↓ choose · 1-3 select · Enter save · Esc decline",

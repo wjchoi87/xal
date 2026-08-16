@@ -45,7 +45,9 @@ export function registerPlans(): void {
     async run(args, command) {
       const prompt = args.join(" ").trim()
       const entered = command.session.currentMode !== "plan"
-      if (entered) command.session.setMode("plan")
+      if (entered && !command.session.setMode("plan")) {
+        throw new Error("cannot enter plan mode while a turn or interaction is active")
+      }
       if (prompt) {
         if (!command.session.send({ text: prompt, images: [] })) {
           throw new Error("plan mode is active, but the prompt could not be submitted")
@@ -69,10 +71,12 @@ export function registerPlans(): void {
       if (prompt.mode === "plan") {
         const canSubmit = prompt.tools.some((tool) => tool.name === submitPlanTool.name)
         return [
-          "Investigate until the requested change is fully grounded, resolve material ambiguity, and produce an implementation-ready plan without changing the workspace.",
+          "Plan mode is active. Treat requests to implement as requests to plan until the mode changes. Produce a decision-complete execution specification that another engineer or a fresh agent can implement without inventing missing choices.",
+          "Ground the plan in the actual workspace before asking questions. Inspect the relevant implementation, direct callers, lifecycle consumers, existing conventions, and verification paths. Resolve repository facts with read-only tools; ask only about material intent, scope, or tradeoffs that cannot be discovered. When a decision is needed, use request_user_input when available, offer distinct options, and recommend a default.",
+          "Keep the plan proportional and self-contained. State the intended outcome, then group ordered changes by behavior rather than listing files mechanically. Name exact files and symbols where they prevent ambiguity, cover interfaces and failure paths that must change, identify existing code to reuse, and finish with concrete verification. Record any chosen defaults as assumptions. Include only the recommended approach, not unresolved alternatives or generic future work.",
           canSubmit
-            ? "When the plan is ready, call submit_plan with the complete Markdown. The tool displays it for review and asks for approval. Do not implement it unless that call reports approval. If review is dismissed, stop and wait."
-            : "When the plan is ready, return the complete implementation plan as the final response.",
+            ? "When every material choice is resolved, call submit_plan with the complete replacement Markdown. Do not ask for approval in prose. The tool renders the plan, collects approval or revision feedback, and preserves plan mode until approval. Do not implement unless submit_plan reports approval; if review is dismissed, stop and wait."
+            : "When every material choice is resolved, return the complete replacement plan as the final response without implementing it.",
           prompt.plan ? planContext(prompt.plan) : "",
         ]
           .filter(Boolean)

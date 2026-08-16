@@ -35,7 +35,7 @@ export const submitPlanTool: InteractiveTool = {
     additionalProperties: false,
   },
   prompt:
-    "Call submit_plan once the plan is complete and open questions are resolved, not before. Make the plan implementation-ready: concrete steps, the files to change, and the risks. The tool displays the Markdown for review and asks the user to approve or request changes; when changes are requested, revise and submit again.",
+    "Call submit_plan only after material questions are resolved. Submit a self-contained, decision-complete Markdown plan with the intended outcome, behavior-grouped implementation steps, exact targets where needed, concrete verification, and any chosen assumptions. Each call replaces the complete proposal. The tool renders it for approval or revision feedback.",
   interactive: true,
   available(ctx) {
     return ctx.interactive && ctx.mode === "plan"
@@ -62,7 +62,7 @@ export const submitPlanTool: InteractiveTool = {
           options: [
             {
               label: APPROVE,
-              description: "Switch to normal mode and begin implementing this plan.",
+              description: "Restore the previous writable mode, or normal mode, and begin implementing.",
             },
             {
               label: REVISE,

@@ -31,6 +31,6 @@ export function parseSessionPlan(value: unknown): SessionPlan | undefined {
   const feedback = asString(value.feedback)
   if (!path || !isAbsolute(path) || !markdown) return undefined
   if (status !== "draft" && status !== "approved") return undefined
-  if (feedback !== undefined && (!feedback.trim() || feedback.length > 500)) return undefined
+  if (feedback !== undefined && !feedback.trim()) return undefined
   return { path, markdown, status, ...(feedback ? { feedback } : {}) }
 }

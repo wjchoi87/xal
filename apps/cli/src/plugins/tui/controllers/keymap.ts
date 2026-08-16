@@ -178,7 +178,9 @@ export function bindKeys(renderer: CliRenderer, deps: KeymapDeps): void {
         screen.openHistory()
         return
       case "session.next-mode":
-        session.setMode(nextPermissionMode(session.currentMode))
+        if (session.setMode(nextPermissionMode(session.currentMode))) return
+        screen.statusBar.setNotice("Cannot change mode while a turn or interaction is active")
+        setTimeout(() => screen.statusBar.clearNotice(), QUIT_WINDOW_MS).unref()
         return
       case "thinking.decrease":
         changeThinking(-1)

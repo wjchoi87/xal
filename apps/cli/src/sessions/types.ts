@@ -12,6 +12,7 @@ export interface SessionMeta {
   model: string
   thinking?: ThinkingEffort
   mode: PermissionMode
+  modeBeforePlan?: PermissionMode
   startedAt: number
 }
 

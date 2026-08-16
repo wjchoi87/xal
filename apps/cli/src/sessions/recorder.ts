@@ -22,9 +22,10 @@ interface ForkTarget {
   model: string
   thinking: SessionMeta["thinking"]
   mode: SessionMeta["mode"]
+  modeBeforePlan: SessionMeta["modeBeforePlan"]
 }
 
-type ForkState = Pick<ForkTarget, "cwd" | "provider" | "model" | "thinking" | "mode">
+type ForkState = Pick<ForkTarget, "cwd" | "provider" | "model" | "thinking" | "mode" | "modeBeforePlan">
 
 function replayState(meta: SessionMeta, events: AgentEvent[]): ForkState {
   const state: ForkState = {
@@ -33,6 +34,7 @@ function replayState(meta: SessionMeta, events: AgentEvent[]): ForkState {
     model: meta.model,
     thinking: meta.thinking,
     mode: meta.mode,
+    modeBeforePlan: meta.modeBeforePlan,
   }
   for (const event of events) {
     if (event.type === "workspace_changed") state.cwd = event.cwd
@@ -41,7 +43,11 @@ function replayState(meta: SessionMeta, events: AgentEvent[]): ForkState {
       state.model = event.model
     }
     if (event.type === "thinking_changed") state.thinking = event.thinking
-    if (event.type === "mode_changed") state.mode = event.mode
+    if (event.type === "mode_changed") {
+      if (event.mode === "plan" && state.mode !== "plan") state.modeBeforePlan = state.mode
+      if (event.mode !== "plan" && state.mode === "plan") state.modeBeforePlan = undefined
+      state.mode = event.mode
+    }
   }
   return state
 }
@@ -55,7 +61,14 @@ function stateCorrections(recorded: ForkState, target: ForkState): AgentEvent[] 
     events.push({ type: "model_changed", provider: target.provider, model: target.model })
   }
   if (recorded.thinking !== target.thinking) events.push({ type: "thinking_changed", thinking: target.thinking })
-  if (recorded.mode !== target.mode) events.push({ type: "mode_changed", mode: target.mode })
+  if (recorded.mode !== target.mode) {
+    if (target.mode === "plan" && target.modeBeforePlan && recorded.mode !== target.modeBeforePlan) {
+      events.push({ type: "mode_changed", mode: target.modeBeforePlan })
+    }
+    events.push({ type: "mode_changed", mode: target.mode })
+  } else if (target.mode === "plan" && recorded.modeBeforePlan !== target.modeBeforePlan && target.modeBeforePlan) {
+    events.push({ type: "mode_changed", mode: target.modeBeforePlan }, { type: "mode_changed", mode: "plan" })
+  }
   return events
 }
 
@@ -65,7 +78,8 @@ function sameState(left: ForkState, right: ForkState): boolean {
     left.provider === right.provider &&
     left.model === right.model &&
     left.thinking === right.thinking &&
-    left.mode === right.mode
+    left.mode === right.mode &&
+    left.modeBeforePlan === right.modeBeforePlan
   )
 }
 

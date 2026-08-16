@@ -6,7 +6,7 @@ import { projectSessionsDir } from "../../config/paths"
 import { describeError } from "../../lib/error"
 import { runPromptHooks, type HookReporter } from "../../hooks/registry"
 import type { HookContext } from "../../hooks/types"
-import { defaultPermissionMode } from "../../permissions/modes"
+import { defaultPermissionMode, modeDefinition } from "../../permissions/modes"
 import type { PermissionMode, PermissionScope } from "../../permissions/types"
 import type { SessionPlan } from "../../plans/types"
 import { profileAgentEvent, profileSessionCreated } from "../../profiler/profiler"
@@ -120,6 +120,7 @@ export class AgentSession {
   private state: AgentState = "idle"
   private movingHistory = false
   private mode: PermissionMode = defaultPermissionMode
+  private modeBeforePlan: PermissionMode | undefined
   private plan: SessionPlan | undefined
   private planHandoffActive = false
   private abortController: AbortController | undefined
@@ -370,6 +371,7 @@ export class AgentSession {
       model: redactText(this.model),
       thinking: this.thinking,
       mode: this.mode,
+      ...(this.modeBeforePlan ? { modeBeforePlan: this.modeBeforePlan } : {}),
       startedAt: this.startedAt,
     }
   }
@@ -431,6 +433,7 @@ export class AgentSession {
           model: current.model,
           thinking: current.thinking,
           mode: current.mode,
+          modeBeforePlan: current.modeBeforePlan,
         },
         this.cwd,
       )
@@ -484,15 +487,22 @@ export class AgentSession {
     this.contextTokens = recordedContext(target.session.events)
     this.compactionFailures = 0
     this.turnEndToolEvents.clear()
+    this.modeBeforePlan = meta.mode === "plan" ? meta.modeBeforePlan : undefined
     this.plan = undefined
     this.planHandoffActive = false
     let recordedCwd = meta.cwd
+    let recordedMode = meta.mode
     for (const event of target.session.events) {
       if (event.type === "plan_updated") {
         this.plan = event.plan
         this.planHandoffActive = event.plan.status === "approved"
       }
-      if (event.type === "mode_changed" && event.mode === "plan") this.planHandoffActive = false
+      if (event.type === "mode_changed") {
+        if (event.mode === "plan" && recordedMode !== "plan") this.modeBeforePlan = recordedMode
+        if (event.mode !== "plan" && recordedMode === "plan") this.modeBeforePlan = undefined
+        recordedMode = event.mode
+        if (event.mode === "plan") this.planHandoffActive = false
+      }
       if (event.type === "turn_ended") this.planHandoffActive = false
       if (event.type === "workspace_changed") recordedCwd = event.cwd
     }
@@ -545,11 +555,25 @@ export class AgentSession {
     return true
   }
 
-  setMode(mode: PermissionMode): void {
-    if (this.movingHistory || this.mode === mode) return
+  setMode(mode: PermissionMode): boolean {
+    if (this.mode === mode) return true
+    if (this.currentState !== "idle") return false
+    this.changeMode(mode)
+    return true
+  }
+
+  private changeMode(mode: PermissionMode): void {
+    if (this.mode === mode) return
+    if (mode === "plan") this.modeBeforePlan = this.mode
+    if (this.mode === "plan" && mode !== "plan") this.modeBeforePlan = undefined
     this.mode = mode
     if (mode === "plan") this.planHandoffActive = false
     this.emit({ type: "mode_changed", mode })
+  }
+
+  private planExecutionMode(): PermissionMode {
+    if (!this.modeBeforePlan || modeDefinition(this.modeBeforePlan).readOnly) return defaultPermissionMode
+    return this.modeBeforePlan
   }
 
   changeWorkspace(cwd: string): void {
@@ -1034,7 +1058,7 @@ export class AgentSession {
         this.plan = event.plan
         this.planHandoffActive = event.plan.status === "approved"
         this.emit(event)
-        if (event.plan.status === "approved") this.setMode(defaultPermissionMode)
+        if (event.plan.status === "approved") this.changeMode(this.planExecutionMode())
         break
       case "task_list_updated":
         this.emit(event)

@@ -351,7 +351,18 @@ function parseMeta(raw: unknown): SessionMeta | undefined {
   const provider = asString(raw.provider)
   const model = asString(raw.model)
   const mode = asString(raw.mode)
-  if (!id || (raw.parentId !== undefined && !parentId) || !cwd || !provider || !model || !mode) return undefined
+  const modeBeforePlan = asString(raw.modeBeforePlan)
+  if (
+    !id ||
+    (raw.parentId !== undefined && !parentId) ||
+    !cwd ||
+    !provider ||
+    !model ||
+    !mode ||
+    (raw.modeBeforePlan !== undefined && !modeBeforePlan)
+  ) {
+    return undefined
+  }
   return {
     version: 1,
     id,
@@ -361,6 +372,9 @@ function parseMeta(raw: unknown): SessionMeta | undefined {
     model,
     thinking: parseThinking(raw.thinking),
     mode: isPermissionMode(mode) ? mode : defaultPermissionMode,
+    ...(modeBeforePlan
+      ? { modeBeforePlan: isPermissionMode(modeBeforePlan) ? modeBeforePlan : defaultPermissionMode }
+      : {}),
     startedAt: asNumber(raw.startedAt) ?? 0,
   }
 }
