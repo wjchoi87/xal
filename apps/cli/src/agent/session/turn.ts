@@ -8,7 +8,7 @@ import type { AgentEvent, AgentState } from "../events"
 import type { HistoryItem } from "../history"
 import { ToolLoopDetector } from "./loop-detection"
 import type { OutputContract } from "./output-contract"
-import { directShellCommand } from "./queue"
+import { directShellCommand, interjectionResumeMessage } from "./queue"
 import { streamProviderTurn, type StreamRoundHost } from "./stream"
 import type { TurnUsage } from "./types"
 import { ToolCallRunner, type PreparedToolCall, type ToolCallEntry, type ToolCallOutcome } from "./tool-runner"
@@ -26,7 +26,7 @@ export interface TurnHost {
   hookContext(signal: AbortSignal): HookContext
   streamRound(usage: TurnUsage): StreamRoundHost
   drainBackgroundResults(): boolean
-  drainQueue(signal: AbortSignal): Promise<boolean>
+  drainQueue(signal: AbortSignal, interjected: boolean): Promise<boolean>
   autoCompact(signal: AbortSignal, provider: Provider, model: string): Promise<void>
   beginCheckpoint(messageId: string, input: UserInput): Promise<void>
   stopAcceptingInput(): void
@@ -48,6 +48,8 @@ export async function runTurn(
 ): Promise<TurnSummary | undefined> {
   const toolLoops = new ToolLoopDetector()
   let usedTools = false
+  let midWork = true
+  let interjected = false
 
   while (true) {
     if (host.drainBackgroundResults()) toolLoops.reset()
@@ -56,7 +58,10 @@ export async function runTurn(
       host.emit({ type: "turn_interrupted" })
       return
     }
-    if (await host.drainQueue(signal)) toolLoops.reset()
+    if (await host.drainQueue(signal, midWork)) {
+      toolLoops.reset()
+      interjected = midWork
+    }
 
     host.setState("streaming")
     const round = host.streamRound(usage)
@@ -68,8 +73,16 @@ export async function runTurn(
 
     const toolCalls = items.filter((item): item is ToolCallItem => item.type === "tool_call")
     if (toolCalls.length === 0) {
-      if (host.queuedPromptNext()) continue
+      if (host.queuedPromptNext()) {
+        midWork = false
+        continue
+      }
       if (host.asyncResultsQueued()) continue
+      if (interjected) {
+        interjected = false
+        host.pushItem({ type: "user_message", text: interjectionResumeMessage(), images: [] })
+        continue
+      }
       const contract = host.outputContract()
       if (contract) {
         const correction = contract.missing()
@@ -83,6 +96,8 @@ export async function runTurn(
     }
 
     usedTools = true
+    midWork = true
+    interjected = false
     let loopError: Error | undefined
     let requiresContinuation = false
     let sharedEntries: ToolCallEntry[] = []

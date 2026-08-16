@@ -4,6 +4,7 @@ import { registerTool, unregisterTool } from "../../tools/registry"
 import type { ElicitationResult, InteractiveTool, Tool } from "../../tools/types"
 import type { AgentEvent } from "../events"
 import { summaryMessage } from "../history"
+import { interjectionMessage, interjectionResumeMessage } from "./queue"
 import {
   completedRound,
   round,
@@ -92,6 +93,63 @@ describe("AgentSession control flow", () => {
       [],
     ])
     expect(observed.filter((event) => event.type === "queue_flushed")).toHaveLength(0)
+  })
+
+  test("resumes the interrupted work after answering a prompt queued mid-tool-run", async () => {
+    const toolName = `resume_probe_${crypto.randomUUID().replaceAll("-", "_")}`
+    const tool: Tool = {
+      name: toolName,
+      description: "Probe the workspace",
+      parameters: { type: "object" },
+      title: () => "Probe workspace",
+      readOnly: () => true,
+      execute: async () => ({ output: "probe result" }),
+    }
+    const entered = latch()
+    const release = latch()
+    const firstRound = toolRound("probe-call", toolName, {})
+    const delayedFirstRound: ProviderRound = async function* (request) {
+      entered.release()
+      await release.promise
+      yield* firstRound(request)
+    }
+    const provider = new ScriptedProvider([
+      delayedFirstRound,
+      completedRound("The session is healthy."),
+      toolRound("resume-call", toolName, {}),
+      completedRound("Refactor finished."),
+    ])
+    const session = harness.createSession(provider)
+
+    registerTool(tool)
+    try {
+      const running = runSettledTurn(session, { text: "Refactor the parser", images: [] })
+      await entered.promise
+      session.send({ text: "Is the session healthy?", images: [] })
+      release.release()
+
+      const outcome = await running
+
+      expect(outcome).toEqual({
+        status: "completed",
+        response: "Refactor finished.",
+        usage: undefined,
+        context: undefined,
+      })
+      expect(provider.requests).toHaveLength(4)
+      expect(provider.requests[1]?.input.at(-1)).toEqual({
+        type: "user_message",
+        text: interjectionMessage("Is the session healthy?"),
+        images: [],
+      })
+      expect(provider.requests[2]?.input.at(-1)).toEqual({
+        type: "user_message",
+        text: interjectionResumeMessage(),
+        images: [],
+      })
+    } finally {
+      unregisterTool(tool)
+    }
   })
 
   test("manually compacts long history and uses only the summary on the next turn", async () => {

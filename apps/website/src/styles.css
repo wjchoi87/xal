@@ -877,8 +877,8 @@ a {
 .composer {
   display: flex;
   align-items: baseline;
-  border: 1px solid var(--border);
-  border-radius: 5px;
+  border-block: 1px solid var(--border);
+  border-radius: 0;
   padding: 0.55em 1ch;
 }
 

@@ -115,8 +115,7 @@ export class Composer {
     this.view = row(ctx, {
       height: 3,
       alignItems: "flex-start",
-      border: true,
-      borderStyle: "rounded",
+      border: ["top", "bottom"],
       paddingLeft: 1,
       paddingRight: 1,
       marginLeft: 1,

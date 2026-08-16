@@ -57,7 +57,7 @@ import { autoCompact, runCompaction, type CompactionHost } from "./compaction"
 import { performRedo, performUndo, RedoStack, type HistoryMoveHost } from "./history-moves"
 import { PendingInteractions } from "./interactions"
 import { OutputContract, parseOutputSchema } from "./output-contract"
-import { InputQueue, isDirectShellInput } from "./queue"
+import { InputQueue, interjectionMessage, isDirectShellInput } from "./queue"
 import { StreamBuffer, type StreamRoundHost } from "./stream"
 import { runDirectShell, runTurn, type TurnHost, type TurnSummary } from "./turn"
 import { ToolCallRunner, type ToolRunnerHost } from "./tool-runner"
@@ -231,7 +231,7 @@ export class AgentSession {
       hookContext: (signal) => this.hookContext(signal),
       streamRound: (usage) => this.streamHost(usage),
       drainBackgroundResults: () => this.drainBackgroundResults(),
-      drainQueue: (signal) => this.drainQueue(signal),
+      drainQueue: (signal, interjected) => this.drainQueue(signal, interjected),
       autoCompact: (signal, provider, model) => autoCompact(this.compactionHost(), signal, provider, model),
       beginCheckpoint: async (messageId, input) => {
         this.ensureTitle(input)
@@ -679,7 +679,7 @@ export class AgentSession {
   }
 
   private startTurn(inputs: UserInput[]): void {
-    this.startPreparedTurn((signal) => this.acceptInputs(inputs, signal))
+    this.startPreparedTurn((signal) => this.acceptInputs(inputs, signal, false))
   }
 
   private startBackgroundResultTurn(): boolean {
@@ -905,10 +905,10 @@ export class AgentSession {
     return true
   }
 
-  private async drainQueue(signal: AbortSignal): Promise<boolean> {
+  private async drainQueue(signal: AbortSignal, interjected: boolean): Promise<boolean> {
     const inputs = this.queue.takePrompts()
     if (inputs.length === 0) return false
-    await this.acceptInputs(inputs, signal)
+    await this.acceptInputs(inputs, signal, interjected)
     return true
   }
 
@@ -920,10 +920,10 @@ export class AgentSession {
     return true
   }
 
-  private async acceptInputs(inputs: UserInput[], signal: AbortSignal): Promise<void> {
+  private async acceptInputs(inputs: UserInput[], signal: AbortSignal, interjected: boolean): Promise<void> {
     for (const [index, input] of inputs.entries()) {
       try {
-        await this.acceptInput(input, signal)
+        await this.acceptInput(input, signal, interjected)
       } catch (error) {
         this.queue.restore(inputs.slice(index + 1))
         throw error
@@ -931,7 +931,7 @@ export class AgentSession {
     }
   }
 
-  private async acceptInput(input: UserInput, signal: AbortSignal): Promise<void> {
+  private async acceptInput(input: UserInput, signal: AbortSignal, interjected: boolean): Promise<void> {
     this.ensureTitle(input)
     const expanded = redactText((await expandSkillInvocation(input.text)) ?? input.text)
     const outcome = await runPromptHooks(
@@ -952,7 +952,8 @@ export class AgentSession {
       imageCount: input.images.length,
       sentAt: Date.now(),
     })
-    this.pushItem(this.userMessage(input, redactText(outcome.text), messageId))
+    const modelText = redactText(outcome.text)
+    this.pushItem(this.userMessage(input, interjected ? interjectionMessage(modelText) : modelText, messageId))
   }
 
   private async checkpoint(messageId: string, input: UserInput): Promise<void> {

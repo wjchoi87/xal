@@ -11,6 +11,28 @@ export function isDirectShellInput(input: UserInput): boolean {
   return directShellCommand(input) !== undefined
 }
 
+export function interjectionMessage(text: string): string {
+  return [
+    "<system-notice>",
+    "This message arrived while you were working. The request you were already working on is still in progress.",
+    "Handle this message, then continue that work in the same turn. Answering a question or reporting status does not complete the turn.",
+    "Stop only when the earlier request is finished, this message replaces it, or it asks you to stop.",
+    "</system-notice>",
+    "<message>",
+    text,
+    "</message>",
+  ].join("\n")
+}
+
+export function interjectionResumeMessage(): string {
+  return [
+    "<system-notice>",
+    "Your last response handled the message that arrived while you were working, but did not carry the earlier request any further.",
+    "If that request is unfinished, continue it now. If it is already complete or the new message replaced it, say so in one line and stop.",
+    "</system-notice>",
+  ].join("\n")
+}
+
 export class InputQueue {
   private queued: UserInput[] = []
 
