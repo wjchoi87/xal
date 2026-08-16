@@ -41,6 +41,7 @@ import { isPersistable } from "../../sessions/records"
 import { normalizeSessionTitle, titleFromInput } from "../../sessions/title"
 import type { SessionMeta } from "../../sessions/types"
 import { expandSkillInvocation } from "../../skills/invoke"
+import type { TrackedTask } from "../../tasks/types"
 import { getTool, listTools } from "../../tools/registry"
 import { toolOutputDirectory } from "../../tools/output"
 import { isInteractiveTool } from "../../tools/types"
@@ -100,7 +101,7 @@ export class AgentSession {
   private readonly redoStack = new RedoStack()
   private contextTokens: number | undefined
   private compactionFailures = 0
-  private readonly turnEndToolEvents = new Map<string, ToolEvent[]>()
+  private tasks: TrackedTask[] = []
   private readonly listeners = new Set<(event: AgentEvent) => void>()
   private readonly recorder: SessionRecorder | undefined
   private readonly interactive: boolean
@@ -210,7 +211,6 @@ export class AgentSession {
       addToolOutput: (call, output) => this.addToolOutput(call, output),
       updateToolCall: (call) => this.updateToolCall(call),
       publishToolEvent: (event) => this.publishToolEvent(event),
-      setTurnEndToolEvents: (tool, events) => this.turnEndToolEvents.set(tool, events),
       requestInput: (callId, request, signal) => this.interactions.requestInput(callId, request, signal),
       requestApproval: (resolve) => this.interactions.awaitApproval(resolve),
       changeWorkspace: (cwd) => this.changeWorkspace(cwd),
@@ -240,7 +240,7 @@ export class AgentSession {
       stopAcceptingInput: () => {
         this.acceptingQueuedInput = false
       },
-      drainTurnEndEvents: () => this.drainTurnEndEvents(),
+      completeTasks: () => this.completeTasks(),
     }
   }
 
@@ -438,7 +438,7 @@ export class AgentSession {
     this.workspaceUndo = new WorkspaceUndo(this.cwd)
     this.contextTokens = undefined
     this.compactionFailures = 0
-    this.turnEndToolEvents.clear()
+    this.tasks = []
     this.plan = undefined
     this.planHandoffActive = false
     this.goals.reset()
@@ -483,7 +483,6 @@ export class AgentSession {
       this.startedAt = startedAt
       this.events.push(...forked.corrections)
       this.outputDirectory = toolOutputDirectory(dirname(forked.path), id)
-      this.turnEndToolEvents.clear()
       this.asyncState.register()
       profileSessionCreated(id, this.kind, this.provider.id, this.model, this.thinking)
       return { status: "forked", id }
@@ -524,7 +523,7 @@ export class AgentSession {
     )
     this.contextTokens = recordedContext(target.session.events)
     this.compactionFailures = 0
-    this.turnEndToolEvents.clear()
+    this.tasks = []
     this.modeBeforePlan = meta.mode === "plan" ? meta.modeBeforePlan : undefined
     this.plan = undefined
     this.planHandoffActive = false
@@ -533,6 +532,7 @@ export class AgentSession {
     let recordedMode = meta.mode
     for (const event of target.session.events) {
       if (event.type === "goal_updated") this.goals.restore(event.goal)
+      if (event.type === "task_list_updated") this.tasks = event.tasks
       if (event.type === "plan_updated") {
         this.plan = event.plan
         this.planHandoffActive = event.plan.status === "approved"
@@ -696,7 +696,6 @@ export class AgentSession {
 
   private startPreparedTurn(prepare: (signal: AbortSignal) => Promise<void>): void {
     this.outputContract?.reset()
-    this.turnEndToolEvents.clear()
     const controller = new AbortController()
     const provider = this.provider
     const model = this.model
@@ -730,7 +729,6 @@ export class AgentSession {
     summary: TurnSummary | undefined,
     failure: string | undefined,
   ): void {
-    this.turnEndToolEvents.clear()
     this.turnActive = false
     this.acceptingQueuedInput = false
     this.abortController = undefined
@@ -858,7 +856,6 @@ export class AgentSession {
   }
 
   private startDirectShell(input: UserInput): void {
-    this.turnEndToolEvents.clear()
     const controller = new AbortController()
     this.abortController = controller
     this.turnActive = true
@@ -1154,10 +1151,12 @@ export class AgentSession {
     this.pushItem({ type: "tool_result", callId: call.callId, output })
   }
 
-  private drainTurnEndEvents(): ToolEvent[] {
-    const events = [...this.turnEndToolEvents.values()].flat()
-    this.turnEndToolEvents.clear()
-    return events
+  private completeTasks(): void {
+    if (!this.tasks.some((task) => task.status !== "completed")) return
+    this.publishToolEvent({
+      type: "task_list_updated",
+      tasks: this.tasks.map((task) => ({ ...task, status: "completed" })),
+    })
   }
 
   private streamHost(usage: TurnUsage): StreamRoundHost {
@@ -1229,6 +1228,7 @@ export class AgentSession {
         if (event.plan.status === "approved") this.changeMode(this.planExecutionMode())
         break
       case "task_list_updated":
+        this.tasks = event.tasks
         this.emit(event)
         break
     }

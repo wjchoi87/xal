@@ -18,7 +18,6 @@ export interface ToolResult {
   output: string
   execution?: ProcessExecution
   events?: ToolEvent[]
-  turnEndEvents?: ToolEvent[]
   maxOutputBytes?: number
 }
 

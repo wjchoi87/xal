@@ -101,7 +101,6 @@ export interface ToolRunnerHost {
   addToolOutput(call: ToolCallItem, output: string): void
   updateToolCall(call: ToolCallItem): void
   publishToolEvent(event: ToolEvent): void
-  setTurnEndToolEvents(tool: string, events: ToolEvent[]): void
   requestInput(callId: string, request: ElicitationRequest, signal: AbortSignal): Promise<ElicitationResult>
   requestApproval(resolve: (result: ApprovalResult) => void): void
   changeWorkspace(cwd: string): void
@@ -407,7 +406,6 @@ export class ToolCallRunner {
       output = redactText(result.output)
       execution = result.execution
       events = result.events ?? []
-      if (result.turnEndEvents !== undefined) this.host.setTurnEndToolEvents(call.name, result.turnEndEvents)
       maxOutputBytes = result.maxOutputBytes
     } catch (error) {
       output = redactText(`${TOOL_FAILED_PREFIX}${describeError(error)}`)

@@ -52,10 +52,6 @@ export const updateTasksTool: Tool = {
     return {
       output: JSON.stringify({ tasks }),
       events: [{ type: "task_list_updated", tasks }],
-      turnEndEvents:
-        tasks.length === 0
-          ? []
-          : [{ type: "task_list_updated", tasks: tasks.map((task) => ({ ...task, status: "completed" })) }],
     }
   },
 }
