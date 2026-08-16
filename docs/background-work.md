@@ -47,13 +47,13 @@ Open the navigator with `/agents` (alias `/jobs`), the `agents.open` shortcut (d
 
 Navigator keys:
 
-| Key       | Action                                            |
-| --------- | ------------------------------------------------- |
-| `↑` `↓`   | Move between rows                                 |
-| `enter`   | Open the viewer for the selected agent or process |
-| `tab`     | Toggle an inline preview of the last output lines |
-| `x` / `k` | Stop a running job, or dismiss a finished row     |
-| `esc`     | Close the viewer, collapse the preview, or leave  |
+| Key       | Action                                                     |
+| --------- | ---------------------------------------------------------- |
+| `↑` `↓`   | Move between rows; `↑` from `main` returns to the composer |
+| `enter`   | Open the viewer for the selected agent or process          |
+| `tab`     | Toggle an inline preview of the last output lines          |
+| `x` / `k` | Stop a running job, or dismiss a finished row              |
+| `esc`     | Close the viewer, collapse the preview, or leave           |
 
 The viewer takes over the screen and follows the job's output live. While it is open, `↑`/`↓` keep moving the selection in the list below and `enter` switches the viewer to the selected job (or closes it on the viewed row), so you can hop between running agents without leaving the viewer. `pgup`/`pgdn` scroll the transcript, `home` jumps to the top, and `end` returns to the bottom and resumes following (scrolling up pauses following and shows `· paused`). For a running agent, `i` opens a steering input — type guidance and press `enter` to queue it into the agent's current turn; the transcript marks it as `User guidance`.
 

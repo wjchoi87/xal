@@ -143,6 +143,11 @@ export class BackgroundTasks {
   handleKey(name: string): boolean {
     if (!this.focusedFlag || this.rows.length === 0) return false
     if (this.viewedJobId !== undefined && this.actions.scrollViewer(name)) return true
+    if (name === "up" && this.rows[this.selected]?.kind === "main") {
+      this.blur()
+      this.actions.released()
+      return true
+    }
     if (name === "up" || name === "down") {
       const count = this.rows.length
       this.selected = (this.selected + (name === "up" ? -1 : 1) + count) % count
