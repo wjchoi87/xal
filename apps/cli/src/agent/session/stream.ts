@@ -5,7 +5,7 @@ import {
   profileProviderRequestStarted,
   type ProviderRequestProfile,
 } from "../../profiler/profiler"
-import { ProviderError } from "../../providers/errors"
+import { isProviderError, ProviderError } from "../../providers/errors"
 import type { Provider, ProviderOutputItem, StreamRequest, ThinkingEffort, Usage } from "../../providers/types"
 import { createRedactedStream, type RedactedStream } from "../../secrets/redactor"
 import type { AgentEvent } from "../events"
@@ -129,7 +129,7 @@ export async function streamProviderTurn(
       }
       const outputLoop = error instanceof OutputLoopError
       if (
-        !(error instanceof ProviderError) ||
+        !isProviderError(error) ||
         !error.retryable ||
         (round.received && !outputLoop) ||
         attempt >= MAX_PROVIDER_ATTEMPTS

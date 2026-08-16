@@ -1,6 +1,7 @@
 import type { PromptSection } from "../agent/prompt/registry"
 import type { Cli } from "../cli/types"
 import type { Command } from "../commands/types"
+import type { Credential } from "../config/credentials"
 import type { EventService } from "../events"
 import type { Hook } from "../hooks/types"
 import type { PermissionRules, PolicyRule } from "../permissions/types"
@@ -16,9 +17,20 @@ export interface Plugin {
   shutdown?(ctx: PluginContext): Promise<void>
 }
 
+export interface PluginRuntime {
+  app: { name: string; version: string }
+  paths: { home: string; cache: string }
+  credentials: {
+    load(providerId: string): Promise<Credential | undefined>
+    save(providerId: string, credential: Credential): Promise<void>
+  }
+  protectSecret(value: string): void
+}
+
 export interface PluginContext {
   config: Record<string, unknown>
   events: EventService
+  runtime: PluginRuntime
   signal: AbortSignal
   registerTool(tool: RegisteredTool): void
   unregisterTool(tool: RegisteredTool): void

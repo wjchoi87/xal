@@ -1,7 +1,9 @@
 import { registerPrompt } from "../agent/prompt/registry"
+import { appInfo } from "../app-info"
 import { registerCli } from "../cli/registry"
 import { registerCommand } from "../commands/registry"
-import { agentHome } from "../config/paths"
+import { loadCredential, saveCredential } from "../config/credentials"
+import { agentHome, cacheDir } from "../config/paths"
 import type { Settings } from "../config/settings"
 import { events, type PluginFailure, type PluginStatus } from "../events"
 import { describeError } from "../lib/error"
@@ -9,7 +11,7 @@ import { clearHooks, registerHook, removeHooks } from "../hooks/registry"
 import { contributeRules } from "../permissions/rules"
 import { registerPolicyRule } from "../permissions/service"
 import { registerProvider } from "../providers/registry"
-import { replaceSecretValues } from "../secrets/redactor"
+import { protectSecretValue, replaceSecretValues } from "../secrets/redactor"
 import { registerTool, unregisterTool } from "../tools/registry"
 import { registerToolRenderer } from "../ui/extension"
 import { registerUi } from "../ui/registry"
@@ -54,6 +56,12 @@ function contextFor(plugin: Plugin, settings: Settings, pluginOrder: number, sig
   const ctx: PluginContext = {
     config: settings.pluginConfig[plugin.name] ?? {},
     events,
+    runtime: {
+      app: { name: appInfo.name, version: appInfo.version },
+      paths: { home: agentHome(), cache: cacheDir() },
+      credentials: { load: loadCredential, save: saveCredential },
+      protectSecret: protectSecretValue,
+    },
     signal,
     registerTool: (tool) => apply(() => registerTool(tool)),
     unregisterTool: (tool) => apply(() => unregisterTool(tool)),

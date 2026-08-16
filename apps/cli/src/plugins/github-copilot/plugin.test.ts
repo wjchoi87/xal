@@ -8,6 +8,12 @@ function context(config: Record<string, unknown>): PluginContext {
   return {
     config,
     events,
+    runtime: {
+      app: { name: "xal", version: "test" },
+      paths: { home: "/tmp/xal", cache: "/tmp/xal/cache" },
+      credentials: { load: async () => undefined, save: async () => {} },
+      protectSecret() {},
+    },
     signal: new AbortController().signal,
     registerTool() {},
     unregisterTool() {},

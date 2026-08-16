@@ -1,3 +1,6 @@
+import { mkdir, rmdir, stat } from "node:fs/promises"
+import { dirname } from "node:path"
+import { setTimeout as sleep } from "node:timers/promises"
 import { readJsonFile, writeSecureJson } from "../lib/fs"
 import { asNumber, asString, isRecord } from "../lib/json"
 import { replaceSecretValues } from "../secrets/redactor"
@@ -68,9 +71,42 @@ export async function loadCredential(providerId: string): Promise<Credential | u
   return (await loadProviders())[providerId]
 }
 
+async function acquireCredentialLock(): Promise<() => Promise<void>> {
+  const path = `${credentialsPath()}.lock`
+  await mkdir(dirname(path), { recursive: true })
+  const deadline = Date.now() + 10_000
+  while (true) {
+    try {
+      await mkdir(path)
+      return () => rmdir(path)
+    } catch (error) {
+      if (!isRecord(error) || error.code !== "EEXIST") throw error
+    }
+
+    try {
+      const info = await stat(path)
+      if (Date.now() - info.mtimeMs > 10_000) {
+        await rmdir(path)
+        continue
+      }
+    } catch (error) {
+      if (!isRecord(error) || (error.code !== "ENOENT" && error.code !== "ENOTDIR")) throw error
+      continue
+    }
+
+    if (Date.now() >= deadline) throw new Error(`timed out waiting for credential lock ${path}`)
+    await sleep(25)
+  }
+}
+
 export async function saveCredential(providerId: string, credential: Credential): Promise<void> {
-  const providers = await loadProviders()
-  providers[providerId] = credential
-  await writeSecureJson(credentialsPath(), { providers })
-  replaceSecretValues("credentials", secretValues(providers))
+  const release = await acquireCredentialLock()
+  try {
+    const providers = await loadProviders()
+    providers[providerId] = credential
+    await writeSecureJson(credentialsPath(), { providers })
+    replaceSecretValues("credentials", secretValues(providers))
+  } finally {
+    await release()
+  }
 }
