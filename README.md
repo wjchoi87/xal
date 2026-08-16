@@ -2,6 +2,8 @@
 
 A terminal coding harness with a headless agent core where every capability, is a plugin
 
+Powered by [OpenTUI](https://github.com/anomalyco/opentui)
+
 ## Development
 
 ```bash
