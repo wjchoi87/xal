@@ -15,6 +15,7 @@ import { asNumber, asString, isRecord } from "../../../lib/json"
 import type { ImageInput, UserInput } from "../../../providers/types"
 import { findSkillReferences, type SkillQuery } from "../../../skills/references"
 import { fileMention, type FileQuery } from "../file-search"
+import { FOOTER_ICON_WIDTH } from "../lib/footer-grid"
 import { label, row } from "../lib/renderables"
 import type { MessageHistory } from "../message-history"
 import { COLORS, resolveColor } from "../theme/colors"
@@ -124,7 +125,12 @@ export class Composer {
       ...border(COLORS.border),
     })
 
-    this.prompt = label(ctx, { content: "❯", width: 2, attributes: TextAttributes.BOLD, color: COLORS.accent })
+    this.prompt = label(ctx, {
+      content: "❯",
+      width: FOOTER_ICON_WIDTH,
+      attributes: TextAttributes.BOLD,
+      color: COLORS.accent,
+    })
     this.view.add(this.prompt)
     this.syntaxStyle = SyntaxStyle.create()
     this.imageStyleId = this.syntaxStyle.registerStyle("composer-image", { fg: resolveColor(COLORS.accent) })

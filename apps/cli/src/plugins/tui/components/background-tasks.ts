@@ -13,17 +13,20 @@ import {
 } from "../../../background/registry"
 import { describeError } from "../../../lib/error"
 import { redactText } from "../../../secrets/redactor"
+import { FOOTER_ICON_WIDTH, FOOTER_RIGHT_PADDING, FOOTER_TEXT_COLUMN } from "../lib/footer-grid"
 import { formatDuration, formatTokens } from "../lib/format"
 import { column, detailPanel, label, row } from "../lib/renderables"
 import { spinnerGlyph, spinnerHandle } from "../lib/spinner"
-import { firstLine, sanitize, terminalGlyph } from "../lib/text"
+import { firstLine, sanitize, sliceToWidth, terminalGlyph } from "../lib/text"
 import { COLORS } from "../theme/colors"
 import { muted, paint } from "../theme/styles"
 
 const MAX_VISIBLE = 5
 const PREVIEW_LINES = 8
 const PREVIEW_KEPT_CHARS = 4_000
-const GUTTER = 4
+const LEFT_PADDING = 2
+const GUTTER = FOOTER_TEXT_COLUMN - LEFT_PADDING
+const wordSegmenter = new Intl.Segmenter(undefined, { granularity: "word" })
 
 export interface BackgroundTasksActions {
   changed(): void
@@ -59,6 +62,22 @@ function rowId(entry: NavigatorRow): string {
   return entry.kind === "main" ? "main" : entry.task.id
 }
 
+function promptPreview(prompt: string): string {
+  const line = firstLine(redactText(prompt))
+  let words = 0
+  let end = 0
+  for (const segment of wordSegmenter.segment(line)) {
+    if (!segment.isWordLike) continue
+    words += 1
+    end = segment.index + segment.segment.length
+    if (words === 8) break
+  }
+  const markerEnd = line.slice(end).match(/^[\]>]+/u)?.[0].length ?? 0
+  const head = words === 0 ? sliceToWidth(line, 24) : line.slice(0, end + markerEnd)
+  const preview = head.trim().replace(/[.,;:!?…。，；：！？、"'’”»›]+$/u, "")
+  return `${preview}...`
+}
+
 export class BackgroundTasks {
   readonly view: BoxRenderable
   private readonly overflow: BoxRenderable
@@ -82,12 +101,12 @@ export class BackgroundTasks {
     private readonly stopAllShortcut: string | undefined,
     private readonly primaryId: () => string,
   ) {
-    this.view = column(ctx, { paddingLeft: 2, paddingRight: 2 })
+    this.view = column(ctx, { paddingLeft: LEFT_PADDING, paddingRight: FOOTER_RIGHT_PADDING })
     this.overflow = row(this.ctx, { height: 1, visible: false })
     this.overflow.add(label(this.ctx, { content: "", width: GUTTER }))
     this.overflowText = label(this.ctx, { content: "", color: COLORS.faint })
     this.overflow.add(this.overflowText)
-    this.hints = row(this.ctx, { height: 1, visible: false })
+    this.hints = row(this.ctx, { height: 1, visible: false, marginTop: 1 })
     this.hints.add(label(this.ctx, { content: "", width: GUTTER }))
     this.hintText = label(this.ctx, { content: "", color: COLORS.faint })
     this.hints.add(this.hintText)
@@ -104,7 +123,7 @@ export class BackgroundTasks {
     if (this.rows.length === 0) return 0
     const visible = Math.min(this.rows.length, MAX_VISIBLE)
     const overflow = this.rows.length > MAX_VISIBLE ? 1 : 0
-    const hints = this.focusedFlag ? 1 : 0
+    const hints = this.focusedFlag ? 2 : 0
     const selected = this.rows[this.selected]
     const preview = this.expanded && selected?.kind === "task" ? selected.previewLabels.length : 0
     return 1 + visible + overflow + hints + preview
@@ -268,11 +287,11 @@ export class BackgroundTasks {
   private rowRenderables(): RowRenderables {
     const view = column(this.ctx, {})
     const header = row(this.ctx, { height: 1, alignItems: "center" })
-    const cursor = label(this.ctx, { content: "", width: 2, color: COLORS.accent })
-    const glyph = label(this.ctx, { content: "", width: 2 })
+    const cursor = label(this.ctx, { content: "", width: GUTTER - FOOTER_ICON_WIDTH, color: COLORS.accent })
+    const glyph = label(this.ctx, { content: "", width: FOOTER_ICON_WIDTH })
     const text = label(this.ctx, { content: "", flexGrow: 1, flexShrink: 1, minWidth: 1 })
     const status = label(this.ctx, { content: "", flexShrink: 0, marginLeft: 1 })
-    const discover = label(this.ctx, { content: "", flexShrink: 0, marginLeft: 2, color: COLORS.faint })
+    const discover = label(this.ctx, { content: "", flexShrink: 0, color: COLORS.faint })
     header.add(cursor)
     header.add(glyph)
     header.add(text)
@@ -308,7 +327,10 @@ export class BackgroundTasks {
       entry.cursor.content = this.focusedFlag && active ? terminalGlyph("❯", ">") : ""
       if (entry.kind === "main") this.renderMain(entry, active)
       else this.renderTask(entry, active)
-      entry.discover.content = !this.focusedFlag && index === this.offset ? `↓ ${hasAgents ? "agents" : "tasks"}` : ""
+      const discover = !this.focusedFlag && index === this.offset ? `↓ ${hasAgents ? "agents" : "tasks"}` : ""
+      entry.discover.content = discover
+      entry.discover.visible = discover.length > 0
+      entry.discover.marginLeft = discover ? 2 : 0
       this.renderPreview(entry, this.expanded && active)
     })
     const hidden = this.rows.length - (visibleEnd - this.offset)
@@ -374,10 +396,12 @@ export class BackgroundTasks {
           ? COLORS.success
           : COLORS.error
       entry.glyph.content = new StyledText([paint(glyphColor, glyph)])
-      const name = `${entry.task.id} · ${redactText(entry.task.role)} · ${firstLine(redactText(entry.task.title))}`
-      entry.text.content = active
-        ? new StyledText([paint(COLORS.accent, name)])
-        : new StyledText([state.running || viewed ? paint(COLORS.foreground, name) : muted(name)])
+      const id = active
+        ? paint(COLORS.accent, entry.task.id)
+        : state.running || viewed
+          ? paint(COLORS.foreground, entry.task.id)
+          : muted(entry.task.id)
+      entry.text.content = new StyledText([id, muted(` · ${promptPreview(entry.task.title)}`)])
       const snapshot = entry.task.snapshot()
       const tokens = snapshot.contextTokens ? ` · ↓ ${formatTokens(snapshot.contextTokens)} tokens` : ""
       const running = snapshot.queued

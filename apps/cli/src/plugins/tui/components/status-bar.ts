@@ -10,6 +10,7 @@ import type { AgentState } from "../../../agent/events"
 import type { PermissionMode } from "../../../permissions/types"
 import { occupiedContext, type ThinkingEffort, type Usage } from "../../../providers/types"
 import { redactText } from "../../../secrets/redactor"
+import { FOOTER_ICON_WIDTH, FOOTER_RIGHT_PADDING, FOOTER_TEXT_COLUMN } from "../lib/footer-grid"
 import { formatDuration, formatTokens } from "../lib/format"
 import { label, row } from "../lib/renderables"
 import { spinnerGlyph, spinnerHandle } from "../lib/spinner"
@@ -26,6 +27,10 @@ function modeColor(mode: PermissionMode): RGBA {
   if (mode === "yolo") return COLORS.error
   if (mode === "normal") return COLORS.accent
   return COLORS.warning
+}
+
+function alignedText(text: string): StyledText {
+  return new StyledText([muted(`${" ".repeat(FOOTER_ICON_WIDTH)}${text}`)])
 }
 
 export class StatusBar {
@@ -53,7 +58,11 @@ export class StatusBar {
     private mode: PermissionMode,
   ) {
     this.model = redactText(model)
-    this.view = row(ctx, { height: STATUS_ROWS, paddingLeft: 2, paddingRight: 2 })
+    this.view = row(ctx, {
+      height: STATUS_ROWS,
+      paddingLeft: FOOTER_TEXT_COLUMN - FOOTER_ICON_WIDTH,
+      paddingRight: FOOTER_RIGHT_PADDING,
+    })
     this.activity = label(ctx, { content: "", flexGrow: 1, flexShrink: 1 })
     this.backgroundLabel = label(ctx, { content: "", flexShrink: 0, marginLeft: 1 })
     this.modeLabel = label(ctx, { content: "", flexShrink: 0, marginLeft: 1 })
@@ -199,8 +208,8 @@ export class StatusBar {
   }
 
   private content(): StyledText {
-    if (this.hint) return new StyledText([muted(this.hint)])
-    if (this.notice) return new StyledText([muted(this.notice)])
+    if (this.hint) return alignedText(this.hint)
+    if (this.notice) return alignedText(this.notice)
     if (this.loading) {
       return new StyledText([paint(COLORS.agent, spinnerGlyph()), muted(` ${this.loading}`)])
     }
