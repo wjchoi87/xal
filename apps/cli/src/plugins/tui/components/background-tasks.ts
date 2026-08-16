@@ -38,7 +38,6 @@ export interface BackgroundTasksActions {
 
 interface RowRenderables {
   view: BoxRenderable
-  cursor: TextRenderable
   glyph: TextRenderable
   text: TextRenderable
   status: TextRenderable
@@ -107,7 +106,6 @@ export class BackgroundTasks {
     this.overflowText = label(this.ctx, { content: "", color: COLORS.faint })
     this.overflow.add(this.overflowText)
     this.hints = row(this.ctx, { height: 1, visible: false, marginTop: 1 })
-    this.hints.add(label(this.ctx, { content: "", width: GUTTER }))
     this.hintText = label(this.ctx, { content: "", color: COLORS.faint })
     this.hints.add(this.hintText)
     this.view.add(this.overflow)
@@ -287,12 +285,10 @@ export class BackgroundTasks {
   private rowRenderables(): RowRenderables {
     const view = column(this.ctx, {})
     const header = row(this.ctx, { height: 1, alignItems: "center" })
-    const cursor = label(this.ctx, { content: "", width: GUTTER - FOOTER_ICON_WIDTH, color: COLORS.accent })
     const glyph = label(this.ctx, { content: "", width: FOOTER_ICON_WIDTH })
     const text = label(this.ctx, { content: "", flexGrow: 1, flexShrink: 1, minWidth: 1 })
     const status = label(this.ctx, { content: "", flexShrink: 0, marginLeft: 1 })
     const discover = label(this.ctx, { content: "", flexShrink: 0, color: COLORS.faint })
-    header.add(cursor)
     header.add(glyph)
     header.add(text)
     header.add(status)
@@ -301,7 +297,7 @@ export class BackgroundTasks {
     const preview = detailPanel(this.ctx, { marginLeft: GUTTER })
     preview.visible = false
     view.add(preview)
-    return { view, cursor, glyph, text, status, discover, preview, previewLabels: [] }
+    return { view, glyph, text, status, discover, preview, previewLabels: [] }
   }
 
   private createMainRow(): MainRow {
@@ -324,7 +320,6 @@ export class BackgroundTasks {
         return
       }
       const active = index === this.selected
-      entry.cursor.content = this.focusedFlag && active ? terminalGlyph("❯", ">") : ""
       if (entry.kind === "main") this.renderMain(entry, active)
       else this.renderTask(entry, active)
       const discover = !this.focusedFlag && index === this.offset ? `↓ ${hasAgents ? "agents" : "tasks"}` : ""
