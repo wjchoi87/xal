@@ -59,14 +59,14 @@ export function indexPage(shell: Shell, documents: Document[]): string {
     ${rail(documents, undefined)}
     <main class="docs-body">
       <h1>Documentation</h1>
-      <p>Everything ${appInfo.name} reads from disk, and every knob it exposes.</p>
+      <p>Learn how to install, configure, extend, and operate ${appInfo.name}.</p>
       <ul class="docs-cards">${cards}</ul>
     </main>
   </div>`
 
   return shell({
     title: `${appInfo.name} documentation`,
-    description: `Configuration, plugins, hooks, skills and providers for ${appInfo.name}.`,
+    description: `Guides and reference documentation for installing, configuring, extending, and operating ${appInfo.name}.`,
     path: "/docs",
     body,
   })

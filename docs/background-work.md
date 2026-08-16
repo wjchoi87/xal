@@ -8,12 +8,12 @@ The `task` tool dispatches a batch of up to 8 independent assignments. Each assi
 
 Each task declares its `access`:
 
-- `read` — the agent runs in a read-only mode and cannot modify files.
-- `write` — the agent inherits the parent's permission mode. With `isolation: "worktree"` it works in its own Git worktree and branch; otherwise it edits the shared checkout.
+- `read`: the agent runs in a read-only mode and cannot modify files.
+- `write`: the agent inherits the parent's permission mode. With `isolation: "worktree"` it works in its own Git worktree and branch; otherwise it edits the shared checkout.
 
 Dispatching any `write` task asks for approval. Sub-agents cannot ask for approval themselves; any action that would need it is denied automatically. Each agent runs until it produces a final report, reaches the `agents.timeoutMinutes` deadline, or exceeds its turn budget: after `agents.maxTurns` completed turns the agent is told to wrap up, and at 1.5× the budget its last report is returned as-is instead of running forever.
 
-A finished agent's report is delivered into the parent conversation automatically as a system notice — no polling needed. Alongside the in-conversation result, every agent writes two durable files into the session directory:
+A finished agent's report is delivered into the parent conversation automatically as a system notice, with no polling needed. Alongside the in-conversation result, every agent writes two durable files into the session directory:
 
 - a Markdown task record (`agent-<id>-….md`) with the assignment, workspace, final report, and buffered transcript
 - a full transcript log (`agent-<id>-….log`) written incrementally while the agent runs, so nothing is lost even if the process dies; logs cap at 64 MB and are marked `(capped)` past that
@@ -55,11 +55,13 @@ Navigator keys:
 | `x` / `k` | Stop a running job, or dismiss a finished row              |
 | `esc`     | Close the viewer, collapse the preview, or leave           |
 
-The viewer takes over the screen and follows the job's output live. While it is open, `↑`/`↓` keep moving the selection in the list below and `enter` switches the viewer to the selected job (or closes it on the viewed row), so you can hop between running agents without leaving the viewer. `pgup`/`pgdn` scroll the transcript, `home` jumps to the top, and `end` returns to the bottom and resumes following (scrolling up pauses following and shows `· paused`). For a running agent, `i` opens a steering input — type guidance and press `enter` to queue it into the agent's current turn; the transcript marks it as `User guidance`.
+The viewer takes over the screen and follows the job's output live. While it is open, `↑`/`↓` keep moving the selection in the list below and `enter` switches the viewer to the selected job (or closes it on the viewed row), so you can hop between running agents without leaving the viewer. `pgup`/`pgdn` scroll the transcript, `home` jumps to the top, and `end` returns to the bottom and resumes following (scrolling up pauses following and shows `· paused`). For a running agent, `i` opens a steering input, type guidance and press `enter` to queue it into the agent's current turn; the transcript marks it as `User guidance`.
 
 `agents.stop-all` (default `ctrl+x ctrl+k`) stops every running agent at once.
 
 ## Configuration
+
+Every field in the top-level `agents` object must be an integer and is validated strictly.
 
 | Option                  | Default | Range   | Description                                             |
 | ----------------------- | ------- | ------- | ------------------------------------------------------- |
@@ -67,4 +69,4 @@ The viewer takes over the screen and follows the job's output live. While it is 
 | `agents.timeoutMinutes` | `10`    | `1–60`  | Hard deadline per task agent.                           |
 | `agents.maxTurns`       | `24`    | `1–100` | Soft turn budget; agents are told to wrap up beyond it. |
 
-See [Configuration](/docs/configs) for where these options live and how project and user configuration merge.
+Set these values in the top-level `agents` object. See [Configuration](/docs/configs) for file locations and merge behavior.

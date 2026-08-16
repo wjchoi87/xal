@@ -35,6 +35,10 @@ xal update
 
 Use `xal update --beta` or `xal update --stable` to switch channels. See the [installation and release guide](docs/install.md) for custom paths and the release process.
 
+## Documentation
+
+The [documentation](https://xal.sh/docs) covers configuration, the TUI, permissions, providers, integrations, plugins, reusable instructions, commands and skills, goals, and background work. The Markdown sources live in [`docs`](docs).
+
 ## Install Locally
 
 ```bash
