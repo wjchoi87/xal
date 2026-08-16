@@ -416,6 +416,7 @@ export async function isLoggedIn(): Promise<boolean> {
 export async function ensureAccessToken(forceRefresh = false): Promise<{ access: string; accountId: string }> {
   const credential = await loadCredential(PROVIDER_ID)
   if (credential?.type !== "oauth") throw new Error(`not logged in — run: ${appInfo.name} connect chatgpt`)
+  if (!credential.accountId) throw new Error("stored ChatGPT credentials have no account id; run /connect again")
   if (!forceRefresh && credential.expires - 60_000 > Date.now()) {
     return { access: credential.access, accountId: credential.accountId }
   }
@@ -435,5 +436,6 @@ export async function ensureAccessToken(forceRefresh = false): Promise<{ access:
     refreshPromises.set(credential.refresh, refresh)
   }
   const next = await refresh
+  if (!next.accountId) throw new Error("refreshed ChatGPT credentials have no account id")
   return { access: next.access, accountId: next.accountId }
 }

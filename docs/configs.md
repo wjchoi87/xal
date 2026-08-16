@@ -32,7 +32,7 @@ Commands that save model, thinking, or TUI display preferences write the user fi
 
 Malformed `permissions`, `modes`, `redaction`, or `agents` configuration fails startup instead of silently running without those rules.
 
-Built-in provider IDs are `openai-chatgpt`, `github-copilot`, `deepseek`, and `alibaba-cloud`. `chatgpt` is an alias for `openai-chatgpt`, `copilot` is an alias for `github-copilot`, and `dashscope` is an alias for `alibaba-cloud`. The only built-in UI ID is `tui`. Plugins may register more providers, aliases, and UIs.
+Built-in provider IDs are `openai-chatgpt`, `anthropic`, `github-copilot`, `deepseek`, and `alibaba-cloud`. `chatgpt` is an alias for `openai-chatgpt`, `claude` is an alias for `anthropic`, `copilot` is an alias for `github-copilot`, and `dashscope` is an alias for `alibaba-cloud`. The only built-in UI ID is `tui`. Plugins may register more providers, aliases, and UIs.
 
 ### Agents
 
@@ -405,6 +405,14 @@ Connected resource catalogs, resource templates, and prompts are exposed through
 
 Alibaba Cloud Model Studio API keys are region-specific. Set `baseUrl` to the OpenAI-compatible API Host shown when the key is created. Coding Plan keys use `https://coding-intl.dashscope.aliyuncs.com/v1`. `/connect` stores the key without making a billable model request; the first turn validates that the key, endpoint, and selected model are compatible.
 
+### `anthropic`
+
+| Option       | Type   | Default                  | Description                                   |
+| ------------ | ------ | ------------------------ | --------------------------------------------- |
+| `clientName` | string | Package application name | Client name used for API-key request headers. |
+
+Run `<name> connect claude` and choose either an Anthropic API key or a Claude Pro/Max subscription. Browser login listens on `127.0.0.1:53692`; the paste-callback option supports remote and headless environments. Subscription access tokens refresh automatically. Both modes use Anthropic's Messages API and support Claude thinking, images, tool calls, and prompt caching.
+
 ### `github-copilot`
 
 | Option             | Type   | Default                  | Description                                                  |
@@ -480,6 +488,9 @@ Every option is optional. A configuration using all currently supported built-in
     },
     "alibaba-cloud": {
       "baseUrl": "https://coding-intl.dashscope.aliyuncs.com/v1"
+    },
+    "anthropic": {
+      "clientName": "xal"
     },
     "github-copilot": {
       "enterpriseDomain": "github.example.com"

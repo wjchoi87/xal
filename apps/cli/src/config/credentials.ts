@@ -8,7 +8,7 @@ export interface OAuthCredential {
   access: string
   refresh: string
   expires: number
-  accountId: string
+  accountId?: string
 }
 
 export interface ApiKeyCredential {
@@ -36,8 +36,8 @@ function parseCredential(raw: unknown): Credential | undefined {
   const refresh = asString(raw.refresh)
   const expires = asNumber(raw.expires)
   const accountId = asString(raw.accountId)
-  if (!access || !refresh || expires === undefined || !accountId) return undefined
-  return { type: "oauth", access, refresh, expires, accountId }
+  if (!access || !refresh || expires === undefined) return undefined
+  return { type: "oauth", access, refresh, expires, ...(accountId ? { accountId } : {}) }
 }
 
 async function loadProviders(): Promise<Record<string, Credential>> {

@@ -1,5 +1,6 @@
 import type { Plugin } from "./types"
 import alibabaCloud from "./alibaba-cloud/plugin"
+import anthropic from "./anthropic/plugin"
 import ask from "./ask/plugin"
 import codeReview from "./code-review/plugin"
 import deepseek from "./deepseek/plugin"
@@ -27,6 +28,7 @@ export const builtinPlugins: Plugin[] = [
   mcp,
   deepseek,
   alibabaCloud,
+  anthropic,
   githubCopilot,
   openaiChatgpt,
   ask,
