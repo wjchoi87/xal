@@ -23,20 +23,36 @@ jobs:
         include:
           - target: bun-darwin-x64-baseline
             asset: xal-darwin-x64
+            os: darwin
+            cpu: x64
           - target: bun-darwin-arm64
             asset: xal-darwin-arm64
+            os: darwin
+            cpu: arm64
           - target: bun-linux-x64-baseline
             asset: xal-linux-x64
+            os: linux
+            cpu: x64
           - target: bun-linux-arm64
             asset: xal-linux-arm64
+            os: linux
+            cpu: arm64
           - target: bun-linux-x64-baseline-musl
             asset: xal-linux-x64-musl
+            os: linux
+            cpu: x64
           - target: bun-linux-arm64-musl
             asset: xal-linux-arm64-musl
+            os: linux
+            cpu: arm64
           - target: bun-windows-x64-baseline
             asset: xal-windows-x64.exe
+            os: win32
+            cpu: x64
           - target: bun-windows-arm64
             asset: xal-windows-arm64.exe
+            os: win32
+            cpu: arm64
     steps:
       - uses: actions/checkout@v4
         with:
@@ -46,7 +62,7 @@ jobs:
         with:
           bun-version: 1.3.14
 
-      - run: bun install --frozen-lockfile
+      - run: bun install --frozen-lockfile --os="${{ matrix.os }}" --cpu="${{ matrix.cpu }}"
 
       - name: Compile
         env:

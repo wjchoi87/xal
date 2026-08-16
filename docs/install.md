@@ -66,10 +66,3 @@ Run the **Release stable** workflow manually with:
 - `version`: the stable version to publish, such as `0.0.1`.
 
 The workflow verifies that the beta is a published prerelease reachable from `main` and that its base version matches the requested stable version. It checks out the beta's resolved commit, rebuilds every target with the stable version embedded, and publishes `vX.Y.Z` as the latest stable GitHub release. Existing stable tags cannot be overwritten.
-
-## Installer deployment
-
-`.github/workflows/website.yml` deploys website and documentation changes to Cloudflare, including the installer served at `https://xal.sh/install`. Configure these repository secrets before enabling the workflow:
-
-- `CLOUDFLARE_ACCOUNT_ID`
-- `CLOUDFLARE_API_TOKEN`
