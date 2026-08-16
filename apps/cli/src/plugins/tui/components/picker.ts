@@ -8,6 +8,7 @@ import {
   type TextRenderable,
 } from "@opentui/core"
 import type { SelectOption } from "../../../commands/types"
+import { fuzzyScore } from "../lib/fuzzy"
 import { column, label, row } from "../lib/renderables"
 import { displayWidth, terminalGlyph, truncateToWidth } from "../lib/text"
 import { COLORS } from "../theme/colors"
@@ -16,24 +17,23 @@ import { background, border, inputColors, muted, paint } from "../theme/styles"
 const PICKER_CHROME_ROWS = 3
 const MAX_ROWS = 8
 const MAX_LABEL_WIDTH = 44
+const DETAIL_WEIGHT = 0.4
 
-function fuzzyContains(haystack: string, needle: string): boolean {
-  let offset = 0
-  for (const character of needle) {
-    const index = haystack.indexOf(character, offset)
-    if (index === -1) return false
-    offset = index + 1
-  }
-  return true
+function score(option: SelectOption<unknown>, query: string): number | undefined {
+  return fuzzyScore(query, [
+    { text: option.label, weight: 1 },
+    { text: `${option.detail} ${option.note ?? ""}`, weight: DETAIL_WEIGHT },
+  ])
 }
 
-function matches(option: SelectOption<unknown>, query: string): boolean {
-  const haystack = `${option.label} ${option.detail} ${option.note ?? ""}`.toLowerCase()
-  return query
-    .toLowerCase()
-    .split(/\s+/)
-    .filter(Boolean)
-    .every((term) => fuzzyContains(haystack, term))
+function rank(options: SelectOption<unknown>[], query: string): number[] {
+  return options
+    .flatMap((option, index) => {
+      const value = score(option, query)
+      return value === undefined ? [] : [{ index, value }]
+    })
+    .sort((left, right) => right.value - left.value || left.index - right.index)
+    .map((match) => match.index)
 }
 
 export class Picker {
@@ -179,9 +179,14 @@ export class Picker {
 
   private filter(query: string): void {
     const previous = this.rowCount
-    this.items = this.all.flatMap((option, index) => (matches(option, query) ? [index] : []))
-    this.selected = 0
-    this.offset = 0
+    this.items = rank(this.all, query)
+    this.selected = query.trim()
+      ? 0
+      : Math.max(
+          0,
+          this.items.findIndex((index) => this.all[index]?.active),
+        )
+    this.offset = Math.max(0, this.selected - MAX_ROWS + 1)
     this.render()
     if (this.rowCount !== previous) this.onChange()
   }

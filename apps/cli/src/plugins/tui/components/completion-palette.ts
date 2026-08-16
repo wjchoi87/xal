@@ -14,6 +14,7 @@ import { skillQuery, type SkillQuery } from "../../../skills/references"
 import { listSkills } from "../../../skills/registry"
 import type { Skill } from "../../../skills/types"
 import { fileQuery, type FileQuery, WorkspaceFileIndex } from "../file-search"
+import { fuzzyScore } from "../lib/fuzzy"
 import { column, label, row } from "../lib/renderables"
 import { displayWidth, truncateToWidth } from "../lib/text"
 import { COLORS } from "../theme/colors"
@@ -24,6 +25,7 @@ export const PALETTE_CHROME_ROWS = 3
 const MAX_ROWS = 6
 const MAX_FILE_RESULTS = 20
 const NAME_WIDTH = 22
+const BASENAME_WEIGHT = 1.5
 const TICKER_INTERVAL_MS = 120
 const TICKER_PAUSE_FRAMES = 8
 
@@ -46,28 +48,11 @@ interface CompletionPaletteActions {
   error(message: string): void
 }
 
-function fuzzyRank(query: string, candidate: string): number | undefined {
-  if (!query) return 0
-  const needle = query.toLowerCase()
-  const value = candidate.toLowerCase()
-  let at = 0
-  let previous: number | undefined
-  let score = 0
-  for (const character of needle) {
-    const offset = value.indexOf(character, at)
-    if (offset < 0) return undefined
-    score += previous === offset ? 20 : 1
-    at = offset + character.length
-    previous = at
-  }
-  return score - value.length
-}
-
 function skillCompletions(query: string): Completion[] {
   return listSkills()
     .filter((skill) => redactText(skill.name) === skill.name)
     .flatMap((skill) => {
-      const rank = fuzzyRank(query, skill.name)
+      const rank = fuzzyScore(query, [{ text: skill.name, weight: 1 }])
       return rank === undefined ? [] : [{ skill, rank }]
     })
     .sort((left, right) => right.rank - left.rank || left.skill.name.localeCompare(right.skill.name))
@@ -96,10 +81,11 @@ interface RankedFile {
 
 function rankFile(query: string, path: string): RankedFile | undefined {
   if (redactText(path) !== path) return undefined
-  const pathRank = fuzzyRank(query, path)
-  if (pathRank === undefined) return undefined
-  const nameRank = fuzzyRank(query, basename(path))
-  return { path, rank: Math.max(pathRank, nameRank === undefined ? pathRank : nameRank + 30) }
+  const rank = fuzzyScore(query, [
+    { text: path, weight: 1 },
+    { text: basename(path), weight: BASENAME_WEIGHT },
+  ])
+  return rank === undefined ? undefined : { path, rank }
 }
 
 function compareFiles(left: RankedFile, right: RankedFile): number {
