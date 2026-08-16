@@ -15,9 +15,8 @@ import { firstLine, sanitize, sliceToWidth, terminalGlyph, truncateToWidth } fro
 import { COLORS } from "../theme/colors"
 import { border, muted, paint } from "../theme/styles"
 
-const MIN_ROWS = 3
+const MIN_ROWS = 8
 const HORIZONTAL_PADDING = 2
-const MAX_BUFFERED_ROWS = 2_000
 const ANCHOR_CHARS = 64
 
 interface TranscriptCache {
@@ -65,11 +64,13 @@ function styledLine(line: string): StyledText | string {
 
 export class JobViewer {
   readonly view: BoxRenderable
+  private readonly title: TextRenderable
   private readonly role: TextRenderable
   private readonly metrics: TextRenderable
   private readonly body: BoxRenderable
   private readonly guidance: BoxRenderable
   private readonly guidanceText: TextRenderable
+  private readonly hint: TextRenderable
   private readonly lines: TextRenderable[] = []
   private task: BackgroundTask | undefined
   private currentHeight = 0
@@ -84,13 +85,16 @@ export class JobViewer {
   ) {
     this.view = column(ctx, {
       visible: false,
-      border: ["top"],
-      titleAlignment: "right",
-      titleColor: COLORS.accent,
       paddingLeft: HORIZONTAL_PADDING,
       paddingRight: HORIZONTAL_PADDING,
-      ...border(COLORS.accent),
     })
+    this.title = label(ctx, {
+      content: "",
+      height: 1,
+      attributes: TextAttributes.BOLD,
+      color: COLORS.accent,
+    })
+    this.view.add(this.title)
     const meta = row(ctx, { height: 1 })
     this.role = label(ctx, {
       content: "",
@@ -103,7 +107,15 @@ export class JobViewer {
     meta.add(this.role)
     meta.add(this.metrics)
     this.view.add(meta)
-    this.body = column(ctx, { flexGrow: 1, minHeight: 1, overflow: "hidden" })
+    this.body = column(ctx, {
+      flexGrow: 1,
+      minHeight: 3,
+      marginTop: 1,
+      marginBottom: 1,
+      border: ["top", "bottom"],
+      overflow: "hidden",
+      ...border(COLORS.border),
+    })
     this.view.add(this.body)
     this.guidance = row(ctx, { height: 1, visible: false })
     this.guidance.add(label(ctx, { content: `${terminalGlyph("❯", ">")} steer: `, flexShrink: 0, color: COLORS.agent }))
@@ -113,6 +125,12 @@ export class JobViewer {
       label(ctx, { content: "Enter send · Esc cancel", flexShrink: 0, marginLeft: 1, color: COLORS.faint }),
     )
     this.view.add(this.guidance)
+    this.hint = label(ctx, {
+      content: "↑↓ line · PgUp/PgDn page · Home/End jump · Esc agents",
+      height: 1,
+      color: COLORS.faint,
+    })
+    this.view.add(this.hint)
   }
 
   get visible(): boolean {
@@ -152,6 +170,12 @@ export class JobViewer {
     }
     const page = Math.max(1, this.lines.length - 1)
     switch (name) {
+      case "up":
+        this.scrollFromBottom += 1
+        break
+      case "down":
+        this.scrollFromBottom = Math.max(0, this.scrollFromBottom - 1)
+        break
       case "pageup":
         this.scrollFromBottom += page
         break
@@ -184,7 +208,7 @@ export class JobViewer {
   }
 
   private layoutBody(): void {
-    const bodyRows = Math.max(1, this.currentHeight - 2 - (this.guidanceActive ? 1 : 0))
+    const bodyRows = Math.max(1, this.currentHeight - 7)
     while (this.lines.length > bodyRows) {
       const removed = this.lines.pop()!
       this.body.remove(removed)
@@ -199,6 +223,7 @@ export class JobViewer {
 
   private syncGuidance(): void {
     this.guidance.visible = this.guidanceActive
+    this.hint.visible = !this.guidanceActive
     this.guidanceText.content = this.guidanceValue || new StyledText([muted("type guidance for this agent")])
     this.layoutBody()
     this.refresh()
@@ -209,6 +234,7 @@ export class JobViewer {
     this.guidanceActive = false
     this.guidanceValue = ""
     this.guidance.visible = false
+    this.hint.visible = true
     if (this.task) {
       this.layoutBody()
       this.refresh()
@@ -266,7 +292,6 @@ export class JobViewer {
       cache.rows.push(...wrapped)
       cache.rowCount += wrapped.length
     }
-    if (cache.rows.length > MAX_BUFFERED_ROWS) cache.rows.splice(0, cache.rows.length - MAX_BUFFERED_ROWS)
   }
 
   private renderedRows(cache: TranscriptCache): string[] {
@@ -322,8 +347,7 @@ export class JobViewer {
       partial: "",
       rowCount: 0,
     }
-    const budget = MAX_BUFFERED_ROWS * Math.max(10, width)
-    this.appendRows(cache, redactText(text.length > budget ? text.slice(-budget) : text))
+    this.appendRows(cache, redactText(text))
     this.cache = cache
     if (pausedViewport) this.restorePausedViewport(cache, pausedViewport)
     return cache
@@ -364,8 +388,9 @@ export class JobViewer {
     if (!task) return
     const state = task.state()
     const width = Math.max(10, this.ctx.terminalWidth - HORIZONTAL_PADDING * 2)
-    this.view.title = truncateToWidth(firstLine(redactText(task.title)), Math.max(10, Math.floor(width * 0.6)))
+    this.title.content = truncateToWidth(firstLine(redactText(task.title)), width)
     this.header(task, state.running, !state.running && state.ok)
+    this.hint.content = `↑↓ line · PgUp/PgDn page · Home/End jump${this.steerable ? " · i steer" : ""} · Esc agents`
     const cache = this.syncCache(task, width)
     const partialRows = cache.partial ? wrapLine(sanitize(cache.partial), width) : []
     const renderedRowCount = cache.rowCount + partialRows.length

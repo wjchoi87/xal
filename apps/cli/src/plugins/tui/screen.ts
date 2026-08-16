@@ -38,6 +38,8 @@ export interface ScreenActions extends PermissionPopoverActions, ElicitationPopo
 
 const SCROLLBACK_GAP_ROWS = 1
 
+type ScreenPage = { kind: "main" } | { kind: "job" }
+
 export class Screen {
   readonly view: BoxRenderable
   private readonly mainPanel: BoxRenderable
@@ -61,6 +63,7 @@ export class Screen {
   private paletteBelow = true
   private reserved = 0
   private agentActivityDirty = false
+  private page: ScreenPage = { kind: "main" }
   private sessionTitle: string | undefined
   private cwd: string
 
@@ -204,6 +207,7 @@ export class Screen {
   }
 
   requestApproval(suggestion: string | undefined): void {
+    this.tasks.closeViewer()
     this.config.hide()
     this.picker.hide()
     this.permission.show(suggestion)
@@ -216,6 +220,7 @@ export class Screen {
   }
 
   requestElicitation(requestId: string, questions: ElicitationQuestion[]): void {
+    this.tasks.closeViewer()
     this.config.hide()
     this.picker.hide()
     this.elicitation.show(requestId, questions)
@@ -336,7 +341,20 @@ export class Screen {
 
   syncFooter(): void {
     const overlaid = this.overlayVisible
-    this.shortcutHelp.setCovered(overlaid)
+    const jobPage = this.page.kind === "job"
+    this.shortcutHelp.setCovered(overlaid || jobPage)
+    if (jobPage) {
+      this.palette.dismiss()
+      this.reserved = 0
+      this.composer.setVisible(false)
+      this.composer.blur()
+      this.statusBar.view.visible = false
+      this.tasks.view.visible = false
+      this.jobViewer.resize(this.renderer.terminalHeight)
+      return
+    }
+    this.statusBar.view.visible = true
+    this.tasks.view.visible = true
     if (overlaid !== this.overlaid) {
       this.overlaid = overlaid
       this.composer.setVisible(!overlaid)
@@ -350,6 +368,8 @@ export class Screen {
         this.picker.blur()
         this.composer.focus()
       }
+    } else {
+      this.composer.setVisible(!overlaid)
     }
     if (overlaid) this.palette.dismiss()
     this.statusBar.setHint(this.palette.visible ? "↑↓ · Tab · Enter · Esc" : undefined)
@@ -363,15 +383,6 @@ export class Screen {
           : this.picker.visible
             ? this.picker.height
             : this.config.height
-    if (this.jobViewer.visible) {
-      this.palette.dismiss()
-      this.reserved = 0
-      const chrome =
-        (overlaid ? overlayRows : this.composer.rows + this.shortcutHelp.height) + STATUS_ROWS + this.tasks.height
-      this.jobViewer.resize(this.renderer.terminalHeight - chrome)
-      this.renderer.footerHeight = this.jobViewer.height + chrome
-      return
-    }
     const paletteRows = this.palette.visible ? this.palette.height : 0
     if (this.paletteBelow || overlaid) this.reserved = 0
     else this.reserved = Math.max(this.reserved, paletteRows)
@@ -459,13 +470,27 @@ export class Screen {
   }
 
   private viewJob(task: BackgroundTask | undefined): void {
-    const wasVisible = this.jobViewer.visible
-    if (task) this.jobViewer.show(task)
-    else this.jobViewer.hide()
-    const mainVisible = task === undefined
-    this.mainPanel.visible = mainVisible
-    if (!mainVisible) this.palette.dismiss()
+    if (task) {
+      const entering = this.page.kind === "main"
+      this.page = { kind: "job" }
+      this.jobViewer.show(task)
+      this.mainPanel.visible = false
+      this.palette.dismiss()
+      if (entering) {
+        this.scrollback.setActive(false)
+        this.renderer.externalOutputMode = "passthrough"
+        this.renderer.screenMode = "alternate-screen"
+      }
+      this.syncFooter()
+      return
+    }
+    if (this.page.kind === "main") return
+    this.page = { kind: "main" }
+    this.jobViewer.hide()
+    this.mainPanel.visible = true
     this.syncFooter()
-    if (mainVisible && wasVisible) this.replayAgentActivity()
+    this.renderer.screenMode = "split-footer"
+    this.renderer.externalOutputMode = "capture-stdout"
+    this.scrollback.setActive(true)
   }
 }

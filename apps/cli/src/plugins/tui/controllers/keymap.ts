@@ -75,6 +75,7 @@ export function bindKeys(renderer: CliRenderer, deps: KeymapDeps): void {
   }
 
   function active(action: ShortcutAction, key: KeyEvent, first: ShortcutStroke): boolean {
+    if (screen.jobViewer.visible) return action === "agents.stop-all"
     switch (action) {
       case "agents.open":
         return screen.tasks.count > 0 && !screen.overlayVisible

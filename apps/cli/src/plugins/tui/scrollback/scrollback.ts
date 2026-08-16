@@ -9,8 +9,8 @@ const FLUSH_MS = 50
 
 interface Stream {
   block: StreamBlock
-  surface: ScrollbackSurface
-  text: TextRenderable
+  surface?: ScrollbackSurface
+  text?: TextRenderable
   committed: number
   flushedAt: number
   redactor: RedactedStream
@@ -56,6 +56,7 @@ export class Scrollback {
   private reasoningVisible: boolean
   private committed = 0
   private origin: number
+  private active = true
   private userBackground = userMessageBackground(COLORS.background)
 
   constructor(
@@ -79,6 +80,21 @@ export class Scrollback {
     if (this.userBackground.equals(next)) return false
     this.userBackground = next
     return this.blocks.some((block) => block.kind === "user")
+  }
+
+  setActive(active: boolean): void {
+    if (this.active === active) return
+    this.active = active
+    if (!active) {
+      this.stream?.surface?.destroy()
+      if (this.stream) {
+        this.stream.surface = undefined
+        this.stream.text = undefined
+        this.stream.committed = 0
+      }
+      return
+    }
+    this.replay()
   }
 
   append(block: Block): void {
@@ -109,7 +125,7 @@ export class Scrollback {
     const flushed = stream.block.text.length > 0
     if (flushed) this.flush(stream, true)
     else this.drop(stream.block)
-    stream.surface.destroy()
+    stream.surface?.destroy()
     return flushed
   }
 
@@ -118,7 +134,7 @@ export class Scrollback {
     this.blocks.length = 0
     this.header.length = 0
     this.reset()
-    this.renderer.resetSplitFooterForReplay({ clearSavedLines: true })
+    if (this.active) this.renderer.resetSplitFooterForReplay({ clearSavedLines: true })
   }
 
   clearTranscript(): void {
@@ -145,9 +161,10 @@ export class Scrollback {
   }
 
   replay(): void {
+    if (!this.active) return
     const streaming = this.stream
     if (streaming) {
-      streaming.surface.destroy()
+      streaming.surface?.destroy()
       this.stream = undefined
     }
     this.renderer.resetSplitFooterForReplay({ clearSavedLines: true })
@@ -176,7 +193,7 @@ export class Scrollback {
     this.endStream()
     const previous = this.blocks.findLast((candidate) => this.visible(candidate))
     this.blocks.push(block)
-    this.emit(block, previous)
+    if (this.active) this.emit(block, previous)
   }
 
   private drop(block: Block): void {
@@ -197,6 +214,7 @@ export class Scrollback {
   }
 
   private openRedactedStream(block: StreamBlock, redactor: RedactedStream): Stream {
+    if (!this.active) return { block, committed: 0, flushedAt: 0, redactor }
     const surface = this.renderer.createScrollbackSurface()
     const { view, text } = streamView(surface.renderContext, block)
     surface.root.add(view)
@@ -204,7 +222,7 @@ export class Scrollback {
   }
 
   private flush(stream: Stream, final: boolean): void {
-    if (!this.visible(stream.block)) return
+    if (!this.active || !stream.surface || !stream.text || !this.visible(stream.block)) return
     const rendered = streamContent(stream.block, contentWidth(stream.surface.renderContext))
     stream.text.content = rendered.content
     stream.text.height = rendered.rows
