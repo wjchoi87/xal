@@ -1,11 +1,19 @@
 import type { JsonObject } from "../lib/json"
+import type { GoalSnapshot } from "../goals/types"
 import type { HookAction, HookEvent } from "../hooks/types"
 import type { PermissionMode } from "../permissions/types"
 import type { ThinkingEffort, Usage, UserInput } from "../providers/types"
 import type { ElicitationQuestion, ProcessExecution, ToolEvent } from "../tools/types"
 
 export type AgentState =
-  "idle" | "streaming" | "awaiting_approval" | "awaiting_input" | "running_hook" | "running_tool" | "compacting"
+  | "idle"
+  | "streaming"
+  | "awaiting_approval"
+  | "awaiting_input"
+  | "running_hook"
+  | "running_tool"
+  | "compacting"
+  | "evaluating_goal"
 
 export type DenialCause = "user" | "policy" | "plan" | "hook"
 
@@ -62,6 +70,7 @@ export type AgentEvent =
   | ToolEvent
   | SessionStartedEvent
   | { type: "session_replay_finished" }
+  | { type: "goal_updated"; goal: GoalSnapshot }
   | { type: "session_title_changed"; title: string }
   | { type: "workspace_changed"; cwd: string; previous: string }
   | { type: "state_changed"; state: AgentState }

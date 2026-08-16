@@ -33,6 +33,11 @@ export interface TurnHost {
   drainTurnEndEvents(): ToolEvent[]
 }
 
+export interface TurnSummary {
+  usage: TurnUsage
+  usedTools: boolean
+}
+
 export async function runTurn(
   host: TurnHost,
   signal: AbortSignal,
@@ -40,8 +45,9 @@ export async function runTurn(
   model: string,
   thinking: ThinkingEffort | undefined,
   usage: TurnUsage,
-): Promise<void> {
+): Promise<TurnSummary | undefined> {
   const toolLoops = new ToolLoopDetector()
+  let usedTools = false
 
   while (true) {
     if (host.drainBackgroundResults()) toolLoops.reset()
@@ -73,9 +79,10 @@ export async function runTurn(
       }
       const final = items.findLast((item) => item.type === "assistant_message")
       await endTurn(host, usage, final?.type === "assistant_message" ? final.text : undefined, signal)
-      return
+      return { usage, usedTools }
     }
 
+    usedTools = true
     let loopError: Error | undefined
     let requiresContinuation = false
     let sharedEntries: ToolCallEntry[] = []
@@ -128,7 +135,7 @@ export async function runTurn(
         continue
       }
       await endTurn(host, usage, contract.output, signal)
-      return
+      return { usage, usedTools }
     }
     if (contract?.exhausted) throw contract.failure()
 
@@ -141,7 +148,7 @@ export async function runTurn(
       const final = items.findLast((item) => item.type === "assistant_message")
       if (final?.type === "assistant_message") {
         await endTurn(host, usage, final.text, signal)
-        return
+        return { usage, usedTools }
       }
     }
   }

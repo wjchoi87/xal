@@ -1,6 +1,7 @@
 import { appInfo } from "../app-info"
 import { registerCli } from "../cli/registry"
 import type { Cli } from "../cli/types"
+import { parseGoalPrompt } from "../goals/invocation"
 import { describeError } from "../lib/error"
 import { readJsonFile } from "../lib/fs"
 import { defaultPermissionMode, isPermissionMode, permissionModes } from "../permissions/modes"
@@ -9,7 +10,7 @@ import type { AgentSession } from "./session/session"
 import { createSession } from "./session/compose"
 import type { AgentEvent } from "./events"
 import { parseOutputSchema, type OutputSchema } from "./session/output-contract"
-import { runAgentTurn, type AgentRunOutcome } from "./run"
+import { runAgentGoal, runAgentTurn, type AgentRunOutcome } from "./run"
 
 type OutputFormat = "text" | "json" | "jsonl"
 interface RunOptions {
@@ -99,7 +100,7 @@ function parseArgs(args: string[]): RunOptions {
 function printHelp(print: (line: string) => void): void {
   print(`usage: ${usage()}`)
   print("")
-  print("Run one agent turn without starting the TUI.")
+  print("Run one agent prompt or a /goal completion loop without starting the TUI.")
   print("")
   print("  --format text|json|jsonl  final text, one JSON result, or live JSONL events")
   print(`  --mode ${permissionModes().join("|")}  permission mode (default: ${defaultPermissionMode})`)
@@ -159,7 +160,7 @@ function runSession(
   print: (line: string) => void,
   error: (line: string) => void,
 ): Promise<AgentRunOutcome> {
-  return runAgentTurn(session, { text: prompt, images: [] }, (event) => {
+  const handle = (event: AgentEvent): void => {
     if (format === "jsonl") printJson(print, event)
 
     if (event.type === "approval_requested") {
@@ -173,7 +174,11 @@ function runSession(
       )
     }
     if (event.type === "error" && format !== "jsonl") error(event.message)
-  })
+  }
+  const goal = parseGoalPrompt(prompt)
+  if (goal?.type === "set") return runAgentGoal(session, goal.condition, handle)
+  if (goal) return Promise.resolve({ status: "failed", response: "", error: "headless /goal requires a condition" })
+  return runAgentTurn(session, { text: prompt, images: [] }, handle)
 }
 
 function result(outcome: AgentRunOutcome, session: AgentSession): RunResult {
@@ -195,7 +200,7 @@ function result(outcome: AgentRunOutcome, session: AgentSession): RunResult {
 const runCli: Cli = {
   name: "run",
   usage: "run [prompt]",
-  describe: "run one prompt without the TUI",
+  describe: "run one prompt or goal loop without the TUI",
   async run(args, ctx) {
     const options = parseArgs(args)
     if (options.help) {

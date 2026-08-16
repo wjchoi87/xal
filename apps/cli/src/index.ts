@@ -10,6 +10,7 @@ import type { CliContext } from "./cli/types"
 import { loadCredentialSecrets } from "./config/credentials"
 import { loadSettings, type Settings } from "./config/settings"
 import { registerWorktreeTools } from "./git/worktree-tools"
+import { registerGoals } from "./goals/register"
 import { registerHookCommands } from "./hooks/commands"
 import { describeError } from "./lib/error"
 import { registerPermissions } from "./permissions/register"
@@ -49,6 +50,7 @@ function registerCore(settings: Settings): void {
   registerBasePrompt()
   registerPermissions(settings)
   registerRedaction(settings)
+  registerGoals()
   registerPlans()
   registerTasks()
   registerSkills()

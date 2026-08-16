@@ -146,12 +146,14 @@ interface SessionAsyncHost {
   ownerId(): string
   onResultsQueued(): void
   onAgentWorkSettled(): void
+  onAsyncWorkSettled(): void
 }
 
 export class SessionAsyncState {
   private epoch = 0
   private queue: BackgroundResult[] = []
   private agentWorkPending = false
+  private asyncWorkPending = false
   private unregister: (() => void) | undefined
   private unregisterTasks: (() => void) | undefined
 
@@ -164,21 +166,32 @@ export class SessionAsyncState {
       deliver: (job) => this.accept(job),
     })
     this.agentWorkPending = this.hasPendingAgentWork()
-    this.unregisterTasks = subscribeBackgroundTasks(() => this.agentWorkChanged())
+    this.asyncWorkPending = this.hasPendingAsyncWork()
+    this.unregisterTasks = subscribeBackgroundTasks(() => this.workChanged())
   }
 
-  private agentWorkChanged(): void {
-    if (this.hasPendingAgentWork()) {
-      this.agentWorkPending = true
-      return
-    }
-    if (!this.agentWorkPending) return
+  private workChanged(): void {
+    this.agentWorkPending = this.notifyWhenSettled(
+      this.agentWorkPending,
+      () => this.hasPendingAgentWork(),
+      () => this.host.onAgentWorkSettled(),
+    )
+    this.asyncWorkPending = this.notifyWhenSettled(
+      this.asyncWorkPending,
+      () => this.hasPendingAsyncWork(),
+      () => this.host.onAsyncWorkSettled(),
+    )
+  }
+
+  private notifyWhenSettled(was: boolean, pending: () => boolean, notify: () => void): boolean {
+    if (pending()) return true
+    if (!was) return false
     const epoch = this.epoch
     queueMicrotask(() => {
-      if (epoch !== this.epoch || !this.agentWorkPending || this.hasPendingAgentWork()) return
-      this.agentWorkPending = false
-      this.host.onAgentWorkSettled()
+      if (epoch !== this.epoch || pending()) return
+      notify()
     })
+    return false
   }
 
   private accept(job: BackgroundJob): boolean {
@@ -230,6 +243,7 @@ export class SessionAsyncState {
     this.unregister?.()
     this.unregisterTasks?.()
     this.agentWorkPending = false
+    this.asyncWorkPending = false
     this.unregister = undefined
     this.unregisterTasks = undefined
   }

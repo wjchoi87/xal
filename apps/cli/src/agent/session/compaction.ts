@@ -1,23 +1,16 @@
 import { resolveThinking } from "../../config/thinking"
 import { describeError } from "../../lib/error"
-import {
-  profileProviderFirstEvent,
-  profileProviderRequestFinished,
-  profileProviderRequestStarted,
-} from "../../profiler/profiler"
 import { contextWindow, findModel } from "../../providers/catalog"
 import { prepareConversation } from "../../providers/conversation"
+import { collectStreamedText } from "../../providers/streamed-text"
 import type {
   ConversationItem,
   Provider,
   ProviderPrompt,
   ProviderReplay,
   ThinkingEffort,
-  Usage,
   UserMessageItem,
 } from "../../providers/types"
-import { redactStreamRequest } from "../../secrets/data"
-import { redactText } from "../../secrets/redactor"
 import type { AgentEvent, AgentState } from "../events"
 import { activeHistory, conversationOnly, directShellMessage, type CompactionItem, type HistoryItem } from "../history"
 import type { SessionKind } from "../types"
@@ -162,54 +155,23 @@ function summaryRequest(instructions: string | undefined): UserMessageItem {
 export async function summarizeHistory(request: SummaryRequest): Promise<string> {
   const target = { provider: request.provider.id, model: request.historyModel ?? request.model }
   const input = prepareConversation([...activeHistory(request.history), summaryRequest(request.instructions)], target)
-  const profile = profileProviderRequestStarted(
-    request.sessionId,
-    request.kind ?? "primary",
-    "compaction",
-    request.provider.id,
-    request.model,
-    request.thinking,
-    1,
-  )
-
-  let streamed = ""
-  let settled = ""
-  let received = false
-  let usage: Usage | undefined
-  try {
-    for await (const event of request.provider.stream(
-      redactStreamRequest({
-        model: request.model,
-        ...(request.historyModel === undefined ? {} : { conversationModel: request.historyModel }),
-        thinking: request.thinking,
-        ...request.prompt,
-        input,
-        toolChoice: "none",
-        sessionId: request.sessionId,
-        signal: request.signal,
-      }),
-    )) {
-      if (!received) {
-        received = true
-        profileProviderFirstEvent(profile, event.type)
-      }
-      if (event.type === "text_delta") streamed += event.text
-      if (event.type === "item_done" && event.item.type === "assistant_message") settled += event.item.text
-      if (event.type === "done") usage = event.usage
-    }
-
-    const summary = (settled || streamed).trim()
-    if (!summary) throw new Error(`${request.provider.name} returned an empty summary`)
-    profileProviderRequestFinished(profile, "completed", usage)
-    return redactText(summary)
-  } catch (error) {
-    profileProviderRequestFinished(
-      profile,
-      request.signal.aborted || (error instanceof Error && error.name === "AbortError") ? "interrupted" : "failed",
-      usage,
-    )
-    throw error
-  }
+  const result = await collectStreamedText({
+    provider: request.provider,
+    kind: request.kind,
+    phase: "compaction",
+    emptyResponseMessage: `${request.provider.name} returned an empty summary`,
+    request: {
+      model: request.model,
+      ...(request.historyModel === undefined ? {} : { conversationModel: request.historyModel }),
+      thinking: request.thinking,
+      ...request.prompt,
+      input,
+      toolChoice: "none",
+      sessionId: request.sessionId,
+      signal: request.signal,
+    },
+  })
+  return result.text
 }
 
 const MAX_COMPACTION_FAILURES = 2

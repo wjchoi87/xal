@@ -31,6 +31,10 @@ export interface AgentSettings {
   maxTurns: number
 }
 
+export interface GoalSettings {
+  evaluatorModels: Record<string, string>
+}
+
 export interface Settings {
   plugins: string[]
   provider?: string
@@ -38,6 +42,7 @@ export interface Settings {
   ui?: string
   permissions: PermissionSettings
   modes: Record<string, ModeSettings>
+  goal: GoalSettings
   redaction: RedactionSettings
   agents: AgentSettings
   pluginConfig: Record<string, Record<string, unknown>>
@@ -50,6 +55,7 @@ let current: Settings = {
   plugins: [],
   permissions: { allow: [], ask: [], deny: [] },
   modes: {},
+  goal: { evaluatorModels: {} },
   redaction: { values: [], environment: [] },
   agents: { ...AGENT_DEFAULTS },
   pluginConfig: {},
@@ -130,6 +136,24 @@ function strictStringArray(value: unknown, path: string): string[] {
   return asStringArray(value)
 }
 
+export function parseGoalSettings(value: unknown): GoalSettings {
+  if (value === undefined) return { evaluatorModels: {} }
+  if (!isRecord(value)) throw new Error("goal must be an object")
+  const unknown = Object.keys(value).find((key) => key !== "evaluatorModels")
+  if (unknown) throw new Error(`goal.${unknown} is not supported`)
+  if (value.evaluatorModels === undefined) return { evaluatorModels: {} }
+  if (!isRecord(value.evaluatorModels)) throw new Error("goal.evaluatorModels must be an object")
+  const evaluatorModels: Record<string, string> = {}
+  for (const [provider, model] of Object.entries(value.evaluatorModels)) {
+    if (!provider.trim()) throw new Error("goal.evaluatorModels provider IDs must not be empty")
+    if (typeof model !== "string" || !model.trim()) {
+      throw new Error(`goal.evaluatorModels.${provider} must be a non-empty string`)
+    }
+    evaluatorModels[provider] = model
+  }
+  return { evaluatorModels }
+}
+
 function parseSettings(raw: Record<string, unknown>): Settings {
   const plugins = asStringArray(raw.plugins)
   const permissions = sectionRecord(raw, "permissions")
@@ -174,6 +198,7 @@ function parseSettings(raw: Record<string, unknown>): Settings {
       deny: strictStringArray(permissions.deny, "permissions.deny"),
     },
     modes,
+    goal: parseGoalSettings(raw.goal),
     redaction: {
       values: strictStringArray(redaction.values, "redaction.values"),
       environment: strictStringArray(redaction.environment, "redaction.environment"),

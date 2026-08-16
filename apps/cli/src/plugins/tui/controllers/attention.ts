@@ -1,8 +1,24 @@
 import type { AgentEvent, AgentState } from "../../../agent/events"
+import type { GoalSnapshot, GoalSuspensionCause } from "../../../goals/types"
 import { describeError } from "../../../lib/error"
 import { isNotificationSeparator, notificationExcerpt, notificationSequence, progressSequence } from "../notification"
 
-type NotificationOutcome = "Completed" | "Interrupted" | "Failed"
+type NotificationOutcome = "Completed" | "Suspended" | "Interrupted" | "Failed"
+
+function suspensionOutcome(cause: GoalSuspensionCause): NotificationOutcome {
+  switch (cause) {
+    case "interruption":
+      return "Interrupted"
+    case "turn_failure":
+    case "evaluator_failure":
+      return "Failed"
+    case "no_progress":
+    case "history_movement":
+      return "Suspended"
+  }
+  const exhaustive: never = cause
+  return exhaustive
+}
 
 export class AttentionController {
   private active = false
@@ -10,6 +26,7 @@ export class AttentionController {
   private destroyed = false
   private excerpt = ""
   private flushScheduled = false
+  private goalActive = false
   private outcomeQueued = false
   private readonly pending: string[] = []
   private replaying = false
@@ -50,7 +67,11 @@ export class AttentionController {
         }
         this.observeText(event.text)
         return
+      case "goal_updated":
+        this.observeGoal(event.goal)
+        return
       case "turn_ended":
+        if (this.goalActive) return
         this.finish("Completed")
         return
       case "turn_interrupted":
@@ -101,6 +122,31 @@ export class AttentionController {
     this.destroyed = true
   }
 
+  private observeGoal(goal: GoalSnapshot): void {
+    switch (goal.status) {
+      case "active":
+        this.goalActive = true
+        return
+      case "suspended":
+        this.goalActive = false
+        this.finish(suspensionOutcome(goal.suspensionCause))
+        return
+      case "achieved":
+        this.goalActive = false
+        this.finish("Completed")
+        return
+      case "impossible":
+        this.goalActive = false
+        this.finish("Failed")
+        return
+      case "cleared":
+        this.goalActive = false
+        return
+    }
+    const exhaustive: never = goal
+    return exhaustive
+  }
+
   private observeState(state: AgentState): void {
     switch (state) {
       case "idle":
@@ -113,6 +159,7 @@ export class AttentionController {
       case "awaiting_input":
       case "running_hook":
       case "running_tool":
+      case "evaluating_goal":
         this.start()
         return
     }
@@ -140,6 +187,7 @@ export class AttentionController {
     this.stop()
     this.assistantDeltaPending = false
     this.excerpt = ""
+    this.goalActive = false
     this.outcomeQueued = false
     this.separatorPending = false
   }

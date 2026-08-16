@@ -1,6 +1,7 @@
 import type { AgentEvent, BackgroundResult, DenialCause, DirectShellResult } from "../agent/events"
 import type { CompactionItem, HistoryItem } from "../agent/history"
 import { isMessageId } from "../agent/message-id"
+import { parseGoalSnapshot } from "../goals/types"
 import type { HookAction, HookEvent } from "../hooks/types"
 import { asBoolean, asNumber, asString, isJsonObject, isRecord } from "../lib/json"
 import { defaultPermissionMode, isPermissionMode } from "../permissions/modes"
@@ -199,6 +200,10 @@ function parseEvent(raw: unknown): AgentEvent | undefined {
     case "plan_updated": {
       const plan = parseSessionPlan(raw.plan)
       return plan ? { type: "plan_updated", plan } : undefined
+    }
+    case "goal_updated": {
+      const goal = parseGoalSnapshot(raw.goal)
+      return goal ? { type: "goal_updated", goal } : undefined
     }
     case "user_message": {
       const text = asString(raw.text)

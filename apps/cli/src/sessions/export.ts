@@ -1,5 +1,7 @@
 import { appInfo } from "../app-info"
 import type { AgentEvent, BackgroundResult } from "../agent/events"
+import type { GoalSnapshot } from "../goals/types"
+import type { Usage } from "../providers/types"
 import type { SessionMeta } from "./types"
 
 export interface SessionExport {
@@ -24,6 +26,50 @@ function backgroundResult(result: BackgroundResult): string {
   const title =
     result.kind === "agent" ? `Agent ${result.id}: ${result.task}` : `Background shell ${result.id}: ${result.command}`
   return `### ${title}\n\nStatus: ${result.status}\n\n${indented(result.output)}`
+}
+
+function goalUsage(usage: Usage): string[] {
+  return [
+    `- Total tokens: ${(usage.totalInputTokens ?? 0) + (usage.outputTokens ?? 0)}`,
+    `- Input tokens: ${usage.totalInputTokens ?? 0}`,
+    `- Cache-read input tokens: ${usage.cacheReadInputTokens ?? 0}`,
+    `- Cache-write input tokens: ${usage.cacheWriteInputTokens ?? 0}`,
+    `- Output tokens: ${usage.outputTokens ?? 0}`,
+  ]
+}
+
+function goalTransition(goal: GoalSnapshot): { title: string; details: string[] } {
+  switch (goal.status) {
+    case "active":
+      return { title: goal.evaluatedTurns === 0 ? "Goal started" : "Goal evaluator progress", details: [] }
+    case "suspended":
+      return {
+        title: "Goal suspended",
+        details: [`- Suspended: ${new Date(goal.suspendedAt).toISOString()}`, `- Cause: ${goal.suspensionCause}`],
+      }
+    case "achieved":
+      return { title: "Goal achieved", details: [`- Ended: ${new Date(goal.endedAt).toISOString()}`] }
+    case "impossible":
+      return { title: "Goal impossible", details: [`- Ended: ${new Date(goal.endedAt).toISOString()}`] }
+    case "cleared":
+      return { title: "Goal cleared", details: [`- Ended: ${new Date(goal.endedAt).toISOString()}`] }
+  }
+}
+
+function renderGoal(goal: GoalSnapshot): string {
+  const transition = goalTransition(goal)
+  const metrics = [
+    `- ID: \`${goal.id}\``,
+    `- Status: ${goal.status}`,
+    `- Started: ${new Date(goal.startedAt).toISOString()}`,
+    ...transition.details,
+    `- Evaluated turns: ${goal.evaluatedTurns}`,
+    `- Evaluator model: ${goal.evaluatorModel}`,
+    `- Consecutive no-tool turns: ${goal.consecutiveNoToolTurns}`,
+    ...goalUsage(goal.usage),
+  ]
+  const reason = goal.lastReason === undefined ? "" : `\n\nEvaluator reason:\n\n${indented(goal.lastReason)}`
+  return `## ${transition.title}\n\nCondition:\n\n${indented(goal.condition)}\n\n${metrics.join("\n")}${reason}`
 }
 
 function renderEvent(event: AgentEvent): string | undefined {
@@ -58,6 +104,8 @@ function renderEvent(event: AgentEvent): string | undefined {
       return `## Session title changed\n\n${event.title}`
     case "plan_updated":
       return `## Plan: ${event.plan.status}\n\n${event.plan.markdown}`
+    case "goal_updated":
+      return renderGoal(event.goal)
     case "task_list_updated":
       return `## Tasks\n\n${event.tasks.map((task) => `- [${task.status === "completed" ? "x" : " "}] ${task.step} (${task.status})`).join("\n")}`
     case "hook_finished":

@@ -7,6 +7,7 @@ import {
   type TextRenderable,
 } from "@opentui/core"
 import type { AgentState } from "../../../agent/events"
+import type { GoalSnapshot } from "../../../goals/types"
 import type { PermissionMode } from "../../../permissions/types"
 import { occupiedContext, type ThinkingEffort, type Usage } from "../../../providers/types"
 import { redactText } from "../../../secrets/redactor"
@@ -20,6 +21,7 @@ import { muted, paint } from "../theme/styles"
 export const STATUS_ROWS = 1
 
 const WIDE = 64
+type GoalIndicator = { status: "active"; startedAt: number } | { status: "suspended" }
 type TurnOutcome = "completed" | "failed" | "interrupted"
 
 function modeColor(mode: PermissionMode): RGBA {
@@ -37,9 +39,12 @@ export class StatusBar {
   readonly view: BoxRenderable
   private readonly activity: TextRenderable
   private readonly backgroundLabel: TextRenderable
+  private readonly goalLabel: TextRenderable
   private readonly modeLabel: TextRenderable
   private readonly meta: TextRenderable
   private readonly spinner = spinnerHandle(() => this.render())
+  private goal: GoalIndicator | undefined
+  private goalTimer: ReturnType<typeof setInterval> | undefined
   private state: AgentState = "idle"
   private hint: string | undefined
   private loading: string | undefined
@@ -65,6 +70,7 @@ export class StatusBar {
     })
     this.activity = label(ctx, { content: "", flexGrow: 1, flexShrink: 1 })
     this.backgroundLabel = label(ctx, { content: "", flexShrink: 0, marginLeft: 1 })
+    this.goalLabel = label(ctx, { content: "", flexShrink: 0, marginLeft: 1 })
     this.modeLabel = label(ctx, { content: "", flexShrink: 0, marginLeft: 1 })
     this.meta = label(ctx, {
       content: this.model,
@@ -74,6 +80,7 @@ export class StatusBar {
     })
     this.view.add(this.activity)
     this.view.add(this.backgroundLabel)
+    this.view.add(this.goalLabel)
     this.view.add(this.meta)
     this.view.add(this.modeLabel)
     this.renderMode()
@@ -81,7 +88,10 @@ export class StatusBar {
       this.renderMeta()
       this.render()
     }
-    this.view.on(RenderableEvents.DESTROYED, () => this.spinner.stop())
+    this.view.on(RenderableEvents.DESTROYED, () => {
+      this.spinner.stop()
+      this.stopGoalTimer()
+    })
     this.render()
   }
 
@@ -103,6 +113,34 @@ export class StatusBar {
   setBackground(summary: string | undefined): void {
     this.backgroundLabel.content =
       summary === undefined ? "" : new StyledText([paint(COLORS.agent, summary), muted(" ·")])
+  }
+
+  resetGoal(): void {
+    this.goal = undefined
+    this.stopGoalTimer()
+    this.renderGoal()
+  }
+
+  setGoal(goal: GoalSnapshot): void {
+    switch (goal.status) {
+      case "active":
+        this.goal = { status: "active", startedAt: goal.startedAt }
+        this.startGoalTimer()
+        this.renderGoal()
+        return
+      case "suspended":
+        this.goal = { status: "suspended" }
+        this.stopGoalTimer()
+        this.renderGoal()
+        return
+      case "achieved":
+      case "impossible":
+      case "cleared":
+        this.resetGoal()
+        return
+    }
+    const exhaustive: never = goal
+    return exhaustive
   }
 
   private renderMode(): void {
@@ -152,12 +190,20 @@ export class StatusBar {
   }
 
   private get busy(): boolean {
-    return (
-      this.state === "streaming" ||
-      this.state === "running_hook" ||
-      this.state === "running_tool" ||
-      this.state === "compacting"
-    )
+    switch (this.state) {
+      case "streaming":
+      case "running_hook":
+      case "running_tool":
+      case "compacting":
+      case "evaluating_goal":
+        return true
+      case "idle":
+      case "awaiting_approval":
+      case "awaiting_input":
+        return false
+    }
+    const exhaustive: never = this.state
+    return exhaustive
   }
 
   resetUsage(): void {
@@ -198,6 +244,37 @@ export class StatusBar {
     this.meta.content = `${this.model}${thinking} · ${formatTokens(tokens)}${share}`
   }
 
+  private renderGoal(): void {
+    const goal = this.goal
+    if (!goal) {
+      this.goalLabel.content = ""
+      return
+    }
+    switch (goal.status) {
+      case "active":
+        this.goalLabel.content = new StyledText([
+          paint(COLORS.agent, "◎"),
+          muted(` goal ${formatDuration(Date.now() - goal.startedAt)} ·`),
+        ])
+        return
+      case "suspended":
+        this.goalLabel.content = new StyledText([paint(COLORS.warning, "◎"), muted(" goal suspended ·")])
+        return
+    }
+    const exhaustive: never = goal
+    return exhaustive
+  }
+
+  private startGoalTimer(): void {
+    if (this.goalTimer) return
+    this.goalTimer = setInterval(() => this.renderGoal(), 1_000)
+  }
+
+  private stopGoalTimer(): void {
+    if (this.goalTimer) clearInterval(this.goalTimer)
+    this.goalTimer = undefined
+  }
+
   private toggleSpinner(active: boolean): void {
     if (active) this.spinner.start()
     else this.spinner.stop()
@@ -207,24 +284,41 @@ export class StatusBar {
     this.activity.content = this.content()
   }
 
+  private busyContent(activity: string): StyledText {
+    const hint = this.view.width > WIDE ? " · Esc interrupt" : ""
+    return new StyledText([paint(COLORS.agent, spinnerGlyph()), muted(` ${activity}${hint}`)])
+  }
+
+  private stateContent(): StyledText | undefined {
+    switch (this.state) {
+      case "awaiting_approval":
+        return new StyledText([paint(COLORS.warning, "!"), muted(" Approval needed · choose above")])
+      case "awaiting_input":
+        return new StyledText([paint(COLORS.agent, "?"), muted(" Input needed · answer above")])
+      case "compacting":
+        return this.busyContent("Compacting context")
+      case "running_hook":
+        return this.busyContent("Running hooks")
+      case "evaluating_goal":
+        return this.busyContent("Evaluating goal")
+      case "streaming":
+      case "running_tool":
+        return this.busyContent("Working")
+      case "idle":
+        return undefined
+    }
+    const exhaustive: never = this.state
+    return exhaustive
+  }
+
   private content(): StyledText {
     if (this.hint) return alignedText(this.hint)
     if (this.notice) return alignedText(this.notice)
     if (this.loading) {
       return new StyledText([paint(COLORS.agent, spinnerGlyph()), muted(` ${this.loading}`)])
     }
-    if (this.state === "awaiting_approval") {
-      return new StyledText([paint(COLORS.warning, "!"), muted(" Approval needed · choose above")])
-    }
-    if (this.state === "awaiting_input") {
-      return new StyledText([paint(COLORS.agent, "?"), muted(" Input needed · answer above")])
-    }
-    if (this.state !== "idle") {
-      const hint = this.view.width > WIDE ? " · Esc interrupt" : ""
-      const activity =
-        this.state === "compacting" ? "Compacting context" : this.state === "running_hook" ? "Running hooks" : "Working"
-      return new StyledText([paint(COLORS.agent, spinnerGlyph()), muted(` ${activity}${hint}`)])
-    }
+    const state = this.stateContent()
+    if (state) return state
     if (this.turnElapsed && this.turnOutcome === "completed") {
       return new StyledText([paint(COLORS.success, "✓"), muted(` Finished in ${this.turnElapsed}`)])
     }

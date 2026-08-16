@@ -1,6 +1,7 @@
 import { isAbsolute, join, parse } from "node:path"
 import type { AgentEvent, BackgroundResult, SessionStartedEvent } from "../agent/events"
 import type { HistoryItem } from "../agent/history"
+import type { GoalSnapshot } from "../goals/types"
 import type { SessionPlan } from "../plans/types"
 import { promptCacheKey } from "../providers/cache"
 import type {
@@ -132,6 +133,34 @@ function redactPlan(plan: SessionPlan): SessionPlan {
   }
 }
 
+function redactGoal(goal: GoalSnapshot): GoalSnapshot {
+  const condition = redactText(goal.condition)
+  switch (goal.status) {
+    case "active":
+      return {
+        ...goal,
+        condition,
+        ...(goal.lastReason === undefined ? {} : { lastReason: redactText(goal.lastReason) }),
+      }
+    case "suspended":
+      return {
+        ...goal,
+        condition,
+        ...(goal.lastReason === undefined ? {} : { lastReason: redactText(goal.lastReason) }),
+      }
+    case "achieved":
+      return { ...goal, condition, lastReason: redactText(goal.lastReason) }
+    case "impossible":
+      return { ...goal, condition, lastReason: redactText(goal.lastReason) }
+    case "cleared":
+      return {
+        ...goal,
+        condition,
+        ...(goal.lastReason === undefined ? {} : { lastReason: redactText(goal.lastReason) }),
+      }
+  }
+}
+
 function redactQuestions(questions: ElicitationQuestion[]): ElicitationQuestion[] {
   return questions.map((question) => ({
     ...question,
@@ -179,6 +208,8 @@ export function redactAgentEvent(event: AgentEvent): AgentEvent {
   switch (event.type) {
     case "plan_updated":
       return { type: "plan_updated", plan: redactPlan(event.plan) }
+    case "goal_updated":
+      return { type: "goal_updated", goal: redactGoal(event.goal) }
     case "task_list_updated":
       return {
         type: "task_list_updated",

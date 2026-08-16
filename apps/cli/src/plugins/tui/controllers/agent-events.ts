@@ -1,13 +1,53 @@
 import type { AgentSession } from "../../../agent/session/session"
 import type { AgentEvent } from "../../../agent/events"
 import { historyMoveNotice } from "../../../agent/history"
+import type { GoalSnapshot, GoalSuspensionCause } from "../../../goals/types"
 import { describeError } from "../../../lib/error"
 import { compactPath } from "../../../lib/path"
 import { contextWindow } from "../../../providers/catalog"
 import type { Screen } from "../screen"
 
+function suspensionLabel(cause: GoalSuspensionCause): string {
+  switch (cause) {
+    case "interruption":
+      return "interrupted"
+    case "turn_failure":
+      return "turn failed"
+    case "evaluator_failure":
+      return "evaluator failed"
+    case "no_progress":
+      return "no progress"
+    case "history_movement":
+      return "history moved"
+  }
+  const exhaustive: never = cause
+  return exhaustive
+}
+
+function goalTranscript(goal: GoalSnapshot, previousEvaluatedTurns: number): string | undefined {
+  switch (goal.status) {
+    case "active":
+      if (goal.evaluatedTurns <= previousEvaluatedTurns || !goal.lastReason) return undefined
+      return `goal not yet met · ${goal.lastReason}`
+    case "suspended": {
+      const reason = goal.suspensionCause === "no_progress" && goal.lastReason ? ` · ${goal.lastReason}` : ""
+      return `goal suspended · ${suspensionLabel(goal.suspensionCause)}${reason}`
+    }
+    case "achieved":
+      return goal.lastReason ? `goal achieved · ${goal.lastReason}` : "goal achieved"
+    case "impossible":
+      return goal.lastReason ? `goal impossible · ${goal.lastReason}` : "goal impossible"
+    case "cleared":
+      return undefined
+  }
+  const exhaustive: never = goal
+  return exhaustive
+}
+
 export class AgentEventController {
   private assistantStreamed = false
+  private goalEvaluatedTurns = 0
+  private goalId: string | undefined
   private reasoningStreamed = false
 
   constructor(
@@ -36,6 +76,15 @@ export class AgentEventController {
       case "task_list_updated":
         this.screen.taskList.set(event.tasks)
         break
+      case "goal_updated": {
+        if (event.goal.id !== this.goalId) this.goalEvaluatedTurns = 0
+        this.goalId = event.goal.id
+        const transcript = goalTranscript(event.goal, this.goalEvaluatedTurns)
+        this.goalEvaluatedTurns = event.goal.evaluatedTurns
+        statusBar.setGoal(event.goal)
+        if (transcript) scrollback.append({ kind: "info", text: transcript })
+        break
+      }
       case "plan_updated":
         if (event.plan.status === "draft" && !event.plan.feedback) {
           scrollback.append({ kind: "plan", path: compactPath(event.plan.path), text: event.plan.markdown })
@@ -48,8 +97,11 @@ export class AgentEventController {
         break
       case "session_started":
         this.assistantStreamed = false
+        this.goalEvaluatedTurns = 0
+        this.goalId = undefined
         this.reasoningStreamed = false
         this.screen.startSession(event.title, event.cwd, event.model, event.thinking, event.mode)
+        statusBar.resetGoal()
         this.trackContextWindow()
         break
       case "session_replay_finished":
@@ -233,6 +285,10 @@ export class AgentEventController {
       case "error":
         scrollback.append({ kind: "error", text: event.message })
         break
+      default: {
+        const exhaustive: never = event
+        return exhaustive
+      }
     }
   }
 }

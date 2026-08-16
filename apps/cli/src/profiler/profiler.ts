@@ -27,6 +27,12 @@ type AnonymousBackgroundResult =
 
 type AnonymousAgentEvent =
   | { type: "plan_updated"; status: "draft" | "approved" }
+  | {
+      type: "goal_updated"
+      status: Extract<AgentEvent, { type: "goal_updated" }>["goal"]["status"]
+      evaluatedTurns: number
+      usage: Usage
+    }
   | { type: "task_list_updated"; pending: number; inProgress: number; completed: number }
   | {
       type: "session_started"
@@ -133,7 +139,7 @@ type ProfileRecord =
   | { type: "job_created"; job: string }
   | { type: "job_finished"; job: string; outcome: JobOutcome }
 
-type ProviderPhase = "turn" | "compaction"
+export type ProviderPhase = "turn" | "compaction" | "goal_evaluation"
 type ProfileOutcome = "completed" | "failed" | "interrupted"
 type JobOutcome = "completed" | "failed" | "interrupted" | "timed_out"
 type ToolConcurrency = "shared" | "exclusive"
@@ -253,6 +259,13 @@ function anonymousAgentEvent(event: AgentEvent): AnonymousAgentEvent | undefined
   switch (event.type) {
     case "plan_updated":
       return { type: event.type, status: event.plan.status }
+    case "goal_updated":
+      return {
+        type: event.type,
+        status: event.goal.status,
+        evaluatedTurns: event.goal.evaluatedTurns,
+        usage: event.goal.usage,
+      }
     case "task_list_updated":
       return {
         type: event.type,
