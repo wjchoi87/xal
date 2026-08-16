@@ -1,3 +1,4 @@
+import { dirname, sep } from "node:path"
 import { runRg } from "../../lib/rg"
 
 export interface FileQuery {
@@ -46,6 +47,20 @@ export function fileMention(path: string, quoted: boolean): string {
   return quoted || /\s/.test(path) ? `@"${path}"` : `@${path}`
 }
 
+function workspacePaths(files: string[]): string[] {
+  const directories = new Set<string>()
+  for (const file of files) {
+    let directory = dirname(file)
+    while (directory !== ".") {
+      directories.add(`${directory}${sep}`)
+      const parent = dirname(directory)
+      if (parent === directory) break
+      directory = parent
+    }
+  }
+  return [...directories, ...files]
+}
+
 export class WorkspaceFileIndex {
   private cwd: string | undefined
   private files: string[] | undefined
@@ -67,7 +82,7 @@ export class WorkspaceFileIndex {
     const pending = runRg(["--files", "--hidden", "--null", "--glob", "!**/.git/**"], cwd, abort.signal, "\0").then(
       (result) => {
         if (result.aborted || generation !== this.generation) return []
-        this.files = result.lines.filter((path) => !/[\r\n"]/.test(path))
+        this.files = workspacePaths(result.lines.filter((path) => !/[\r\n"]/.test(path)))
         return this.files
       },
     )
