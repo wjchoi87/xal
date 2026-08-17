@@ -1,12 +1,15 @@
 import type { Plugin } from "./types"
 import alibabaCloud from "./alibaba-cloud/plugin"
+import anthropic from "./anthropic/plugin"
 import ask from "./ask/plugin"
 import codeReview from "./code-review/plugin"
 import deepseek from "./deepseek/plugin"
+import google from "./google/plugin"
 import files from "./files/plugin"
 import githubCopilot from "./github-copilot/plugin"
 import memory from "./memory/plugin"
 import openai from "./openai/plugin"
+import openrouter from "./openrouter/plugin"
 import promptCommands from "./prompt-commands/plugin"
 import projectInstructions from "./project-instructions/plugin"
 import lsp from "./lsp/plugin"
@@ -26,10 +29,13 @@ export const builtinPlugins: Plugin[] = [
   web,
   lsp,
   mcp,
+  anthropic,
+  google,
   deepseek,
   alibabaCloud,
   githubCopilot,
   openai,
+  openrouter,
   xai,
   ask,
   tui,

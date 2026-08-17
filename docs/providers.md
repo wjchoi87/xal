@@ -4,9 +4,9 @@ Connect a built-in or plugin-provided model service, select a model, and configu
 
 ## Built-in providers
 
-Built-in provider IDs are `openai`, `openai-chatgpt`, `github-copilot`, `xai`, `deepseek`, and `alibaba-cloud`. `chatgpt` is an alias for `openai-chatgpt`, `copilot` is an alias for `github-copilot`, `grok` is an alias for `xai`, and `dashscope` is an alias for `alibaba-cloud`.
+Built-in provider IDs are `anthropic`, `google`, `openai`, `openai-chatgpt`, `openrouter`, `github-copilot`, `xai`, `deepseek`, and `alibaba-cloud`. `claude` is an alias for `anthropic`, `gemini` is an alias for `google`, `chatgpt` is an alias for `openai-chatgpt`, `copilot` is an alias for `github-copilot`, `grok` is an alias for `xai`, and `dashscope` is an alias for `alibaba-cloud`.
 
-The only built-in UI ID is `tui`. Plugins may register more providers, aliases, and UIs. Anthropic support is available through the external [xal-anthropic](https://github.com/saeedvaziry/xal-anthropic) plugin.
+The only built-in UI ID is `tui`. Plugins may register more providers, aliases, and UIs.
 
 Each provider connection is stored as a named profile. Profile names are globally unique and case-insensitive, while an internal immutable ID keeps sessions, background workers, token refreshes, and caches bound to the same account after a rename.
 
@@ -27,7 +27,27 @@ The ChatGPT provider discovers the account-visible catalog from the authenticate
 
 GitHub Copilot discovers the models enabled for each connected subscription and stores the compatible subset in `<app-home>/cache/github-copilot-models-<profile-id>.json`, bound to the token and GitHub domain that produced it. It exposes tool-capable models that advertise `/chat/completions` or omit endpoint metadata. Models that explicitly advertise only Responses or Anthropic Messages remain hidden. Some Personal Copilot accounts leave every model-picker flag unset, so the canonical Personal endpoint falls back to explicitly policy-enabled compatible models. Enterprise endpoints keep strict picker visibility. If live discovery is unavailable, only that profile's matching validated cache is used; without one, model discovery fails.
 
+Anthropic discovers models from its authenticated `/models` endpoint and layers bundled context windows, output limits, and thinking options over the result because that endpoint reports none of them. Google Gemini discovers models from `/models`, keeps the ones that support `generateContent`, and reads each context window from the reported input token limit. OpenRouter discovers its full catalog from `/models` and reads context window, input modalities, and reasoning support directly from the response, so no bundled metadata is layered over it. Each of the three falls back to a small bundled catalog and reports the failure when live discovery is unavailable.
+
 xAI discovers models from its authenticated `/models` endpoint, hides the image, speech, and voice models that the chat endpoint rejects, and layers bundled context windows and thinking options over the result because that endpoint reports neither. The account's credential decides what the endpoint returns, so a Grok subscription and an API key each see their own catalog. DeepSeek discovers models from its authenticated `/models` endpoint and reports when it must use bundled model metadata. Alibaba Cloud uses a bundled catalog of Qwen models shared by Model Studio and Coding Plan.
+
+## Anthropic
+
+`pluginConfig.anthropic.clientName` is a non-empty string used in the provider request user agent. It defaults to the package application name. Anthropic currently has no other configuration options.
+
+Connect with an API key from the Anthropic Console. Reasoning controls depend on the model generation, because the two families accept different request shapes. Claude 4.6 and later take adaptive thinking with summarized reasoning plus an effort level; Claude 4.5 and earlier reject both and take an explicit thinking token budget instead, so Xal maps the selected effort onto a budget for them and omits the effort field. `none` disables thinking on either family. Xal never sends sampling parameters, because current Claude models reject them. Reasoning blocks are replayed to the same model with their signatures intact, so a thinking turn stays valid across later requests, and a turn that stops at the model output limit is reported as an error rather than returned as a short answer.
+
+## Google Gemini
+
+`pluginConfig.google.clientName` is a non-empty string used in the provider request user agent. It defaults to the package application name. Google Gemini currently has no other configuration options.
+
+Connect with an API key from Google AI Studio. Effort maps onto the reasoning control each model family accepts: Gemini 3 Pro takes only the low and high thinking levels, other Gemini 3 models take the full minimal-to-high range, and Gemini 2.x takes a thinking token budget instead of a level. `none` requests the lowest level each family allows, with thought summaries hidden, because Gemini 3 cannot disable thinking outright; Gemini 2.x disables it with a zero budget. Thought signatures are carried across streamed parts and replayed to the same model, so multi-step tool use keeps its reasoning context, and a response that stops for any reason other than normal completion is reported as an error.
+
+## OpenRouter
+
+`pluginConfig.openrouter.clientName` is a non-empty string used in the provider request user agent. It defaults to the package application name. OpenRouter currently has no other configuration options.
+
+Connect with an API key from openrouter.ai. Models are addressed by their OpenRouter IDs, such as `anthropic/claude-opus-5`. Efforts above `high` are clamped to `high`, which is the highest level OpenRouter accepts.
 
 ## Alibaba Cloud
 

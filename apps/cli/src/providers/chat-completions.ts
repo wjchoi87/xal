@@ -139,7 +139,7 @@ export function parseChatChunk(name: string, raw: unknown): ChatCompletionChunk 
   })
   return {
     text: asString(choice.delta.content),
-    reasoning: asString(choice.delta.reasoning_content),
+    reasoning: asString(choice.delta.reasoning_content) ?? asString(choice.delta.reasoning),
     toolCalls,
     finishReason: asString(choice.finish_reason),
     usage,
