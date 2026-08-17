@@ -298,7 +298,7 @@ export class Composer {
   reflow(): void {
     const totalRows = this.input.plainText ? this.input.editorView.getTotalVirtualLineCount() : 1
     const terminalRows = this.ctx.terminalHeight ?? this.ctx.height
-    const inputRows = Math.min(totalRows, Math.max(1, Math.min(10, terminalRows - 5)))
+    const inputRows = Math.min(totalRows, Math.max(1, terminalRows - 5))
     const rows = inputRows + 3
     if (rows === this.currentRows) return
     this.input.height = inputRows
