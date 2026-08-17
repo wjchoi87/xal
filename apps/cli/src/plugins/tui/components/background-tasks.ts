@@ -399,9 +399,13 @@ export class BackgroundTasks {
       entry.text.content = new StyledText([id, muted(` · ${promptPreview(entry.task.title)}`)])
       const snapshot = entry.task.snapshot()
       const tokens = snapshot.contextTokens ? ` · ↓ ${formatTokens(snapshot.contextTokens)} tokens` : ""
+      const turns = ` · ${snapshot.completedTurns}/${snapshot.turnBudget} turns`
+      const remaining = snapshot.remainingMs === undefined ? "" : ` · ${formatDuration(snapshot.remainingMs)} left`
       const running = snapshot.queued
         ? `queued ${formatDuration(snapshot.queuedMs)}`
-        : `${formatDuration(snapshot.elapsedMs)}${tokens}`
+        : snapshot.stopping
+          ? "stopping"
+          : `${formatDuration(snapshot.elapsedMs)}${tokens}${turns}${remaining}`
       entry.status.content = new StyledText([muted(state.running ? running : redactText(state.detail))])
       return
     }

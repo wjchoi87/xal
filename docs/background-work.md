@@ -41,7 +41,7 @@ Each task declares its `access`:
 - `read`: the agent runs in a read-only mode and cannot modify files.
 - `write`: the agent inherits the parent's permission mode. With `isolation: "worktree"` it works in its own Git worktree and branch; otherwise it edits the shared checkout.
 
-Dispatching any `write` task asks for approval. Sub-agents cannot ask for approval themselves; any action that would need it is denied automatically. Each agent runs until it produces a final report, reaches the `agents.timeoutMinutes` deadline, or exceeds its turn budget: after `agents.maxTurns` completed turns the agent is told to wrap up, and at 1.5× the budget its last report is returned as-is instead of running forever.
+Dispatching any `write` task asks for approval. Sub-agents cannot ask for approval themselves; any action that would need it is denied automatically. Each agent runs until it produces a final report, reaches the `agents.timeoutMinutes` deadline, or exceeds its turn budget: after `agents.maxTurns` completed turns the agent is told to wrap up, and at 1.5× the budget its last report is returned as-is instead of running forever. The primary agent can inspect both budgets while the task runs and extend its deadline, soft turn budget, or both before either limit is reached.
 
 A finished agent's report is delivered into the parent conversation automatically as a system notice, with no polling needed. Alongside the in-conversation result, every agent writes two durable files into the session directory:
 
@@ -56,22 +56,23 @@ A running foreground `bash` command can be promoted to a background job at any m
 
 ## Job tools
 
-The model manages jobs with four tools:
+The model manages jobs with five tools:
 
-| Tool         | Purpose                                                                                                     |
-| ------------ | ----------------------------------------------------------------------------------------------------------- |
-| `job_output` | Read new process output or collect an agent report explicitly; `wait` blocks up to 600s for output or exit. |
-| `job_status` | Inspect one job or list all: queue state, activity, idle time, elapsed and queued time, remaining deadline. |
-| `job_send`   | Queue guidance into a running task agent's current turn.                                                    |
-| `job_kill`   | Stop a job. A process that ignores the graceful stop is hard-killed after 2 seconds.                        |
+| Tool         | Purpose                                                                                                               |
+| ------------ | --------------------------------------------------------------------------------------------------------------------- |
+| `job_output` | Read new process output or collect an agent report explicitly; `wait` blocks up to 600s for output or exit.           |
+| `job_status` | Inspect one job or list all: queue state, activity, idle and elapsed time, turn usage and limits, remaining deadline. |
+| `job_send`   | Queue guidance into a running task agent's current turn.                                                              |
+| `job_extend` | Add up to 60 runtime minutes, 100 soft-budget turns, or both to a queued or running task agent per call.              |
+| `job_kill`   | Stop a job. A process that ignores the graceful stop is hard-killed after 2 seconds.                                  |
 
 Stopping a job from the TUI is never silent: the result is marked `stopped by the user` and still delivered so the model knows what happened. A task agent remains unsettled until its runner has finished cleanup and saved its task record.
 
 ## TUI surfaces
 
 - The status bar shows live counts (`2 agents · 1 job · …`) whenever background work exists.
-- Running agents are summarized above the composer with their current activity, tool count, and context tokens; queued agents show `queued <time>` instead of a running clock.
-- The navigator at the bottom lists every job: running rows first, then finished rows (newest first). Finished rows stay for 5 minutes so results remain reviewable, and jobs started by a sub-agent are attributed with `⟨agent-id⟩`.
+- Running agents are summarized above the composer with their current activity, idle time, tool count, context tokens, turn usage and limits, and remaining deadline; queued agents show `queued <time>` until their deadline starts.
+- The navigator at the bottom lists every job: running rows first, then finished rows (newest first). Running agent rows and the full viewer show live turn and deadline metrics. Finished rows stay for 5 minutes so results remain reviewable, and jobs started by a sub-agent are attributed with `⟨agent-id⟩`.
 
 Open the navigator with `/agents` (alias `/jobs`), the `agents.open` shortcut (default `ctrl+x ctrl+a`), or by pressing `↓` with an empty composer.
 

@@ -38,6 +38,8 @@ function agentJob(prefix: string): BackgroundAgentJob {
   const job = createAgentJob(prefix, {
     ownerId: "background-jobs-test",
     task: prefix,
+    timeoutMs: 60_000,
+    maxTurns: 24,
     stop: () => {},
     send: () => true,
   })
@@ -174,6 +176,8 @@ test("suppresses agent delivery before invoking a racing stop callback", async (
   const job = createAgentJob("test-agent-stop-race", {
     ownerId: "background-jobs-test",
     task: "finish while cancellation starts",
+    timeoutMs: 60_000,
+    maxTurns: 24,
     stop: () => {
       const current = holder.job
       if (!current) throw new Error("agent job was not initialized")
@@ -204,6 +208,8 @@ test("a user stop delivers the interrupted outcome to the owner sink", async () 
   const job = createAgentJob("test-agent-user-stop", {
     ownerId,
     task: "stopped by the user from the TUI",
+    timeoutMs: 60_000,
+    maxTurns: 24,
     stop: () => {
       const current = holder.job
       if (!current) throw new Error("agent job was not initialized")

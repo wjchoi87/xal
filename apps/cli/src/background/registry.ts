@@ -20,8 +20,14 @@ export interface BackgroundProcessTask extends BackgroundTaskBase {
 export interface BackgroundAgentSnapshot {
   activity: string
   queued: boolean
+  stopping: boolean
   queuedMs: number
   elapsedMs: number
+  idleMs: number
+  remainingMs?: number
+  completedTurns: number
+  turnBudget: number
+  turnLimit: number
   toolCount: number
   contextTokens?: number
 }

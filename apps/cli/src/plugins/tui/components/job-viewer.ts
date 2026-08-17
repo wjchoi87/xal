@@ -379,8 +379,11 @@ export class JobViewer {
     if (task.kind === "process") return formatDuration(Date.now() - task.startedAt)
     const snapshot = task.snapshot()
     if (snapshot.queued) return `queued ${formatDuration(snapshot.queuedMs)}`
+    if (snapshot.stopping) return "stopping"
     const tokens = snapshot.contextTokens ? ` · ↓ ${formatTokens(snapshot.contextTokens)} tokens` : ""
-    return `${formatDuration(snapshot.elapsedMs)}${tokens}`
+    const turns = ` · turn ${snapshot.completedTurns}/${snapshot.turnBudget} (${snapshot.turnLimit} max)`
+    const remaining = snapshot.remainingMs === undefined ? "" : ` · ${formatDuration(snapshot.remainingMs)} left`
+    return `${formatDuration(snapshot.elapsedMs)}${tokens}${turns}${remaining} · idle ${formatDuration(snapshot.idleMs)}`
   }
 
   refresh(): void {

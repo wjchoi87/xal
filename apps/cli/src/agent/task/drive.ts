@@ -1,5 +1,9 @@
-import { runningProcessJobs, type BackgroundProcessJob } from "../../background/jobs"
-import { settings } from "../../config/settings"
+import {
+  completeAgentTurn,
+  runningProcessJobs,
+  type BackgroundAgentJob,
+  type BackgroundProcessJob,
+} from "../../background/jobs"
 import type { UserInput } from "../../providers/types"
 import type { AgentEvent } from "../events"
 import type { AgentSession } from "../session/session"
@@ -30,6 +34,7 @@ function runningJobsNotice(running: BackgroundProcessJob[]): string {
 
 export async function driveTaskToQuiescence(
   child: AgentSession,
+  job: BackgroundAgentJob,
   input: UserInput,
   handle: (event: AgentEvent) => void,
   signal: AbortSignal,
@@ -114,10 +119,7 @@ export async function driveTaskToQuiescence(
     }
   })
 
-  const budget = settings().agents.maxTurns
-  const hardCap = Math.ceil(budget * 1.5)
-  let completedTurns = 0
-  let budgetNoticeSent = false
+  let budgetNoticeAt = 0
   try {
     if (!child.send(input)) return { status: "failed", error: "task session did not accept the prompt" }
     let noticeSent = false
@@ -130,7 +132,7 @@ export async function driveTaskToQuiescence(
       const turn = turns.shift()!
       if (turn.status === "failed") return { status: "failed", error: turn.error }
       if (turn.status === "interrupted") return { status: "interrupted" }
-      completedTurns += 1
+      completeAgentTurn(job)
       while (!idle && !signal.aborted) await wait()
       if (signal.aborted) return { status: "interrupted" }
       if (turns.length > 0) continue
@@ -139,14 +141,14 @@ export async function driveTaskToQuiescence(
         if (report) return { status: "completed", report }
         return { status: "failed", error: "completed without a final report" }
       }
-      if (completedTurns >= hardCap) {
+      if (job.completedTurns >= job.turnLimit) {
         const report = candidate.trim()
         if (report) return { status: "completed", report }
-        return { status: "failed", error: `exceeded its ${hardCap}-turn budget without a final report` }
+        return { status: "failed", error: `exceeded its ${job.turnLimit}-turn limit without a final report` }
       }
-      if (completedTurns >= budget && !budgetNoticeSent) {
-        budgetNoticeSent = true
-        child.send({ text: turnBudgetNotice(hardCap - completedTurns), images: [] })
+      if (job.completedTurns >= job.turnBudget && budgetNoticeAt !== job.turnBudget) {
+        budgetNoticeAt = job.turnBudget
+        child.send({ text: turnBudgetNotice(job.turnLimit - job.completedTurns), images: [] })
         continue
       }
       if (!noticeSent) {

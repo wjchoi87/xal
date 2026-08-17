@@ -1,6 +1,7 @@
 import {
   appendAgentTranscript,
   attachJobLog,
+  beginAgentStop,
   createAgentJob,
   sendAgentGuidance,
   setAgentActivity,
@@ -118,9 +119,15 @@ function registerTask(
       const now = Date.now()
       return {
         activity: job.activity,
-        queued: !job.done && job.runningAt === undefined,
+        queued: job.phase === "queued",
+        stopping: job.phase === "stopping",
         queuedMs: (job.runningAt ?? job.finishedAt ?? now) - job.startedAt,
         elapsedMs: job.runningAt === undefined ? 0 : (job.finishedAt ?? now) - job.runningAt,
+        idleMs: now - job.lastActivityAt,
+        remainingMs: job.phase !== "running" || job.deadlineAt === undefined ? undefined : job.deadlineAt - now,
+        completedTurns: job.completedTurns,
+        turnBudget: job.turnBudget,
+        turnLimit: job.turnLimit,
         toolCount: state.toolCalls.size,
         contextTokens: child()?.currentContextTokens,
       }
@@ -154,19 +161,31 @@ async function runTask(
     terminal = { outcome: { status: "failed" }, detail: `failed to clean up task resources: ${message}` }
     setAgentActivity(job, "Cleanup failed")
   }
-  const timeoutMinutes = settings().agents.timeoutMinutes
+  const scheduleDeadline = (): void => {
+    const remaining = Math.max(0, (job.deadlineAt ?? Date.now()) - Date.now())
+    deadline = setTimeout(
+      () => {
+        if (job.phase !== "running") return
+        if (job.deadlineAt !== undefined && job.deadlineAt > Date.now()) {
+          scheduleDeadline()
+          return
+        }
+        beginAgentStop(job)
+        timedOut = true
+        controller.abort()
+        setAgentActivity(job, "Deadline reached; stopping…")
+        record(`\nTask reached its ${job.timeoutMs / 60_000}-minute deadline.\n`)
+      },
+      Math.min(remaining, 2_147_483_647),
+    )
+    deadline.unref()
+  }
   try {
     await taskScheduler().acquire(controller.signal)
     acquired = true
     if (controller.signal.aborted) throw new Error("task cancelled before it started")
-    startAgentJob(job, timeoutMinutes * 60_000)
-    deadline = setTimeout(() => {
-      timedOut = true
-      controller.abort()
-      setAgentActivity(job, "Deadline reached; stopping…")
-      record(`\nTask reached its ${timeoutMinutes}-minute deadline.\n`)
-    }, timeoutMinutes * 60_000)
-    deadline.unref()
+    startAgentJob(job)
+    scheduleDeadline()
 
     worktree =
       item.isolation === "worktree"
@@ -211,6 +230,7 @@ async function runTask(
     try {
       outcome = await driveTaskToQuiescence(
         taskSession,
+        job,
         { text: childPrompt(context, item.task), images: [] },
         (event) => {
           if (job.done) return
@@ -220,12 +240,13 @@ async function runTask(
         controller.signal,
       )
     } finally {
+      beginAgentStop(job)
       controller.signal.removeEventListener("abort", abortChild)
     }
 
     if (timedOut) {
       setAgentActivity(job, "Timed out")
-      terminal = { outcome: { status: "timed_out" }, detail: `timed out after ${timeoutMinutes}m` }
+      terminal = { outcome: { status: "timed_out" }, detail: `timed out after ${job.timeoutMs / 60_000}m` }
     } else if (outcome.status === "interrupted") {
       setAgentActivity(job, "Interrupted")
       terminal = { outcome: { status: "interrupted" }, detail: "interrupted" }
@@ -240,7 +261,7 @@ async function runTask(
   } catch (error) {
     if (timedOut) {
       setAgentActivity(job, "Timed out")
-      terminal = { outcome: { status: "timed_out" }, detail: `timed out after ${timeoutMinutes}m` }
+      terminal = { outcome: { status: "timed_out" }, detail: `timed out after ${job.timeoutMs / 60_000}m` }
     } else if (controller.signal.aborted) {
       setAgentActivity(job, "Interrupted")
       terminal = { outcome: { status: "interrupted" }, detail: "interrupted" }
@@ -251,6 +272,7 @@ async function runTask(
       terminal = { outcome: { status: "failed" }, detail: `failed: ${message}` }
     }
   } finally {
+    beginAgentStop(job)
     if (deadline) clearTimeout(deadline)
     if (child) {
       try {
@@ -278,13 +300,17 @@ async function runTask(
 
 export function spawnTask(item: TaskItem, context: string, ctx: SessionToolContext): BackgroundAgentJob {
   const controller = new AbortController()
+  const agentSettings = settings().agents
   let child: AgentSession | undefined
   let cwd = ctx.session.cwd
   const job = createAgentJob("agent", {
     id: item.name,
     ownerId: ctx.session.id,
     task: item.task,
+    timeoutMs: agentSettings.timeoutMinutes * 60_000,
+    maxTurns: agentSettings.maxTurns,
     stop: () => {
+      beginAgentStop(job)
       controller.abort()
       child?.suppressAsyncDeliveries()
       child?.interrupt()

@@ -1,6 +1,7 @@
 import {
   acknowledgeDelivery,
   collectAgentOutcome,
+  extendAgentBudget,
   getJob,
   jobStatus,
   listJobs,
@@ -19,6 +20,8 @@ import { asNumber, asString } from "../lib/json"
 import type { SessionTool } from "../tools/types"
 
 const MAX_WAIT_S = 600
+const MAX_EXTENSION_MINUTES = 60
+const MAX_EXTENSION_TURNS = 100
 const MAX_MESSAGE_LENGTH = 20_000
 
 function jobOf(args: Record<string, unknown>, ownerId: string): BackgroundJob {
@@ -106,8 +109,14 @@ function agentStatus(job: BackgroundAgentJob, now: number): string {
       ? `queued ${duration(queuedMs)}`
       : `${duration((job.finishedAt ?? now) - job.runningAt)}${queued}`
   const activity = job.done ? "" : ` · activity: ${job.activity} · idle ${duration(now - job.lastActivityAt)}`
-  const deadline = job.done || job.deadlineAt === undefined ? "" : ` · deadline in ${duration(job.deadlineAt - now)}`
-  return `${job.id} [${state}] ${timing}${activity}${deadline}\n  ${job.task.split("\n", 1)[0]}`
+  const turns = ` · turns ${job.completedTurns}/${job.turnBudget} (limit ${job.turnLimit})`
+  const deadline =
+    job.done || job.phase === "stopping"
+      ? ""
+      : job.deadlineAt === undefined
+        ? ` · runtime budget ${duration(job.timeoutMs)}`
+        : ` · deadline in ${duration(job.deadlineAt - now)}`
+  return `${job.id} [${state}] ${timing}${activity}${turns}${deadline}\n  ${job.task.split("\n", 1)[0]}`
 }
 
 function statusOutput(id: string | undefined, ownerId: string): string {
@@ -202,7 +211,7 @@ export const jobKillTool: SessionTool = {
 export const jobStatusTool: SessionTool = {
   name: "job_status",
   description:
-    "Inspect one background job or list every job without consuming output. Task-agent status includes queue state, current activity, idle time, elapsed time, and its remaining deadline after it starts.",
+    "Inspect one background job or list every job without consuming output. Task-agent status includes queue state, current activity, idle and elapsed time, turn usage and limits, and its remaining deadline after it starts.",
   parameters: {
     type: "object",
     properties: { id: idProperty },
@@ -218,6 +227,68 @@ export const jobStatusTool: SessionTool = {
   },
   async execute(args, ctx) {
     return { output: statusOutput(asString(args.id)?.trim() || undefined, ctx.session.id) }
+  },
+}
+
+function extensionValue(args: Record<string, unknown>, field: string, maximum: number): number {
+  if (args[field] === undefined) return 0
+  const value = asNumber(args[field])
+  if (value === undefined || !Number.isSafeInteger(value) || value < 1 || value > maximum) {
+    throw new Error(`${field} must be an integer between 1 and ${maximum}`)
+  }
+  return value
+}
+
+export const jobExtendTool: SessionTool = {
+  name: "job_extend",
+  description:
+    "Extend a running or queued task agent's execution budget. Adds wall-clock minutes, turns, or both without restarting the agent. Use job_status first to inspect its remaining budget.",
+  parameters: {
+    type: "object",
+    properties: {
+      id: idProperty,
+      minutes: {
+        type: "integer",
+        minimum: 1,
+        maximum: MAX_EXTENSION_MINUTES,
+        description: `Wall-clock minutes to add; maximum ${MAX_EXTENSION_MINUTES} per call`,
+      },
+      turns: {
+        type: "integer",
+        minimum: 1,
+        maximum: MAX_EXTENSION_TURNS,
+        description: `Soft-budget turns to add; maximum ${MAX_EXTENSION_TURNS} per call`,
+      },
+    },
+    required: ["id"],
+    additionalProperties: false,
+  },
+  sessionAware: true,
+  title(args) {
+    return `extend ${asString(args.id) ?? ""}`
+  },
+  available(ctx) {
+    return ctx.kind === "primary"
+  },
+  readOnly() {
+    return true
+  },
+  async execute(args, ctx) {
+    const job = jobOf(args, ctx.session.id)
+    if (job.kind !== "agent") throw new Error(`${job.id} is not a task agent`)
+    if (job.done) throw new Error(`${job.id} has already finished (${jobStatus(job)})`)
+    const minutes = extensionValue(args, "minutes", MAX_EXTENSION_MINUTES)
+    const turns = extensionValue(args, "turns", MAX_EXTENSION_TURNS)
+    if (minutes === 0 && turns === 0) throw new Error("minutes or turns is required")
+    extendAgentBudget(job, { minutes, turns }, "parent")
+    const added = [minutes > 0 ? `${minutes}m` : "", turns > 0 ? `${turns} turns` : ""].filter(Boolean).join(" and ")
+    const time =
+      job.deadlineAt === undefined
+        ? `${duration(job.timeoutMs)} runtime when it starts`
+        : `${duration(job.deadlineAt - Date.now())} until deadline`
+    return {
+      output: `Extended ${job.id} by ${added}. New budget: ${job.completedTurns}/${job.turnBudget} turns (limit ${job.turnLimit}); ${time}.`,
+    }
   },
 }
 

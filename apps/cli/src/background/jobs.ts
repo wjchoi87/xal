@@ -59,6 +59,8 @@ export interface BackgroundAgentControls {
   id?: string
   ownerId: string
   task: string
+  timeoutMs: number
+  maxTurns: number
   stop(): void
   send(message: string, source: JobSendSource): boolean
 }
@@ -66,9 +68,13 @@ export interface BackgroundAgentControls {
 export interface BackgroundAgentJob extends BackgroundJobBase {
   kind: "agent"
   task: string
-  phase: "queued" | "running"
+  phase: "queued" | "running" | "stopping"
   runningAt?: number
+  timeoutMs: number
   deadlineAt?: number
+  completedTurns: number
+  turnBudget: number
+  turnLimit: number
   lastActivityAt: number
   transcript: JobBuffer
   activity: string
@@ -197,6 +203,10 @@ export function createAgentJob(prefix: string, controls: BackgroundAgentControls
     kind: "agent",
     task: redactText(controls.task),
     phase: "queued",
+    timeoutMs: controls.timeoutMs,
+    completedTurns: 0,
+    turnBudget: controls.maxTurns,
+    turnLimit: Math.ceil(controls.maxTurns * 1.5),
     lastActivityAt: created.base.startedAt,
     transcript: createJobBuffer(BUFFER_HEAD_CHARS, BUFFER_TAIL_CHARS),
     activity: "Initializing…",
@@ -260,13 +270,65 @@ export function setAgentActivity(job: BackgroundAgentJob, activity: string): voi
   backgroundTasksChanged("progress")
 }
 
-export function startAgentJob(job: BackgroundAgentJob, timeoutMs: number): void {
+export function startAgentJob(job: BackgroundAgentJob): void {
   if (job.done) return
   job.phase = "running"
   job.runningAt = Date.now()
-  job.deadlineAt = Date.now() + timeoutMs
+  job.deadlineAt = Date.now() + job.timeoutMs
   job.lastActivityAt = Date.now()
   job.activity = "Initializing…"
+  backgroundTasksChanged("lifecycle")
+}
+
+export function completeAgentTurn(job: BackgroundAgentJob): void {
+  if (job.done || job.phase === "stopping") return
+  job.completedTurns += 1
+  backgroundTasksChanged("progress")
+}
+
+export function beginAgentStop(job: BackgroundAgentJob): void {
+  if (job.done || job.phase === "stopping") return
+  job.phase = "stopping"
+  backgroundTasksChanged("lifecycle")
+}
+
+export interface AgentBudgetExtension {
+  minutes: number
+  turns: number
+}
+
+export function extendAgentBudget(
+  job: BackgroundAgentJob,
+  extension: AgentBudgetExtension,
+  source: JobSendSource,
+): void {
+  if (job.done) throw new Error(`${job.id} has already finished`)
+  if (job.phase === "stopping") throw new Error(`${job.id} is already stopping`)
+  if (job.phase === "running" && job.deadlineAt !== undefined && job.deadlineAt <= Date.now()) {
+    throw new Error(`${job.id} has reached its deadline`)
+  }
+  if (job.completedTurns >= job.turnLimit) throw new Error(`${job.id} has reached its turn limit`)
+  if (!Number.isSafeInteger(extension.minutes) || extension.minutes < 0) {
+    throw new Error("extension minutes must be a non-negative integer")
+  }
+  if (!Number.isSafeInteger(extension.turns) || extension.turns < 0) {
+    throw new Error("extension turns must be a non-negative integer")
+  }
+  if (extension.minutes === 0 && extension.turns === 0) throw new Error("the extension must add minutes or turns")
+  if (extension.minutes > 0) {
+    const additionalMs = extension.minutes * 60_000
+    job.timeoutMs += additionalMs
+    if (job.deadlineAt !== undefined) job.deadlineAt += additionalMs
+  }
+  if (extension.turns > 0) {
+    job.turnBudget += extension.turns
+    job.turnLimit = Math.ceil(job.turnBudget * 1.5)
+  }
+  const parts = [
+    extension.minutes > 0 ? `${extension.minutes}m runtime` : "",
+    extension.turns > 0 ? `${extension.turns} turns` : "",
+  ].filter(Boolean)
+  appendTranscript(job, `\n> ${source === "user" ? "User" : "Parent"} extended budget by ${parts.join(" and ")}\n`)
   backgroundTasksChanged("lifecycle")
 }
 
@@ -618,6 +680,7 @@ export async function stopJob(job: BackgroundJob, origin: JobStopOrigin): Promis
   if (job.done) return
   if (origin === "user") job.stoppedByUser = true
   if (job.kind === "agent") {
+    beginAgentStop(job)
     setAgentActivity(job, "Stopping…")
     if (origin === "model") suppressDelivery(job)
   }

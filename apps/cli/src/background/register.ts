@@ -1,6 +1,6 @@
 import { registerTool } from "../tools/registry"
 import { registerToolRenderer } from "../ui/extension"
-import { jobKillTool, jobOutputTool, jobSendTool, jobStatusTool } from "./tools"
+import { jobExtendTool, jobKillTool, jobOutputTool, jobSendTool, jobStatusTool } from "./tools"
 
 function summarizeKill(output: string): string {
   if (output.includes("had already finished")) return "already finished"
@@ -18,6 +18,7 @@ export function registerJobTools(): void {
   registerTool(jobOutputTool)
   registerTool(jobKillTool)
   registerTool(jobStatusTool)
+  registerTool(jobExtendTool)
   registerTool(jobSendTool)
   registerToolRenderer({
     tool: jobOutputTool.name,
@@ -28,5 +29,6 @@ export function registerJobTools(): void {
   })
   registerToolRenderer({ tool: jobKillTool.name, summarize: summarizeKill })
   registerToolRenderer({ tool: jobStatusTool.name, summarize: summarizeStatus })
+  registerToolRenderer({ tool: jobExtendTool.name, summarize: () => "extended" })
   registerToolRenderer({ tool: jobSendTool.name, summarize: () => "queued" })
 }
