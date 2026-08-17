@@ -6,12 +6,6 @@ A terminal coding harness: an agentic TUI that integrates with AI providers to d
 
 Customizable and extensible full coding harness that remains as small as possible and allows everyone to extend and change its behaviours.
 
-## Temp Development Goal
-
-Reach to a point where we can continue the development of this app using itself. this means enough features to develop it by itself.
-
-This is a Temp goal and we consider it when we pick a task or decide which feature to work on.
-
 ### Principles
 
 - Customizable and Extensible by supporting plugins
@@ -23,7 +17,6 @@ This is a Temp goal and we consider it when we pick a task or decide which featu
 - Typed wire boundaries; narrow `unknown` with `lib/json` guards, never `as` casts.
 - Typed unions at seams; handle every case so a new one cannot slip through silently.
 - No code comments.
-- No backward compatibility. only clean solutions.
 - No tests.
 - Write simple and readable code and avoid extra complexity.
 - If a constant will be used only one time, Do not overengineer to make it `const`. this reduces the code readability.
