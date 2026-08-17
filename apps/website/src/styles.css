@@ -218,8 +218,14 @@ a {
 
 .site-stars {
   display: inline-flex;
-  align-items: baseline;
+  align-items: center;
   gap: 0.7ch;
+}
+
+.site-star-icon {
+  width: 1em;
+  height: 1em;
+  flex: none;
 }
 
 .site-stars::before {

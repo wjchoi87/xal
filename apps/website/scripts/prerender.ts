@@ -13,6 +13,25 @@ const { loadDocuments } = await import("../src/docs/load.ts")
 const { documentPage, indexPage } = await import("../src/docs/page.ts")
 const { navigation } = await import("../src/navigation.ts")
 
+const headers: Record<string, string> = {
+  Accept: "application/vnd.github+json",
+  "X-GitHub-Api-Version": "2022-11-28",
+}
+if (Bun.env.GITHUB_TOKEN) headers.Authorization = `Bearer ${Bun.env.GITHUB_TOKEN}`
+
+const repository = new URL(content.REPOSITORY)
+const response = await fetch(`https://api.github.com/repos${repository.pathname}`, { headers })
+if (!response.ok) throw new Error(`GitHub repository request failed with ${response.status}`)
+
+const value: unknown = await response.json()
+if (typeof value !== "object" || value === null || !("stargazers_count" in value)) {
+  throw new Error("GitHub repository response is missing stargazers_count")
+}
+const githubStars = value.stargazers_count
+if (typeof githubStars !== "number" || !Number.isSafeInteger(githubStars) || githubStars < 0) {
+  throw new Error("GitHub repository stargazers_count is not a non-negative integer")
+}
+
 const dist = new URL("../dist/", import.meta.url)
 const source = await Bun.file(new URL("index.html", dist)).text()
 
@@ -33,7 +52,7 @@ const shell: Shell = ({ title, description, path, body }) => {
   html = meta(html, "property", "og:description", description)
   return html
     .replace("</head>", `<link rel="canonical" href="${content.SITE_URL}${path}" />\n  </head>`)
-    .replace("<body>", `<body>${navigation(path)}`)
+    .replace("<body>", `<body>${navigation(path, githubStars)}`)
     .replace('<div id="app"></div>', body)
 }
 

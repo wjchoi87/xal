@@ -8,8 +8,12 @@ function isActive(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`)
 }
 
-export function navigation(pathname: string): string {
+export function navigation(pathname: string, githubStars?: number): string {
   const path = normalizedPath(pathname)
+  const stars =
+    githubStars === undefined
+      ? undefined
+      : new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(githubStars)
   const primary = [
     { href: "/about", label: "/about" },
     { href: "/tools", label: "/tools" },
@@ -28,8 +32,8 @@ export function navigation(pathname: string): string {
       <a class="site-brand" href="/" aria-label="xal home">xal<span class="site-brand-cursor" aria-hidden="true"></span></a>
       <div class="site-links">${primary}</div>
       <div class="site-actions">
-        <a class="site-stars" href="${REPOSITORY}/stargazers" target="_blank" rel="noreferrer" aria-label="GitHub stars">
-          <span aria-hidden="true">★</span><span class="site-stars-label">Stars</span><span class="site-star-count" hidden></span>
+        <a class="site-stars" href="${REPOSITORY}/stargazers" target="_blank" rel="noreferrer" aria-label="GitHub stars${stars === undefined ? "" : `: ${stars}`}">
+          <svg class="site-star-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg><span class="site-stars-label">Stars</span>${stars === undefined ? "" : `<span class="site-star-count">${stars}</span>`}
         </a>
         <a class="site-github" href="${REPOSITORY}" target="_blank" rel="noreferrer">GitHub <span aria-hidden="true">↗</span></a>
       </div>
@@ -48,38 +52,8 @@ export function setNavigationPath(pathname: string): void {
   }
 }
 
-function githubStars(value: unknown): number {
-  if (typeof value !== "object" || value === null || !("stargazers_count" in value)) {
-    throw new Error("GitHub repository response is missing stargazers_count")
-  }
-  if (typeof value.stargazers_count !== "number") {
-    throw new Error("GitHub repository stargazers_count is not a number")
-  }
-  return value.stargazers_count
-}
-
-async function updateStarCount(): Promise<void> {
-  const node = document.querySelector<HTMLElement>(".site-star-count")
-  if (!node) return
-
-  const response = await fetch("https://api.github.com/repos/xal-sh/xal", {
-    headers: { Accept: "application/vnd.github+json" },
-  })
-  if (!response.ok) throw new Error(`GitHub repository request failed with ${response.status}`)
-
-  const value: unknown = await response.json()
-  const count = new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(
-    githubStars(value),
-  )
-  if (!(node.parentElement instanceof HTMLAnchorElement)) throw new Error("GitHub stars count is outside its link")
-  node.textContent = count
-  node.parentElement.setAttribute("aria-label", `GitHub stars: ${count}`)
-  node.hidden = false
-}
-
 export function installNavigation(): void {
   if (!document.querySelector(".site-header")) {
     document.body.insertAdjacentHTML("afterbegin", navigation(location.pathname))
   }
-  void updateStarCount().catch((error: unknown) => console.error("Failed to load GitHub stars", error))
 }
