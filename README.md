@@ -76,3 +76,7 @@ Run with `--profile` to store anonymous session diagnostics and print the profil
 bun install
 bun dev
 ```
+
+## License
+
+Xal is available under the [MIT License](LICENSE).

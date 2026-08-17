@@ -1,6 +1,7 @@
 {
   "name": "xal",
   "version": "0.1.0",
+  "license": "MIT",
   "module": "src/index.ts",
   "type": "module",
   "private": true,
