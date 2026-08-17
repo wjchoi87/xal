@@ -4,7 +4,7 @@ Connect a built-in or plugin-provided model service, select a model, and configu
 
 ## Built-in providers
 
-Built-in provider IDs are `openai-chatgpt`, `github-copilot`, `deepseek`, and `alibaba-cloud`. `chatgpt` is an alias for `openai-chatgpt`, `copilot` is an alias for `github-copilot`, and `dashscope` is an alias for `alibaba-cloud`.
+Built-in provider IDs are `openai-chatgpt`, `github-copilot`, `xai`, `deepseek`, and `alibaba-cloud`. `chatgpt` is an alias for `openai-chatgpt`, `copilot` is an alias for `github-copilot`, `grok` is an alias for `xai`, and `dashscope` is an alias for `alibaba-cloud`.
 
 The only built-in UI ID is `tui`. Plugins may register more providers, aliases, and UIs. Anthropic support is available through the external [xal-anthropic](https://github.com/saeedvaziry/xal-anthropic) plugin.
 
@@ -25,7 +25,7 @@ The ChatGPT provider discovers the account-visible catalog from the authenticate
 
 GitHub Copilot discovers the models enabled for each connected subscription and stores the compatible subset in `<app-home>/cache/github-copilot-models-<profile-id>.json`, bound to the token and GitHub domain that produced it. It exposes tool-capable models that advertise `/chat/completions` or omit endpoint metadata. Models that explicitly advertise only Responses or Anthropic Messages remain hidden. Some Personal Copilot accounts leave every model-picker flag unset, so the canonical Personal endpoint falls back to explicitly policy-enabled compatible models. Enterprise endpoints keep strict picker visibility. If live discovery is unavailable, only that profile's matching validated cache is used; without one, model discovery fails.
 
-DeepSeek discovers models from its authenticated `/models` endpoint and reports when it must use bundled model metadata. Alibaba Cloud uses a bundled catalog of Qwen models shared by Model Studio and Coding Plan.
+xAI discovers models from its authenticated `/models` endpoint, hides the image, speech, and voice models that the chat endpoint rejects, and layers bundled context windows and thinking options over the result because that endpoint reports neither. The account's credential decides what the endpoint returns, so a Grok subscription and an API key each see their own catalog. DeepSeek discovers models from its authenticated `/models` endpoint and reports when it must use bundled model metadata. Alibaba Cloud uses a bundled catalog of Qwen models shared by Model Studio and Coding Plan.
 
 ## Alibaba Cloud
 
@@ -48,6 +48,22 @@ Configure options under `pluginConfig.github-copilot`:
 | `clientName`       | string | Package application name | Client name used in the provider request user agent.         |
 
 Run `xal connect copilot`, open the displayed GitHub device-login URL, and enter its one-time code. Xal uses the resulting GitHub OAuth token directly with the Copilot API and validates that the account returns at least one compatible agent model before storing the token. Personal catalogs that omit endpoint, picker, or policy metadata are accepted unless a model is explicitly incompatible or disabled. For GitHub Enterprise, configure `enterpriseDomain` before connecting.
+
+## xAI
+
+Configure options under `pluginConfig.xai`:
+
+| Option       | Type   | Default                  | Description                                                        |
+| ------------ | ------ | ------------------------ | ------------------------------------------------------------------ |
+| `baseUrl`    | string | `https://api.x.ai/v1`    | HTTPS OpenAI-compatible endpoint used for inference and discovery. |
+| `clientName` | string | Package application name | Client name used in the provider request user agent.               |
+
+Run `xal connect xai` and choose how to authenticate:
+
+- **SuperGrok or X Premium subscription.** Xal starts an OAuth device authorization at `auth.x.ai`, prints a verification URL and a one-time code, and polls until you approve it. Nothing listens on a local port, so this works over SSH, in containers, and on machines with no browser. Access tokens refresh automatically five minutes before they expire, and a refresh that xAI does not rotate keeps the existing refresh token.
+- **xAI API key.** Paste a key created at `console.x.ai`. Xal validates it against the models endpoint before storing it.
+
+Both credential types stream over the OpenAI Responses API, where Grok models expose `low`, `medium`, `high`, and `xhigh` thinking effort. `max` maps to `xhigh`, the highest level xAI accepts. The model catalog is the single source of truth for that dial, so `/thinking` and the wire never disagree. A few Grok reasoners — the `grok-build` and `grok-4.20-0309` families and `grok-composer` — think natively but reject the effort parameter, so `/thinking` does not offer it for them and no effort is sent.
 
 ## OpenAI ChatGPT
 

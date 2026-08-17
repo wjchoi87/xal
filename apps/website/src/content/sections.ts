@@ -202,7 +202,7 @@ export const plugins: Block[] = [
       { name: "lsp", description: "definitions, references, call hierarchy, diagnostics — ts, python, rust, go" },
       {
         name: "providers",
-        description: "ChatGPT, GitHub Copilot, DeepSeek and Qwen in the box; more providers plug in",
+        description: "ChatGPT, GitHub Copilot, Grok, DeepSeek and Qwen in the box; more providers plug in",
       },
       { name: "memory", description: "secure global memory that follows you across sessions" },
       { name: "code-review", description: "`/review` the diff before it ships" },

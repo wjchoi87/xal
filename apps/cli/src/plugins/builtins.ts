@@ -14,6 +14,7 @@ import mcp from "./mcp/plugin"
 import search from "./search/plugin"
 import tui from "./tui/plugin"
 import web from "./web/plugin"
+import xai from "./xai/plugin"
 
 export const builtinPlugins: Plugin[] = [
   codeReview,
@@ -29,6 +30,7 @@ export const builtinPlugins: Plugin[] = [
   alibabaCloud,
   githubCopilot,
   openaiChatgpt,
+  xai,
   ask,
   tui,
 ]
