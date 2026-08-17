@@ -7,6 +7,7 @@ import type { Cli, CliContext } from "../cli/types"
 import { isMissingPathError } from "../lib/error"
 import { asString, isRecord } from "../lib/json"
 import { isStandalone } from "../lib/process"
+import { downloadArtifact } from "./download"
 
 function parseArgs(args: string[]): { help: boolean } {
   let help = false
@@ -83,12 +84,6 @@ function expectedChecksum(checksums: string, artifact: string): string {
   throw new Error(`release checksums do not contain ${artifact}`)
 }
 
-async function download(url: string): Promise<Uint8Array> {
-  const response = await fetch(url, { headers: { "user-agent": `${appInfo.name}/${appInfo.version}` } })
-  if (!response.ok) throw new Error(`download failed: ${response.status} ${response.statusText}: ${url}`)
-  return new Uint8Array(await response.arrayBuffer())
-}
-
 async function verifyExecutable(path: string, version: string): Promise<void> {
   const child = Bun.spawn([path, "--version"], { stdout: "pipe", stderr: "pipe" })
   const [exitCode, stdout, stderr] = await Promise.all([
@@ -153,8 +148,9 @@ async function runUpdate(args: string[], ctx: CliContext): Promise<void> {
   }
 
   const artifact = artifactName()
+  ctx.print(`downloading ${appInfo.name} ${version} (beta)`)
   const checksums = await fetchText(`${base}/SHA256SUMS`)
-  const bytes = await download(`${base}/${artifact}`)
+  const bytes = await downloadArtifact(`${base}/${artifact}`, artifact, ctx)
   const actual = new Bun.CryptoHasher("sha256").update(bytes).digest("hex")
   const expected = expectedChecksum(checksums, artifact)
   if (actual !== expected) throw new Error(`checksum mismatch for ${artifact}`)
