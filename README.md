@@ -7,6 +7,37 @@ A terminal coding harness with a headless agent core where every capability, is 
 
 Powered by [OpenTUI](https://github.com/anomalyco/opentui)
 
+## Features
+
+- Terminal UI
+- Headless mode
+- Multiple providers
+  - OpenAI ChatGPT
+  - GitHub Copilot
+  - xAI
+  - DeepSeek
+  - Alibaba Cloud
+  - Anthropic plugin
+  - More coming
+- Model discovery
+- Connection profiles
+- Thinking controls
+- Plugins and hooks
+- MCP servers
+- Language servers
+- Project instructions
+- Custom commands
+- Skills
+- Permission modes
+- Plan mode
+- Secret redaction
+- Background sessions
+- Task agents
+- Background processes
+- Custom keybindings
+- Terminal notifications
+- Goals
+
 ## Install the beta
 
 Install the latest beta release on macOS, Linux, or Windows from a POSIX shell:
