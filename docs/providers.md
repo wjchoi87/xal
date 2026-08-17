@@ -4,7 +4,7 @@ Connect a built-in or plugin-provided model service, select a model, and configu
 
 ## Built-in providers
 
-Built-in provider IDs are `openai-chatgpt`, `github-copilot`, `xai`, `deepseek`, and `alibaba-cloud`. `chatgpt` is an alias for `openai-chatgpt`, `copilot` is an alias for `github-copilot`, `grok` is an alias for `xai`, and `dashscope` is an alias for `alibaba-cloud`.
+Built-in provider IDs are `openai`, `openai-chatgpt`, `github-copilot`, `xai`, `deepseek`, and `alibaba-cloud`. `chatgpt` is an alias for `openai-chatgpt`, `copilot` is an alias for `github-copilot`, `grok` is an alias for `xai`, and `dashscope` is an alias for `alibaba-cloud`.
 
 The only built-in UI ID is `tui`. Plugins may register more providers, aliases, and UIs. Anthropic support is available through the external [xal-anthropic](https://github.com/saeedvaziry/xal-anthropic) plugin.
 
@@ -20,6 +20,8 @@ The profile behind the selected model is stored as `profile` alongside `provider
 ## Model discovery
 
 The active profile's catalog is loaded into the process cache when a session starts. `/model` reuses that cache and requests each other connected profile's non-refresh catalog at most once, so reopening the picker does not reload successful or failed catalogs. A provider may perform initial live discovery when it has no persistent or bundled catalog. `/model refresh` and `xal models` explicitly refresh every connected profile. A provider that fails or returns an invalid catalog is reported without hiding models from the other providers or preventing the session from starting. If a refresh fails after that profile supplied a valid catalog, Xal keeps the previous in-process catalog available. Catalogs supply the model picker, context-window tracking, input modalities, and the choices shown by `/thinking`.
+
+The OpenAI provider discovers models from the API key's `/models` endpoint, keeps GPT-4o and later, o-series, and Codex models that use the Responses API, and stores the last successful result in `<app-home>/cache/openai-models-<profile-id>.json`. The endpoint does not report context windows, input modalities, or reasoning controls, so Xal applies the configured context cap, lowers it for families with smaller documented windows, and marks the discovered agent models as image-capable. It layers model-family reasoning controls over the result, including the full `none` through `max` range for GPT-5.6 and the narrower ranges accepted by earlier GPT-5 models. If live discovery is unavailable, Xal uses that profile's cache or fails when no cache exists.
 
 The ChatGPT provider discovers the account-visible catalog from the authenticated Codex service and stores the last successful result in `<app-home>/cache/openai-chatgpt-models-<profile-id>.json`. If live discovery is unavailable, Xal reports the failure and uses that profile's cache, then its bundled catalog.
 
@@ -65,14 +67,22 @@ Run `xal connect xai` and choose how to authenticate:
 
 Both credential types stream over the OpenAI Responses API, where Grok models expose `low`, `medium`, `high`, and `xhigh` thinking effort. `max` maps to `xhigh`, the highest level xAI accepts. The model catalog is the single source of truth for that dial, so `/thinking` and the wire never disagree. A few Grok reasoners — the `grok-build` and `grok-4.20-0309` families and `grok-composer` — think natively but reject the effort parameter, so `/thinking` does not offer it for them and no effort is sent.
 
-## OpenAI ChatGPT
+## OpenAI
 
-Configure options under `pluginConfig.openai-chatgpt`:
+The `openai` plugin registers both OpenAI providers: `openai` for OpenAI Platform API keys and `openai-chatgpt` for ChatGPT subscriptions. They authenticate and bill separately, but stream over the same OpenAI Responses API and share options under `pluginConfig.openai`:
 
-| Option          | Type             | Default        | Description                                                 |
-| --------------- | ---------------- | -------------- | ----------------------------------------------------------- |
-| `contextWindow` | Positive integer | `260000`       | Upper bound applied to the model's reported context window. |
-| `clientName`    | string           | `codex_cli_rs` | Client name used in the provider request user agent.        |
+| Option          | Type             | Default        | Description                                                                  |
+| --------------- | ---------------- | -------------- | ---------------------------------------------------------------------------- |
+| `contextWindow` | Positive integer | `260000`       | Context-window cap for ChatGPT and assumed context window for OpenAI models. |
+| `clientName`    | string           | `codex_cli_rs` | Client name used in both providers' request user agent.                      |
+
+### OpenAI API
+
+Run `xal connect openai`, name the profile, and paste an API key created in the OpenAI Platform. Xal validates the key against `https://api.openai.com/v1/models` before storing it. Requests stream through `https://api.openai.com/v1/responses` with response storage disabled. API profiles are independent from ChatGPT subscription profiles and use the `openai` provider ID in configuration, thinking preferences, and replay data.
+
+### OpenAI ChatGPT
+
+Run `xal connect chatgpt` and choose browser login, pasted callback, or headless device login for a ChatGPT Pro or Plus subscription. ChatGPT subscription requests use the authenticated Codex service and remain separate from OpenAI API billing and API keys.
 
 ## DeepSeek
 

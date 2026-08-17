@@ -13,10 +13,11 @@ import {
   type ThinkingEffort,
   type ThinkingOptions,
 } from "../../providers/types"
-import { chatGptFetch } from "./api"
+import { chatGptFetch } from "./chatgpt-client"
+import { PROVIDER_NAME } from "./chatgpt-oauth"
+import { contextWindowCap } from "./context-window"
 
 const MODEL_CATALOG_COMPATIBILITY_VERSION = "1.0.0"
-const DEFAULT_CONTEXT_WINDOW = 260_000
 const FAST_MODEL_SUFFIX = "-fast"
 
 interface ChatGptModel extends ModelInfo {
@@ -82,12 +83,6 @@ const BUNDLED_MODELS: ChatGptModel[] = [
   },
 ]
 
-let contextWindowCap = DEFAULT_CONTEXT_WINDOW
-
-export function setContextWindowCap(cap: number | undefined): void {
-  contextWindowCap = cap ?? DEFAULT_CONTEXT_WINDOW
-}
-
 function cachePath(profileId: string): string {
   return join(cacheDir(), `openai-chatgpt-models-${encodeURIComponent(profileId)}.json`)
 }
@@ -127,11 +122,11 @@ function runtimeSupportsFast(raw: Record<string, unknown>): boolean {
 }
 
 function parseRuntimeModel(raw: unknown): { model: ChatGptModel; priority: number } | undefined {
-  if (!isRecord(raw)) throw new Error("ChatGPT models response contained an invalid model")
+  if (!isRecord(raw)) throw new Error(`${PROVIDER_NAME} models response contained an invalid model`)
   if (raw.visibility !== "list") return undefined
   const id = asString(raw.slug)?.trim()
   const name = asString(raw.display_name)?.trim()
-  if (!id || !name) throw new Error("ChatGPT models response contained an incomplete visible model")
+  if (!id || !name) throw new Error(`${PROVIDER_NAME} models response contained an incomplete visible model`)
   return {
     model: {
       id,
@@ -151,10 +146,10 @@ async function discoverModels(profileId: string): Promise<ChatGptModel[]> {
   })
   if (!response.ok) {
     const text = await response.text().catch(() => "")
-    throw httpError("ChatGPT models", response, errorDetail(text) ?? text.slice(0, 500))
+    throw httpError(`${PROVIDER_NAME} models`, response, errorDetail(text) ?? text.slice(0, 500))
   }
   const raw: unknown = await response.json()
-  if (!isRecord(raw) || !Array.isArray(raw.models)) throw new Error("ChatGPT models response was invalid")
+  if (!isRecord(raw) || !Array.isArray(raw.models)) throw new Error(`${PROVIDER_NAME} models response was invalid`)
   const models = raw.models
     .flatMap((entry) => {
       const parsed = parseRuntimeModel(entry)
@@ -162,7 +157,7 @@ async function discoverModels(profileId: string): Promise<ChatGptModel[]> {
     })
     .sort((left, right) => left.priority - right.priority)
     .map((entry) => entry.model)
-  if (models.length === 0) throw new Error("ChatGPT returned no visible models")
+  if (models.length === 0) throw new Error(`${PROVIDER_NAME} returned no visible models`)
   return models
 }
 
@@ -207,7 +202,7 @@ function capped(models: ChatGptModel[]): ChatGptModel[] {
   return models.map((model) => ({
     ...model,
     contextWindow:
-      model.contextWindow === undefined ? contextWindowCap : Math.min(model.contextWindow, contextWindowCap),
+      model.contextWindow === undefined ? contextWindowCap() : Math.min(model.contextWindow, contextWindowCap()),
   }))
 }
 

@@ -6,7 +6,7 @@ import deepseek from "./deepseek/plugin"
 import files from "./files/plugin"
 import githubCopilot from "./github-copilot/plugin"
 import memory from "./memory/plugin"
-import openaiChatgpt from "./openai-chatgpt/plugin"
+import openai from "./openai/plugin"
 import promptCommands from "./prompt-commands/plugin"
 import projectInstructions from "./project-instructions/plugin"
 import lsp from "./lsp/plugin"
@@ -29,7 +29,7 @@ export const builtinPlugins: Plugin[] = [
   deepseek,
   alibabaCloud,
   githubCopilot,
-  openaiChatgpt,
+  openai,
   xai,
   ask,
   tui,

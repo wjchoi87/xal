@@ -12,6 +12,7 @@ Powered by [OpenTUI](https://github.com/anomalyco/opentui)
 - Terminal UI
 - Headless mode
 - Multiple providers
+  - OpenAI API
   - OpenAI ChatGPT
   - GitHub Copilot
   - xAI

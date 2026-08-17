@@ -1,6 +1,6 @@
 import { providerFetch } from "../../providers/transport"
 import { clientIdentity } from "./identity"
-import { ensureAccessToken } from "./oauth"
+import { ensureAccessToken, PROVIDER_NAME } from "./chatgpt-oauth"
 
 const CODEX_URL = "https://chatgpt.com/backend-api/codex"
 
@@ -24,7 +24,7 @@ export async function chatGptFetch(profileId: string, path: string, init: ChatGp
   let auth = await ensureAccessToken(profileId)
   const send = () =>
     providerFetch(
-      "ChatGPT",
+      PROVIDER_NAME,
       () =>
         fetch(`${CODEX_URL}${path}`, {
           ...init,

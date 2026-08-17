@@ -11,7 +11,7 @@ interface CapturedRequest {
 const requests: CapturedRequest[] = []
 const responses: Response[] = []
 
-mock.module("./api", () => ({
+mock.module("./chatgpt-client", () => ({
   async chatGptFetch(profileId: string, path: string, init: RequestInit = {}): Promise<Response> {
     requests.push({ profileId, path, init })
     const response = responses.shift()
@@ -20,9 +20,9 @@ mock.module("./api", () => ({
   },
 }))
 
-mock.module("./oauth", () => ({ PROVIDER_ID: "openai-chatgpt" }))
+mock.module("./chatgpt-oauth", () => ({ PROVIDER_ID: "openai-chatgpt", PROVIDER_NAME: "ChatGPT" }))
 
-const { streamResponse } = await import("./transport")
+const { streamResponse } = await import("./chatgpt-transport")
 
 function request(input: StreamRequest["input"] = []): StreamRequest {
   return {

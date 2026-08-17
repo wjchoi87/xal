@@ -1,10 +1,11 @@
 import { describe, expect, test } from "bun:test"
 import type { ConversationItem } from "../../providers/types"
-import { buildInput, parseOutputItem, parseSseEvent, parseTokenResponse } from "./wire"
+import { buildInput, parseOutputItem, parseSseEvent } from "./wire"
 
 const target = { provider: "openai", model: "model-a" }
+const providerName = "OpenAI"
 
-describe("ChatGPT wire conversion", () => {
+describe("OpenAI Responses wire conversion", () => {
   test("classifies streamed deltas, usage, and transient failures", () => {
     expect(parseSseEvent({ type: "response.output_text.delta", delta: "answer" })).toEqual({
       type: "output_text_delta",
@@ -72,17 +73,17 @@ describe("ChatGPT wire conversion", () => {
       arguments: '{"path":"file.ts"}',
     }
 
-    expect(parseOutputItem(message, target)).toEqual({
+    expect(parseOutputItem(message, target, providerName)).toEqual({
       type: "assistant_message",
       text: "first second",
       replay: { provider: target.provider, model: target.model, data: message },
     })
-    expect(parseOutputItem(reasoning, target)).toEqual({
+    expect(parseOutputItem(reasoning, target, providerName)).toEqual({
       type: "reasoning",
       summary: "reasoning summary",
       replay: { provider: target.provider, model: target.model, data: reasoning },
     })
-    expect(parseOutputItem(call, target)).toEqual({
+    expect(parseOutputItem(call, target, providerName)).toEqual({
       type: "tool_call",
       callId: "call-id",
       name: "read",
@@ -137,26 +138,19 @@ describe("ChatGPT wire conversion", () => {
     ])
   })
 
-  test("rejects malformed response items and token responses", () => {
-    expect(() => parseOutputItem({ type: "message", role: "user", content: [] }, target)).toThrow(
+  test("rejects malformed response items", () => {
+    expect(() => parseOutputItem({ type: "message", role: "user", content: [] }, target, providerName)).toThrow(
       "response message had an invalid role",
     )
-    expect(() => parseOutputItem({ type: "reasoning", summary: "invalid" }, target)).toThrow(
+    expect(() => parseOutputItem({ type: "reasoning", summary: "invalid" }, target, providerName)).toThrow(
       "response message content was not an array",
     )
     expect(() =>
-      parseOutputItem({ type: "function_call", call_id: "call", name: "read", arguments: "not-json" }, target),
-    ).toThrow("ChatGPT tool call read had invalid JSON arguments")
-    expect(() => parseTokenResponse({ expires_in: 3600 })).toThrow("token response missing access_token")
-    expect(parseTokenResponse({ access_token: "token" })).toEqual({
-      accessToken: "token",
-      refreshToken: undefined,
-      expiresInSeconds: 3600,
-    })
-    expect(parseTokenResponse({ access_token: "token", refresh_token: "refresh", expires_in: 3600 })).toEqual({
-      accessToken: "token",
-      refreshToken: "refresh",
-      expiresInSeconds: 3600,
-    })
+      parseOutputItem(
+        { type: "function_call", call_id: "call", name: "read", arguments: "not-json" },
+        target,
+        providerName,
+      ),
+    ).toThrow("OpenAI tool call read had invalid JSON arguments")
   })
 })

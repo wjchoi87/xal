@@ -1,11 +1,12 @@
 import { appEnvVar, appInfo } from "../../app-info"
 import { ProviderError } from "../../providers/errors"
-import { errorDetail, httpError, sseEvents, streamError } from "../../providers/transport"
+import { errorDetail, httpError } from "../../providers/transport"
 import type { StreamEvent, StreamRequest } from "../../providers/types"
-import { chatGptFetch } from "./api"
-import { resolveModel } from "./models"
-import { PROVIDER_ID } from "./oauth"
-import { buildInput, parseOutputItem, parseSseEvent } from "./wire"
+import { chatGptFetch } from "./chatgpt-client"
+import { resolveModel } from "./chatgpt-models"
+import { PROVIDER_ID, PROVIDER_NAME } from "./chatgpt-oauth"
+import { responseEvents } from "./responses-stream"
+import { buildInput } from "./wire"
 
 function buildHeaders(sessionId: string): Record<string, string> {
   return {
@@ -53,7 +54,7 @@ async function raiseForStatus(response: Response): Promise<never> {
       { retryable: false },
     )
   }
-  throw httpError("ChatGPT", response, detail)
+  throw httpError(PROVIDER_NAME, response, detail)
 }
 
 export async function* streamResponse(profileId: string, request: StreamRequest): AsyncGenerator<StreamEvent> {
@@ -64,40 +65,10 @@ export async function* streamResponse(profileId: string, request: StreamRequest)
     signal: request.signal,
   })
   if (!response.ok) await raiseForStatus(response)
-  if (!response.body) throw new ProviderError("ChatGPT response had no body", { retryable: true })
-
-  let terminal = false
-  try {
-    for await (const raw of sseEvents(response.body)) {
-      if (raw.done) continue
-      const event = parseSseEvent(raw.data)
-      if (!event) continue
-      switch (event.type) {
-        case "output_text_delta":
-          yield { type: "text_delta", text: event.delta }
-          break
-        case "reasoning_summary_delta":
-          yield { type: "reasoning_summary_delta", text: event.delta }
-          break
-        case "reasoning_delta":
-          yield { type: "reasoning_delta", text: event.delta }
-          break
-        case "item_done": {
-          const item = parseOutputItem(event.item, { provider: PROVIDER_ID, model: request.model })
-          if (item) yield { type: "item_done", item }
-          break
-        }
-        case "terminal":
-          terminal = true
-          yield { type: "done", usage: event.usage }
-          break
-        case "failure":
-          throw new ProviderError(event.message, { retryable: event.retryable })
-      }
-      if (terminal) break
-    }
-  } catch (error) {
-    streamError("ChatGPT", error, request.signal)
-  }
-  if (!terminal) throw new ProviderError("ChatGPT stream ended unexpectedly", { retryable: true })
+  yield* responseEvents(response, {
+    providerId: PROVIDER_ID,
+    providerName: PROVIDER_NAME,
+    model: request.model,
+    signal: request.signal,
+  })
 }

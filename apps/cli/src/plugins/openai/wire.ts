@@ -89,7 +89,11 @@ function blockText(value: JsonValue | undefined, type: string): string {
     .join("")
 }
 
-export function parseOutputItem(item: JsonObject, target: ConversationTarget): ProviderOutputItem | undefined {
+export function parseOutputItem(
+  item: JsonObject,
+  target: ConversationTarget,
+  providerName: string,
+): ProviderOutputItem | undefined {
   switch (asString(item.type)) {
     case "message": {
       if (asString(item.role) !== "assistant") throw new Error("response message had an invalid role")
@@ -114,7 +118,7 @@ export function parseOutputItem(item: JsonObject, target: ConversationTarget): P
         type: "tool_call",
         callId,
         name,
-        args: parseToolArgs("ChatGPT", name, argumentsText),
+        args: parseToolArgs(providerName, name, argumentsText),
         replay: replay(item, target),
       }
     }
@@ -168,26 +172,4 @@ export function buildInput(items: ConversationItem[], target: ConversationTarget
         return [{ type: "function_call_output", call_id: item.callId, output: item.output }]
     }
   })
-}
-
-export interface TokenResponse {
-  idToken?: string
-  accessToken: string
-  refreshToken?: string
-  expiresInSeconds: number
-}
-
-export function parseTokenResponse(raw: unknown): TokenResponse {
-  if (!isRecord(raw)) throw new Error("token response was not an object")
-  const accessToken = asString(raw.access_token)
-  if (!accessToken) throw new Error("token response missing access_token")
-  const rawExpires = asNumber(raw.expires_in)
-  const expiresInSeconds = rawExpires !== undefined && rawExpires > 0 ? rawExpires : 3600
-  const idToken = asString(raw.id_token)
-  return {
-    ...(idToken ? { idToken } : {}),
-    accessToken,
-    refreshToken: asString(raw.refresh_token),
-    expiresInSeconds,
-  }
 }

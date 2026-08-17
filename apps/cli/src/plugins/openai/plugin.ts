@@ -1,25 +1,26 @@
 import { asNumber } from "../../lib/json"
 import { configuredClientIdentity } from "../../providers/identity"
 import type { Plugin } from "../types"
+import { setContextWindowCap } from "./context-window"
 import { defaultClientName, setClientIdentity } from "./identity"
-import { setContextWindowCap } from "./models"
-import { openaiChatgptProvider } from "./provider"
+import { chatgptProvider, openaiProvider } from "./provider"
 
 function contextWindowCap(config: Record<string, unknown>): number | undefined {
   if (!("contextWindow" in config)) return undefined
   const configured = asNumber(config.contextWindow)
   if (configured === undefined || !Number.isInteger(configured) || configured <= 0) {
-    throw new Error("openai-chatgpt contextWindow must be a positive integer")
+    throw new Error("openai contextWindow must be a positive integer")
   }
   return configured
 }
 
 const plugin: Plugin = {
-  name: "openai-chatgpt",
+  name: "openai",
   register(ctx) {
     setContextWindowCap(contextWindowCap(ctx.config))
-    setClientIdentity(configuredClientIdentity("openai-chatgpt", ctx.config, defaultClientName))
-    ctx.registerProvider(openaiChatgptProvider)
+    setClientIdentity(configuredClientIdentity("openai", ctx.config, defaultClientName))
+    ctx.registerProvider(openaiProvider)
+    ctx.registerProvider(chatgptProvider)
   },
 }
 

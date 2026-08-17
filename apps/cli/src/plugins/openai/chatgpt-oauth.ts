@@ -5,9 +5,9 @@ import { asNumber, asString, isRecord } from "../../lib/json"
 import type { ConnectContext } from "../../providers/types"
 import { protectSecretValue } from "../../secrets/redactor"
 import { clientIdentity } from "./identity"
-import { parseTokenResponse, type TokenResponse } from "./wire"
 
 export const PROVIDER_ID = "openai-chatgpt"
+export const PROVIDER_NAME = "ChatGPT"
 
 const ISSUER = "https://auth.openai.com"
 const AUTHORIZE_URL = `${ISSUER}/oauth/authorize`
@@ -90,6 +90,28 @@ function accountIdFromToken(token: string | undefined): string | undefined {
   if (!Array.isArray(payload?.organizations)) return undefined
   const organization = payload.organizations.find(isRecord)
   return organization ? asString(organization.id) : undefined
+}
+
+interface TokenResponse {
+  idToken?: string
+  accessToken: string
+  refreshToken?: string
+  expiresInSeconds: number
+}
+
+export function parseTokenResponse(raw: unknown): TokenResponse {
+  if (!isRecord(raw)) throw new Error("token response was not an object")
+  const accessToken = asString(raw.access_token)
+  if (!accessToken) throw new Error("token response missing access_token")
+  const rawExpires = asNumber(raw.expires_in)
+  const expiresInSeconds = rawExpires !== undefined && rawExpires > 0 ? rawExpires : 3600
+  const idToken = asString(raw.id_token)
+  return {
+    ...(idToken ? { idToken } : {}),
+    accessToken,
+    refreshToken: asString(raw.refresh_token),
+    expiresInSeconds,
+  }
 }
 
 async function requestTokens(body: URLSearchParams): Promise<TokenResponse> {
