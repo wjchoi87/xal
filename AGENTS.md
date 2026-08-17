@@ -17,7 +17,6 @@ Customizable and extensible full coding harness that remains as small as possibl
 - Typed wire boundaries; narrow `unknown` with `lib/json` guards, never `as` casts.
 - Typed unions at seams; handle every case so a new one cannot slip through silently.
 - No code comments.
-- No tests.
 - Write simple and readable code and avoid extra complexity.
 - If a constant will be used only one time, Do not overengineer to make it `const`. this reduces the code readability.
 - Do not write what already exists; reuse it or extract it to one shared place.
