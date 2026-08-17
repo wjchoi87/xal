@@ -1,4 +1,4 @@
-# Xal (Zāl)
+# Xal (Zal)
 
 A terminal coding harness with a headless agent core where every capability, is a plugin
 
