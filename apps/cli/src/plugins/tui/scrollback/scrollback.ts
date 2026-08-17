@@ -16,6 +16,17 @@ interface Stream {
   redactor: RedactedStream
 }
 
+interface TranscriptCheckpoint {
+  messageId: string
+  before: Block[]
+}
+
+interface TranscriptRedo {
+  messageId: string
+  blocks: Block[]
+  checkpoints: TranscriptCheckpoint[]
+}
+
 function redactBlock(block: Block): Block {
   switch (block.kind) {
     case "banner":
@@ -50,7 +61,9 @@ function redactBlock(block: Block): Block {
 
 export class Scrollback {
   private readonly blocks: Block[] = []
+  private readonly checkpoints: TranscriptCheckpoint[] = []
   private readonly header: Block[] = []
+  private readonly redos: TranscriptRedo[] = []
   private stream: Stream | undefined
   private expanded: boolean
   private reasoningVisible: boolean
@@ -107,6 +120,40 @@ export class Scrollback {
     this.appendBlock(redacted)
   }
 
+  checkpoint(messageId: string): void {
+    this.endStream()
+    this.redos.length = 0
+    this.checkpoints.push({ messageId, before: [...this.blocks] })
+  }
+
+  rewind(messageId: string): void {
+    this.endStream()
+    const index = this.checkpoints.findIndex((checkpoint) => checkpoint.messageId === messageId)
+    if (index < 0) throw new Error("TUI transcript and conversation history disagree")
+
+    const checkpoints = [...this.checkpoints]
+    const blocks = [...this.blocks]
+    const removed = checkpoints.slice(index)
+    this.redos.push(
+      ...removed
+        .map((checkpoint, offset): TranscriptRedo => ({
+          messageId: checkpoint.messageId,
+          blocks: [...(removed[offset + 1]?.before ?? blocks)],
+          checkpoints: checkpoints.slice(0, index + offset + 1),
+        }))
+        .toReversed(),
+    )
+    this.restore(removed[0]!.before, checkpoints.slice(0, index))
+  }
+
+  redo(messageId: string): void {
+    this.endStream()
+    const redo = this.redos.at(-1)
+    if (!redo || redo.messageId !== messageId) throw new Error("TUI transcript and conversation redo history disagree")
+    this.redos.pop()
+    this.restore(redo.blocks, redo.checkpoints)
+  }
+
   appendStream(kind: StreamKind, delta: string): void {
     if (this.stream && this.stream.block.kind !== kind) this.endStream()
     const stream = this.stream ?? this.beginStream(kind)
@@ -132,7 +179,9 @@ export class Scrollback {
   clear(): void {
     this.endStream()
     this.blocks.length = 0
+    this.checkpoints.length = 0
     this.header.length = 0
+    this.redos.length = 0
     this.reset()
     if (this.active) this.renderer.resetSplitFooterForReplay({ clearSavedLines: true })
   }
@@ -141,6 +190,11 @@ export class Scrollback {
     this.endStream()
     this.blocks.length = 0
     this.blocks.push(...this.header)
+    for (const checkpoint of this.checkpoints) checkpoint.before = [...this.header]
+    for (const redo of this.redos) {
+      redo.blocks = [...this.header]
+      redo.checkpoints = redo.checkpoints.map((checkpoint) => ({ ...checkpoint, before: [...this.header] }))
+    }
     this.replay()
   }
 
@@ -178,6 +232,14 @@ export class Scrollback {
     if (!streaming) return
     this.stream = this.openRedactedStream(streaming.block, streaming.redactor)
     this.flush(this.stream, false)
+  }
+
+  private restore(blocks: Block[], checkpoints: TranscriptCheckpoint[]): void {
+    this.blocks.length = 0
+    this.blocks.push(...blocks)
+    this.checkpoints.length = 0
+    this.checkpoints.push(...checkpoints)
+    this.replay()
   }
 
   private reset(): void {

@@ -49,6 +49,7 @@ export class StatusBar {
   private hint: string | undefined
   private loading: string | undefined
   private notice: string | undefined
+  private noticeTimer: ReturnType<typeof setTimeout> | undefined
   private contextTokens: number | undefined
   private contextWindow: number | undefined
   private turnStartedAt: number | undefined
@@ -91,6 +92,7 @@ export class StatusBar {
     this.view.on(RenderableEvents.DESTROYED, () => {
       this.spinner.stop()
       this.stopGoalTimer()
+      this.stopNoticeTimer()
     })
     this.render()
   }
@@ -160,13 +162,17 @@ export class StatusBar {
     this.state = state
     this.loading = undefined
     this.notice = undefined
+    this.stopNoticeTimer()
     this.toggleSpinner(this.busy)
     this.render()
   }
 
   setLoading(loading: string | undefined): void {
     this.loading = loading === undefined ? undefined : redactText(loading)
-    this.notice = undefined
+    if (loading !== undefined) {
+      this.notice = undefined
+      this.stopNoticeTimer()
+    }
     this.toggleSpinner(loading !== undefined)
     this.render()
   }
@@ -178,12 +184,20 @@ export class StatusBar {
   }
 
   setNotice(notice: string): void {
+    this.stopNoticeTimer()
     this.notice = redactText(notice)
     this.toggleSpinner(false)
     this.render()
   }
 
+  flashNotice(notice: string, durationMs = 2_500): void {
+    this.setNotice(notice)
+    this.noticeTimer = setTimeout(() => this.clearNotice(), durationMs)
+    this.noticeTimer.unref()
+  }
+
   clearNotice(): void {
+    this.stopNoticeTimer()
     this.notice = undefined
     this.toggleSpinner(this.loading !== undefined || this.busy)
     this.render()
@@ -273,6 +287,11 @@ export class StatusBar {
   private stopGoalTimer(): void {
     if (this.goalTimer) clearInterval(this.goalTimer)
     this.goalTimer = undefined
+  }
+
+  private stopNoticeTimer(): void {
+    if (this.noticeTimer) clearTimeout(this.noticeTimer)
+    this.noticeTimer = undefined
   }
 
   private toggleSpinner(active: boolean): void {

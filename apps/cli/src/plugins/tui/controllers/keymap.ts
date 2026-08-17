@@ -69,11 +69,7 @@ export function bindKeys(renderer: CliRenderer, deps: KeymapDeps): void {
       return
     }
     lastInterrupt = now
-    screen.statusBar.setNotice(`${binding} again to quit`)
-    const timer = setTimeout(() => {
-      if (session.currentState === "idle") screen.statusBar.clearNotice()
-    }, QUIT_WINDOW_MS)
-    timer.unref()
+    screen.statusBar.flashNotice(`${binding} again to quit`, QUIT_WINDOW_MS)
   }
 
   function active(action: ShortcutAction, key: KeyEvent, first: ShortcutStroke): boolean {
@@ -128,14 +124,16 @@ export function bindKeys(renderer: CliRenderer, deps: KeymapDeps): void {
         screen.openAgents()
         return
       case "jobs.background":
-        screen.statusBar.setNotice(
+        screen.statusBar.flashNotice(
           requestBackground(session.id) ? "Moved the running command to background" : "No command to background",
+          QUIT_WINDOW_MS,
         )
-        setTimeout(() => screen.statusBar.clearNotice(), QUIT_WINDOW_MS).unref()
         return
       case "agents.stop-all":
-        screen.statusBar.setNotice(screen.tasks.stopAllAgents() ? "Stopping all agents…" : "No agents are running")
-        setTimeout(() => screen.statusBar.clearNotice(), QUIT_WINDOW_MS).unref()
+        screen.statusBar.flashNotice(
+          screen.tasks.stopAllAgents() ? "Stopping all agents…" : "No agents are running",
+          QUIT_WINDOW_MS,
+        )
         return
       case "app.cancel":
         if (screen.secret.visible) {
@@ -160,8 +158,7 @@ export function bindKeys(renderer: CliRenderer, deps: KeymapDeps): void {
       case "composer.paste-image":
         screen.statusBar.setNotice("Pasting image…")
         void screen.composer.pasteImage().then((pasted) => {
-          screen.statusBar.setNotice(pasted ? "Image attached" : "No image found in clipboard")
-          setTimeout(() => screen.statusBar.clearNotice(), QUIT_WINDOW_MS).unref()
+          screen.statusBar.flashNotice(pasted ? "Image attached" : "No image found in clipboard", QUIT_WINDOW_MS)
         })
         return
       case "display.clear":
@@ -172,8 +169,7 @@ export function bindKeys(renderer: CliRenderer, deps: KeymapDeps): void {
         return
       case "display.toggle-todos": {
         const visible = screen.taskList.toggleVisibility()
-        screen.statusBar.setNotice(`Todos ${visible ? "shown" : "hidden"}`)
-        setTimeout(() => screen.statusBar.clearNotice(), QUIT_WINDOW_MS).unref()
+        screen.statusBar.flashNotice(`Todos ${visible ? "shown" : "hidden"}`, QUIT_WINDOW_MS)
         return
       }
       case "history.open":
@@ -181,8 +177,7 @@ export function bindKeys(renderer: CliRenderer, deps: KeymapDeps): void {
         return
       case "session.next-mode":
         if (session.setMode(nextPermissionMode(session.currentMode))) return
-        screen.statusBar.setNotice("Cannot change mode while a turn or interaction is active")
-        setTimeout(() => screen.statusBar.clearNotice(), QUIT_WINDOW_MS).unref()
+        screen.statusBar.flashNotice("Cannot change mode while a turn or interaction is active", QUIT_WINDOW_MS)
         return
       case "thinking.decrease":
         changeThinking(-1)

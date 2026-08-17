@@ -49,6 +49,7 @@ export class AgentEventController {
   private goalEvaluatedTurns = 0
   private goalId: string | undefined
   private reasoningStreamed = false
+  private replaying = false
 
   constructor(
     private readonly screen: Screen,
@@ -107,11 +108,13 @@ export class AgentEventController {
         this.goalEvaluatedTurns = 0
         this.goalId = undefined
         this.reasoningStreamed = false
+        this.replaying = event.resumed
         this.screen.startSession(event.title, event.cwd, event.model, event.thinking, event.mode)
         statusBar.resetGoal()
         this.trackContextWindow()
         break
       case "session_replay_finished":
+        this.replaying = false
         break
       case "session_title_changed":
         this.screen.setSessionTitle(event.title)
@@ -133,20 +136,17 @@ export class AgentEventController {
         this.screen.settleAgentActivity()
         break
       case "user_message":
+        if (event.messageId) scrollback.checkpoint(event.messageId)
         scrollback.append({ kind: "user", text: event.text, imageCount: event.imageCount, sentAt: event.sentAt })
         break
       case "conversation_rewound":
-        scrollback.append({
-          kind: "info",
-          text: historyMoveNotice("undo", event.prompt, event.fileCount),
-        })
+        scrollback.rewind(event.messageId)
+        if (!this.replaying) statusBar.flashNotice(historyMoveNotice("undo", event.prompt, event.fileCount))
         statusBar.resetUsage()
         break
       case "conversation_redone":
-        scrollback.append({
-          kind: "info",
-          text: historyMoveNotice("redo", event.prompt, event.fileCount),
-        })
+        scrollback.redo(event.messageId)
+        if (!this.replaying) statusBar.flashNotice(historyMoveNotice("redo", event.prompt, event.fileCount))
         statusBar.resetUsage()
         break
       case "tool_call_updated":
@@ -243,6 +243,7 @@ export class AgentEventController {
         break
       case "shell_finished":
         this.screen.dismissApproval()
+        scrollback.checkpoint(event.messageId)
         scrollback.append({
           kind: "tool",
           tool: "bash",
