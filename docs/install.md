@@ -1,14 +1,22 @@
-# Installation and releases
+# Installation and beta releases
 
-## Install
+> **Beta:** Xal is currently in beta. Only beta releases are available to install, and breaking changes may occur before the first stable release.
 
-The installer downloads one native executable, verifies its SHA-256 checksum, and places it in `~/.local/bin`.
+## Install the beta
+
+The installer downloads the latest beta as one native executable, verifies its SHA-256 checksum, and places it in `~/.local/bin`.
 
 ```bash
-curl -fsSL https://xal.sh/install | sh
+curl -fsSL https://xal.sh/install | sh -s -- --beta
 ```
 
-This command installs the latest stable release. The supported targets are:
+Run Xal from any project after installation:
+
+```bash
+xal
+```
+
+The supported targets are:
 
 | Operating system | Architectures | Variants      |
 | ---------------- | ------------- | ------------- |
@@ -21,30 +29,22 @@ Windows installation requires a POSIX shell such as Git Bash, MSYS2, or Cygwin. 
 Set `XAL_INSTALL_DIR` on the shell that runs the installer to choose another destination:
 
 ```bash
-curl -fsSL https://xal.sh/install | XAL_INSTALL_DIR="$HOME/bin" sh
+curl -fsSL https://xal.sh/install | XAL_INSTALL_DIR="$HOME/bin" sh -s -- --beta
 ```
 
 The destination must be on `PATH` before `xal` can be invoked by name.
 
-## Channels
+## Update the beta
 
-Stable is the default channel. Install the newest beta with:
-
-```bash
-curl -fsSL https://xal.sh/install | sh -s -- --beta
-```
-
-`xal update` preserves the channel encoded in the installed version:
+`xal update` installs the newest beta release:
 
 ```bash
 xal update
-xal update --beta
-xal update --stable
 ```
 
-A beta version has the form `X.Y.Z-beta.N`. Stable versions use `X.Y.Z`.
+A beta version has the form `X.Y.Z-beta.N`.
 
-## Beta releases
+## Beta release process
 
 Every push to `main` runs `.github/workflows/release-beta.yml`. The workflow runs all repository checks, derives the beta version from `apps/cli/package.json` and the commit count, and builds every supported target.
 
@@ -58,11 +58,6 @@ The installer and updater resolve the rolling pointer first, then download the e
 
 Change the version in `apps/cli/package.json` on `main` when beta development should begin for a new stable version.
 
-## Stable releases
+## Stable rollout
 
-Run the **Release stable** workflow manually with:
-
-- `beta_tag`: the published beta to promote, such as `v0.0.1-beta.42`.
-- `version`: the stable version to publish, such as `0.0.1`.
-
-The workflow verifies that the beta is a published prerelease reachable from `main` and that its base version matches the requested stable version. It checks out the beta's resolved commit, rebuilds every target with the stable version embedded, and publishes `vX.Y.Z` as the latest stable GitHub release. Existing stable tags cannot be overwritten.
+Stable releases and stable installation are not available during the beta rollout. The **Release stable** workflow is reserved for promoting a tested beta after Xal is ready to leave beta.

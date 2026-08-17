@@ -1,22 +1,16 @@
 #!/bin/sh
 set -eu
 
-CHANNEL=${XAL_CHANNEL:-stable}
 INSTALL_DIR=${XAL_INSTALL_DIR:-"$HOME/.local/bin"}
 
 for arg in "$@"; do
   case "$arg" in
-    --stable) CHANNEL=stable ;;
-    --beta) CHANNEL=beta ;;
+    --beta) ;;
     *) printf 'xal: unknown installer option: %s\n' "$arg" >&2; exit 1 ;;
   esac
 done
 
-case "$CHANNEL" in
-  stable) BASE=https://github.com/xal-sh/xal/releases/latest/download ;;
-  beta) BASE=https://github.com/xal-sh/xal/releases/download/beta ;;
-  *) printf 'xal: XAL_CHANNEL must be stable or beta\n' >&2; exit 1 ;;
-esac
+BASE=https://github.com/xal-sh/xal/releases/download/beta
 
 OS=$(uname -s)
 case "$OS" in
@@ -42,19 +36,14 @@ fi
 
 ASSET="xal-$PLATFORM-$ARCH$LIBC$EXT"
 VERSION=$(curl -fsSL "$BASE/version.txt")
-if [ "$CHANNEL" = beta ]; then
-  if ! printf '%s\n' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$'; then
-    printf 'xal: beta channel returned an invalid version: %s\n' "$VERSION" >&2
-    exit 1
-  fi
-  BASE="https://github.com/xal-sh/xal/releases/download/v$VERSION"
-  RELEASE_VERSION=$(curl -fsSL "$BASE/version.txt")
-  if [ "$RELEASE_VERSION" != "$VERSION" ]; then
-    printf 'xal: beta channel version does not match its release\n' >&2
-    exit 1
-  fi
-elif ! printf '%s\n' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-  printf 'xal: stable channel returned an invalid version: %s\n' "$VERSION" >&2
+if ! printf '%s\n' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$'; then
+  printf 'xal: beta channel returned an invalid version: %s\n' "$VERSION" >&2
+  exit 1
+fi
+BASE="https://github.com/xal-sh/xal/releases/download/v$VERSION"
+RELEASE_VERSION=$(curl -fsSL "$BASE/version.txt")
+if [ "$RELEASE_VERSION" != "$VERSION" ]; then
+  printf 'xal: beta channel version does not match its release\n' >&2
   exit 1
 fi
 CHECKSUMS=$(curl -fsSL "$BASE/SHA256SUMS")
@@ -67,7 +56,7 @@ fi
 TMP_FILE=$(mktemp "${TMPDIR:-/tmp}/xal.XXXXXX")
 trap 'rm -f "$TMP_FILE"' 0 HUP INT TERM
 
-printf 'downloading xal %s (%s, %s)...\n' "$VERSION" "$ASSET" "$CHANNEL"
+printf 'downloading xal %s (%s, beta)...\n' "$VERSION" "$ASSET"
 curl -fL --progress-bar "$BASE/$ASSET" -o "$TMP_FILE"
 
 if command -v sha256sum >/dev/null 2>&1; then

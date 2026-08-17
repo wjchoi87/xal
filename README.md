@@ -1,25 +1,15 @@
 # Xal (Zal)
 
+> [!IMPORTANT]
+> Xal is currently in beta. Only beta releases are available, and breaking changes may occur before the first stable release.
+
 A terminal coding harness with a headless agent core where every capability, is a plugin
 
 Powered by [OpenTUI](https://github.com/anomalyco/opentui)
 
-## Development
+## Install the beta
 
-```bash
-bun install
-bun dev
-```
-
-## Install
-
-Install the latest stable release on macOS, Linux, or Windows from a POSIX shell:
-
-```bash
-curl -fsSL https://xal.sh/install | sh
-```
-
-Install the beta channel instead:
+Install the latest beta release on macOS, Linux, or Windows from a POSIX shell:
 
 ```bash
 curl -fsSL https://xal.sh/install | sh -s -- --beta
@@ -27,25 +17,31 @@ curl -fsSL https://xal.sh/install | sh -s -- --beta
 
 The installer supports x64 and arm64, including glibc and musl Linux. On Windows, run it from Git Bash, MSYS2, or Cygwin. It installs to `~/.local/bin` by default.
 
-Update within the installed channel:
+Run Xal from any project:
+
+```bash
+xal
+```
+
+Update to the latest beta release:
 
 ```bash
 xal update
 ```
 
-Use `xal update --beta` or `xal update --stable` to switch channels. See the [installation and release guide](docs/install.md) for custom paths and the release process.
+There is no stable installation channel during the beta rollout. See the [installation and beta release guide](docs/install.md) for custom paths, supported platforms, and the release process.
 
 ## Documentation
 
 The [documentation](https://xal.sh/docs) covers configuration, the TUI, permissions, providers, integrations, plugins, reusable instructions, commands and skills, goals, and background work. The Markdown sources live in [`docs`](docs).
 
-## Install Locally
-
-```bash
-bun install
-bun release:local
-```
-
 ## Run with Profiler
 
 Run with `--profile` to store anonymous session diagnostics and print the profile path when the app exits.
+
+## Development
+
+```bash
+bun install
+bun dev
+```

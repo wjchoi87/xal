@@ -8,26 +8,11 @@ import { isMissingPathError } from "../lib/error"
 import { asString, isRecord } from "../lib/json"
 import { isStandalone } from "../lib/process"
 
-type UpdateChannel = "stable" | "beta"
-
-interface UpdateOptions {
-  channel: UpdateChannel
-  help: boolean
-}
-
-function parseArgs(args: string[]): UpdateOptions {
-  let channel: UpdateChannel = appInfo.version.includes("-beta.") ? "beta" : "stable"
-  let selected = false
+function parseArgs(args: string[]): { help: boolean } {
   let help = false
 
   for (const arg of args) {
     switch (arg) {
-      case "--stable":
-      case "--beta":
-        if (selected) throw new Error("choose only one update channel")
-        channel = arg === "--beta" ? "beta" : "stable"
-        selected = true
-        break
       case "--help":
       case "-h":
         help = true
@@ -37,16 +22,13 @@ function parseArgs(args: string[]): UpdateOptions {
     }
   }
 
-  return { channel, help }
+  return { help }
 }
 
 function printHelp(ctx: CliContext): void {
-  ctx.print(`usage: ${appInfo.name} update [--stable|--beta]`)
+  ctx.print(`usage: ${appInfo.name} update`)
   ctx.print("")
-  ctx.print("Install the newest release from the current channel.")
-  ctx.print("")
-  ctx.print("  --stable  switch to the stable channel")
-  ctx.print("  --beta    switch to the beta channel")
+  ctx.print("Install the newest beta release.")
 }
 
 async function fetchText(url: string): Promise<string> {
@@ -55,21 +37,15 @@ async function fetchText(url: string): Promise<string> {
   return (await response.text()).trim()
 }
 
-function validateVersion(version: string, channel: UpdateChannel): void {
-  const valid = channel === "stable" ? /^\d+\.\d+\.\d+$/.test(version) : /^\d+\.\d+\.\d+-beta\.\d+$/.test(version)
-  if (!valid) throw new Error(`release channel returned an invalid ${channel} version: ${version}`)
+function validateVersion(version: string): void {
+  if (!/^\d+\.\d+\.\d+-beta\.\d+$/.test(version)) {
+    throw new Error(`beta channel returned an invalid version: ${version}`)
+  }
 }
 
-async function resolveRelease(channel: UpdateChannel): Promise<{ base: string; version: string }> {
-  if (channel === "stable") {
-    const base = "https://github.com/xal-sh/xal/releases/latest/download"
-    const version = await fetchText(`${base}/version.txt`)
-    validateVersion(version, channel)
-    return { base, version }
-  }
-
+async function resolveRelease(): Promise<{ base: string; version: string }> {
   const version = await fetchText("https://github.com/xal-sh/xal/releases/download/beta/version.txt")
-  validateVersion(version, channel)
+  validateVersion(version)
   const base = `https://github.com/xal-sh/xal/releases/download/v${version}`
   const releaseVersion = await fetchText(`${base}/version.txt`)
   if (releaseVersion !== version) throw new Error("beta channel version does not match its release")
@@ -170,9 +146,9 @@ async function runUpdate(args: string[], ctx: CliContext): Promise<void> {
   }
   if (!isStandalone()) throw new Error("xal update is only available in an installed xal binary")
 
-  const { base, version } = await resolveRelease(options.channel)
+  const { base, version } = await resolveRelease()
   if (version === appInfo.version) {
-    ctx.print(`${appInfo.name} ${version} is already up to date (${options.channel})`)
+    ctx.print(`${appInfo.name} ${version} is already up to date (beta)`)
     return
   }
 
@@ -197,12 +173,12 @@ async function runUpdate(args: string[], ctx: CliContext): Promise<void> {
     if (process.platform === "win32") {
       await scheduleWindowsReplacement(executable, downloaded)
       replacementScheduled = true
-      ctx.print(`scheduled ${appInfo.name} ${version} (${options.channel}); it will finish installing after exit`)
+      ctx.print(`scheduled ${appInfo.name} ${version} (beta); it will finish installing after exit`)
       return
     }
 
     await rename(downloaded, executable)
-    ctx.print(`updated ${appInfo.name} ${appInfo.version} → ${version} (${options.channel})`)
+    ctx.print(`updated ${appInfo.name} ${appInfo.version} → ${version} (beta)`)
   } finally {
     if (!replacementScheduled) await removeDownload(downloaded)
   }
@@ -210,8 +186,8 @@ async function runUpdate(args: string[], ctx: CliContext): Promise<void> {
 
 const updateCli: Cli = {
   name: "update",
-  describe: "update xal to the newest release",
-  usage: "update [--stable|--beta]",
+  describe: "update xal to the newest beta release",
+  usage: "update",
   run: runUpdate,
 }
 

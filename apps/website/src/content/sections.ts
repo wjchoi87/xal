@@ -3,7 +3,7 @@ import type { Block } from "../tui/blocks.ts"
 export const SITE_URL = "https://xal.sh"
 export const DOCS_PATH = "/docs"
 export const REPOSITORY = "https://github.com/xal-sh/xal"
-export const INSTALL_COMMAND = "curl -fsSL https://xal.sh/install | sh"
+export const INSTALL_COMMAND = "curl -fsSL https://xal.sh/install | sh -s -- --beta"
 
 export const MODEL = "gpt-5.6-sol"
 export const THINKING = "xhigh"
@@ -248,7 +248,10 @@ export const agents: Block[] = [
 
 export const installIntro: Block = {
   kind: "doc",
-  nodes: [{ kind: "paragraph", text: "One thing first — xal does not touch your machine without asking." }],
+  nodes: [
+    { kind: "paragraph", text: "Xal is currently in beta. Only beta releases are available." },
+    { kind: "paragraph", text: "One thing first: Xal does not touch your machine without asking." },
+  ],
 }
 
 export const installPending: Block = {
@@ -268,7 +271,7 @@ export const installAllowed: Block[] = [
     elapsed: "6.8s",
     outcome: "success",
     output: [
-      { text: "resolving xal v0.0.1 (darwin-arm64)…", tone: "plain" },
+      { text: "resolving xal v0.0.1-beta.42 (darwin-arm64)…", tone: "plain" },
       { text: "downloading  75.2 MB  ████████████████████  100%", tone: "plain" },
       { text: "installed → ~/.local/bin/xal", tone: "plain" },
       { text: "run `xal` in any project to start", tone: "plain" },
