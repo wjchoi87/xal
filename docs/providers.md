@@ -69,10 +69,10 @@ Both credential types stream over the OpenAI Responses API, where Grok models ex
 
 Configure options under `pluginConfig.openai-chatgpt`:
 
-| Option          | Type             | Default                  | Description                                                 |
-| --------------- | ---------------- | ------------------------ | ----------------------------------------------------------- |
-| `contextWindow` | Positive integer | `260000`                 | Upper bound applied to the model's reported context window. |
-| `clientName`    | string           | Package application name | Client name used in the provider request user agent.        |
+| Option          | Type             | Default        | Description                                                 |
+| --------------- | ---------------- | -------------- | ----------------------------------------------------------- |
+| `contextWindow` | Positive integer | `260000`       | Upper bound applied to the model's reported context window. |
+| `clientName`    | string           | `codex_cli_rs` | Client name used in the provider request user agent.        |
 
 ## DeepSeek
 

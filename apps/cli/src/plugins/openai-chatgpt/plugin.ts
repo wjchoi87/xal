@@ -1,7 +1,7 @@
 import { asNumber } from "../../lib/json"
 import { configuredClientIdentity } from "../../providers/identity"
 import type { Plugin } from "../types"
-import { setClientIdentity } from "./identity"
+import { defaultClientName, setClientIdentity } from "./identity"
 import { setContextWindowCap } from "./models"
 import { openaiChatgptProvider } from "./provider"
 
@@ -18,7 +18,7 @@ const plugin: Plugin = {
   name: "openai-chatgpt",
   register(ctx) {
     setContextWindowCap(contextWindowCap(ctx.config))
-    setClientIdentity(configuredClientIdentity("openai-chatgpt", ctx.config))
+    setClientIdentity(configuredClientIdentity("openai-chatgpt", ctx.config, defaultClientName))
     ctx.registerProvider(openaiChatgptProvider)
   },
 }
