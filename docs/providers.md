@@ -13,13 +13,13 @@ Each provider connection is stored as a named profile. Profile names are globall
 - Run `/connect`, or `xal connect <provider> [profile]`, to authenticate and name a new profile. A successful connection becomes the default for new sessions.
 - Run `/profiles` to rename a profile. The CLI equivalents are `xal profiles` and `xal profiles rename <name> <new-name>`.
 - Run `/logout`, or `xal logout [profile]`, to select and remove one connection without affecting other profiles for that provider.
-- Run `/model` or `xal models [provider]` to refresh account-visible models. Every model belongs to one profile, so choosing a model also chooses the profile and credentials the turn uses. Every model choice shows both its provider and profile name.
+- Run `/model` to choose from the cached model catalogs. Run `/model refresh` or `xal models [provider]` to refresh account-visible models first. Every model belongs to one profile, so choosing a model also chooses the profile and credentials the turn uses. Every model choice shows both its provider and profile name.
 
 The profile behind the selected model is stored as `profile` alongside `provider` and `model` in [Configuration](/docs/configs). For a one-off headless run, use `xal run --connection <profile>`. If `--provider` identifies a provider with multiple profiles and no selected profile resolves the ambiguity, Xal requires `--connection`.
 
 ## Model discovery
 
-`xal models` and `/model` refresh every connected profile's model catalog. The catalog supplies the model picker, context-window tracking, input modalities, and the choices shown by `/thinking`.
+The active profile's catalog is loaded into the process cache when a session starts. `/model` reuses that cache and requests each other connected profile's non-refresh catalog at most once, so reopening the picker does not reload successful or failed catalogs. A provider may perform initial live discovery when it has no persistent or bundled catalog. `/model refresh` and `xal models` explicitly refresh every connected profile. A provider that fails or returns an invalid catalog is reported without hiding models from the other providers or preventing the session from starting. If a refresh fails after that profile supplied a valid catalog, Xal keeps the previous in-process catalog available. Catalogs supply the model picker, context-window tracking, input modalities, and the choices shown by `/thinking`.
 
 The ChatGPT provider discovers the account-visible catalog from the authenticated Codex service and stores the last successful result in `<app-home>/cache/openai-chatgpt-models-<profile-id>.json`. If live discovery is unavailable, Xal reports the failure and uses that profile's cache, then its bundled catalog.
 

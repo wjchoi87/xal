@@ -105,14 +105,16 @@ const connectCommand: Command = {
 const modelCommand: Command = {
   name: "model",
   describe: "choose the model for this and future sessions",
-  async run(_args, ctx) {
+  async run(args, ctx) {
+    if (args.length > 1 || (args[0] && args[0] !== "refresh")) throw new Error("usage: /model [refresh]")
     if (ctx.session.currentState !== "idle") {
       ctx.print("cannot change model while a turn is running")
       return
     }
 
-    ctx.busy("Discovering models")
-    const result = await listModelChoices(true).finally(() => ctx.busy())
+    const refresh = args[0] === "refresh"
+    ctx.busy(refresh ? "Discovering models" : "Loading models")
+    const result = await listModelChoices(refresh).finally(() => ctx.busy())
     const { choices, notices } = result
     for (const notice of notices) {
       ctx.print(`model catalog · ${notice.provider.name} · ${notice.profile.name}: ${notice.message}`)

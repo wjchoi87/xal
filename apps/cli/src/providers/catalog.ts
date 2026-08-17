@@ -1,7 +1,16 @@
 import { listProfiles, type ProviderProfile } from "../config/credentials"
 import { describeError } from "../lib/error"
+import { asNumber, asString, isRecord } from "../lib/json"
 import { getProvider, listProviders } from "./registry"
-import type { ModelCatalog, ModelCatalogSource, ModelInfo, Provider } from "./types"
+import {
+  isThinkingEffort,
+  type ModelCatalog,
+  type ModelCatalogSource,
+  type ModelInfo,
+  type ModelInputModality,
+  type Provider,
+  type ThinkingOptions,
+} from "./types"
 
 export interface ModelChoice {
   provider: Provider
@@ -42,27 +51,88 @@ export async function listConnectTargets(): Promise<ConnectTarget[]> {
   })
 }
 
-const catalogs = new Map<string, Promise<ModelCatalog>>()
+interface CatalogCacheEntry {
+  token: symbol
+  catalog?: ModelCatalog
+  lookup: Promise<ModelCatalog>
+  pending: boolean
+}
+
+const catalogs = new Map<string, CatalogCacheEntry>()
 
 function catalogKey(provider: Provider, profileId: string): string {
   return `${provider.id}:${profileId}`
 }
 
-function validateCatalog(provider: Provider, catalog: ModelCatalog): ModelCatalog {
+function validateModalities(provider: Provider, model: string, raw: unknown): ModelInputModality[] {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    throw new Error(`${provider.name} returned invalid input modalities for ${model}`)
+  }
+  const modalities: ModelInputModality[] = []
+  for (const entry of raw) {
+    if (entry !== "text" && entry !== "image") {
+      throw new Error(`${provider.name} returned invalid input modalities for ${model}`)
+    }
+    if (modalities.includes(entry)) throw new Error(`${provider.name} returned duplicate input modalities for ${model}`)
+    modalities.push(entry)
+  }
+  return modalities
+}
+
+function validateThinking(provider: Provider, model: string, raw: unknown): ThinkingOptions | undefined {
+  if (raw === undefined) return undefined
+  if (!isRecord(raw) || !Array.isArray(raw.options) || raw.options.length === 0) {
+    throw new Error(`${provider.name} returned invalid thinking options for ${model}`)
+  }
+  const options = raw.options.map((entry) => {
+    if (!isThinkingEffort(entry)) throw new Error(`${provider.name} returned invalid thinking options for ${model}`)
+    return entry
+  })
+  if (new Set(options).size !== options.length) {
+    throw new Error(`${provider.name} returned duplicate thinking options for ${model}`)
+  }
+  const preferred = asString(raw.default)
+  if (!preferred || !isThinkingEffort(preferred) || !options.includes(preferred)) {
+    throw new Error(`${provider.name} returned an invalid default thinking effort for ${model}`)
+  }
+  return { options, default: preferred }
+}
+
+function validateModel(provider: Provider, raw: unknown): ModelInfo {
+  if (!isRecord(raw)) throw new Error(`${provider.name} returned an invalid model`)
+  const id = asString(raw.id)?.trim()
+  const name = asString(raw.name)?.trim()
+  if (!id) throw new Error(`${provider.name} returned a model with no ID`)
+  if (!name) throw new Error(`${provider.name} returned model ${id} with no name`)
+  const contextWindow = raw.contextWindow === undefined ? undefined : asNumber(raw.contextWindow)
+  if (raw.contextWindow !== undefined && (!contextWindow || !Number.isInteger(contextWindow) || contextWindow <= 0)) {
+    throw new Error(`${provider.name} returned an invalid context window for ${id}`)
+  }
+  return {
+    id,
+    name,
+    contextWindow,
+    inputModalities: validateModalities(provider, id, raw.inputModalities),
+    thinking: validateThinking(provider, id, raw.thinking),
+  }
+}
+
+function validateCatalog(provider: Provider, raw: unknown): ModelCatalog {
+  if (!isRecord(raw) || !Array.isArray(raw.models)) throw new Error(`${provider.name} returned an invalid catalog`)
+  const source = asString(raw.source)
+  if (source !== "runtime" && source !== "cache" && source !== "bundled") {
+    throw new Error(`${provider.name} returned an invalid catalog source`)
+  }
+  const warning = raw.warning === undefined ? undefined : asString(raw.warning)?.trim()
+  if (raw.warning !== undefined && !warning) throw new Error(`${provider.name} returned an invalid catalog warning`)
+  const models = raw.models.map((model) => validateModel(provider, model))
   const ids = new Set<string>()
-  for (const model of catalog.models) {
-    if (!model.id.trim()) throw new Error(`${provider.name} returned a model with no ID`)
-    if (!model.name.trim()) throw new Error(`${provider.name} returned model ${model.id} with no name`)
+  for (const model of models) {
     if (ids.has(model.id)) throw new Error(`${provider.name} returned duplicate model ${model.id}`)
-    if (model.contextWindow !== undefined && (!Number.isInteger(model.contextWindow) || model.contextWindow <= 0)) {
-      throw new Error(`${provider.name} returned an invalid context window for ${model.id}`)
-    }
-    if (model.thinking && !model.thinking.options.includes(model.thinking.default)) {
-      throw new Error(`${provider.name} returned an invalid default thinking effort for ${model.id}`)
-    }
     ids.add(model.id)
   }
-  return catalog
+  if (models.length === 0 && !warning) return { models, source, warning: `${provider.name} returned no models` }
+  return { models, source, ...(warning ? { warning } : {}) }
 }
 
 export function clearModelCatalog(profileId: string): void {
@@ -73,18 +143,32 @@ export function clearModelCatalog(profileId: string): void {
 
 export function modelCatalog(provider: Provider, profileId: string, refresh = false): Promise<ModelCatalog> {
   const key = catalogKey(provider, profileId)
-  if (refresh) catalogs.delete(key)
   const cached = catalogs.get(key)
-  if (cached) return cached
-
+  if (cached && (!refresh || cached.pending)) return cached.lookup
+  const previous = cached?.catalog
+  const token = Symbol(key)
   const lookup = Promise.resolve()
     .then(() => provider.listModels(profileId, refresh))
-    .then((catalog) => validateCatalog(provider, catalog))
-    .catch((error) => {
-      if (catalogs.get(key) === lookup) catalogs.delete(key)
-      throw error
+    .then((catalog: unknown) => validateCatalog(provider, catalog))
+    .then((catalog) => {
+      const current = catalogs.get(key)
+      if (current?.token === token) current.catalog = catalog
+      return catalog
     })
-  catalogs.set(key, lookup)
+    .catch((error): ModelCatalog => {
+      if (previous) {
+        return {
+          ...previous,
+          warning: `model refresh failed: ${describeError(error)}; using previous catalog${previous.warning ? `; ${previous.warning}` : ""}`,
+        }
+      }
+      return { models: [], source: "runtime", warning: `model catalog failed: ${describeError(error)}` }
+    })
+    .finally(() => {
+      const current = catalogs.get(key)
+      if (current?.token === token) current.pending = false
+    })
+  catalogs.set(key, { token, catalog: previous, lookup, pending: true })
   return lookup
 }
 
