@@ -8,8 +8,16 @@ export function agentHome(): string {
   return process.env[appEnvVar("HOME")]?.trim() || join(homedir(), `.${appInfo.name}`)
 }
 
+export function userConfigPath(): string {
+  return join(agentHome(), "config.json")
+}
+
 export function projectConfigPath(root: string): string {
   return join(root, `.${appInfo.name}`, "config.json")
+}
+
+export function projectMcpConfigPath(root: string): string {
+  return join(root, ".mcp.json")
 }
 
 export function credentialsPath(): string {

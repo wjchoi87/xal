@@ -19,7 +19,9 @@ import { registerPlans } from "./plans/register"
 import { bootstrapPlugins, registerBootstrapStep, registerPlugins, shutdownPlugins } from "./plugins/discover"
 import { startProfiler, stopProfiler } from "./profiler/profiler"
 import { registerTrustClis } from "./project/cli"
+import { findProjectRoot } from "./project/root"
 import { ensureWorkspaceTrust } from "./project/trust"
+import { prepareProjectMcp } from "./plugins/mcp/project"
 import { registerProviderClis } from "./providers/cli"
 import { registerProviderCommands } from "./providers/commands"
 import { registerSessionClis } from "./sessions/cli"
@@ -108,7 +110,12 @@ async function main(input: string[]): Promise<void> {
     choose: args.length === 0 && process.stdin.isTTY ? chooseOption : undefined,
   })
   if (!trusted) return
-  const settings = await loadSettings()
+  const root = await findProjectRoot(process.cwd())
+  let settings = await loadSettings()
+  settings = await prepareProjectMcp(root, settings, {
+    print: args.length === 0 ? ctx.print : ctx.error,
+    choose: args.length === 0 && process.stdin.isTTY && process.stdout.isTTY ? chooseOption : undefined,
+  })
   await loadCredentialSecrets()
   registerCore(settings)
   const plugins = await registerPlugins(settings)

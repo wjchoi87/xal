@@ -20,8 +20,20 @@ import type { RegisteredTool, Tool } from "../../tools/types"
 import type { McpServerConfig } from "./config"
 import { formatJson, formatPromptResult, formatResourceContent, formatToolResult } from "./format"
 
-type ConnectionTransport = "stdio" | "http" | "sse"
-type ConnectionState = "disabled" | "idle" | "connecting" | "connected" | "failed"
+export type McpConnectionTransport = "stdio" | "http" | "sse"
+export type McpConnectionState = "disabled" | "idle" | "connecting" | "connected" | "failed"
+
+export interface McpServerStatus {
+  id: string
+  configuredTransport: McpServerConfig["transport"]
+  connectionTransport?: McpConnectionTransport
+  state: McpConnectionState
+  tools: number
+  resources: number
+  resourceTemplates: number
+  prompts: number
+  warning?: string
+}
 
 interface McpToolRegistry {
   register(tool: RegisteredTool): void
@@ -30,10 +42,11 @@ interface McpToolRegistry {
 
 interface ServerEntry {
   config: McpServerConfig
-  state: ConnectionState
+  state: McpConnectionState
   generation: number
+  removing: boolean
   client?: Client
-  connectionTransport?: ConnectionTransport
+  connectionTransport?: McpConnectionTransport
   tools: McpTool[]
   resources: Resource[]
   resourceTemplates: ResourceTemplate[]
@@ -54,7 +67,7 @@ interface ServerEntry {
 
 interface ClientConnection {
   client: Client
-  transport: ConnectionTransport
+  transport: McpConnectionTransport
 }
 
 interface CloseResult {
@@ -308,6 +321,7 @@ export class McpManager {
         config,
         state: config.enabled ? "idle" : "disabled",
         generation: 0,
+        removing: false,
         tools: [],
         resources: [],
         resourceTemplates: [],
@@ -359,6 +373,24 @@ export class McpManager {
     await this.connectAll()
   }
 
+  async remove(server: string): Promise<void> {
+    if (this.closing) throw new Error("MCP manager is shutting down")
+    const entry = this.entries.get(server)
+    if (!entry) throw new Error(`unknown MCP server: ${server}`)
+    entry.removing = true
+    entry.generation += 1
+    entry.connectAbort?.abort()
+    const connecting = entry.connectingClient
+    const connectingClose = connecting ? await closeLocalClient(connecting) : { closed: true }
+    const activeClose = await this.disconnect(entry)
+    await entry.pendingConnect
+    const settledClose = await this.disconnect(entry)
+    this.resetCatalog(entry)
+    this.entries.delete(server)
+    const warning = closeWarnings(connectingClose, activeClose, settledClose)
+    if (warning) throw new Error(`${server}: ${warning}`)
+  }
+
   async close(): Promise<void> {
     this.closing = true
     const failures = (
@@ -393,27 +425,44 @@ export class McpManager {
     )
   }
 
-  statusLines(): string[] {
-    if (this.entries.size === 0) return ["No MCP servers configured."]
+  servers(): McpServerStatus[] {
     return [...this.entries.values()].map((entry) => {
-      if (entry.state === "connected") {
-        const counts = [
-          `${entry.tools.length} tools`,
-          `${entry.resources.length} resources`,
-          `${entry.resourceTemplates.length} templates`,
-          `${entry.prompts.length} prompts`,
-        ].join(" · ")
-        const warnings = [
-          ...(entry.skippedTaskTools.length > 0 ? [`${entry.skippedTaskTools.length} task-based tools skipped`] : []),
-          ...(entry.skippedOutputTools.length > 0
-            ? [`output schemas skipped: ${entry.skippedOutputTools.join("; ")}`]
-            : []),
-          ...(entry.error ? [entry.error] : []),
-        ]
-        return `${entry.config.id} · connected (${entry.connectionTransport}) · ${counts}${warnings.length > 0 ? ` · warning: ${warnings.join("; ")}` : ""}`
+      const warnings = [
+        ...(entry.skippedTaskTools.length > 0 ? [`${entry.skippedTaskTools.length} task-based tools skipped`] : []),
+        ...(entry.skippedOutputTools.length > 0
+          ? [`output schemas skipped: ${entry.skippedOutputTools.join("; ")}`]
+          : []),
+        ...(entry.error ? [entry.error] : []),
+      ]
+      return {
+        id: entry.config.id,
+        configuredTransport: entry.config.transport,
+        ...(entry.connectionTransport ? { connectionTransport: entry.connectionTransport } : {}),
+        state: entry.state,
+        tools: entry.tools.length,
+        resources: entry.resources.length,
+        resourceTemplates: entry.resourceTemplates.length,
+        prompts: entry.prompts.length,
+        ...(warnings.length > 0 ? { warning: warnings.join("; ") } : {}),
       }
-      if (entry.state === "failed") return `${entry.config.id} · failed · ${entry.error ?? "unknown error"}`
-      return `${entry.config.id} · ${entry.state}`
+    })
+  }
+
+  statusLines(id?: string): string[] {
+    const servers = id ? this.servers().filter((server) => server.id === id) : this.servers()
+    if (servers.length === 0) return ["No MCP servers configured."]
+    return servers.map((server) => {
+      if (server.state === "connected") {
+        const counts = [
+          `${server.tools} tools`,
+          `${server.resources} resources`,
+          `${server.resourceTemplates} templates`,
+          `${server.prompts} prompts`,
+        ].join(" · ")
+        return `${server.id} · connected (${server.connectionTransport}) · ${counts}${server.warning ? ` · warning: ${server.warning}` : ""}`
+      }
+      if (server.state === "failed") return `${server.id} · failed · ${server.warning ?? "unknown error"}`
+      return `${server.id} · ${server.state}`
     })
   }
 
@@ -475,7 +524,7 @@ export class McpManager {
   }
 
   private async connectNow(entry: ServerEntry): Promise<void> {
-    if (this.closing) return
+    if (this.closing || entry.removing) return
     entry.generation += 1
     const generation = entry.generation
     const cleanup = await this.disconnect(entry)

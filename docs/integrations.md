@@ -92,10 +92,47 @@ If a higher-priority configuration changes an existing server's transport, field
 
 `${NAME}` references in commands, arguments, working directories, environment values, URLs, and headers expand from Xal's environment. A missing variable makes the MCP configuration fail instead of starting with an incomplete value. Values in secret-like environment variables and headers are added to Xal's redaction set.
 
+### Project `.mcp.json` discovery
+
+On an interactive launch, Xal checks for `.mcp.json` at the detected project root after the workspace is trusted and before plugins or the session start. The file uses the common `mcpServers` object:
+
+```json
+{
+  "mcpServers": {
+    "local-tools": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["server.js"],
+      "env": {
+        "SERVICE_TOKEN": "${SERVICE_TOKEN}"
+      }
+    },
+    "remote-tools": {
+      "type": "http",
+      "url": "https://example.com/mcp",
+      "headers": {
+        "Authorization": "Bearer ${MCP_TOKEN}"
+      }
+    }
+  }
+}
+```
+
+The `type` field may be omitted for stdio servers. `http` and `streamable-http` both import as Xal's HTTP transport. Stdio entries accept `command`, `args`, `cwd`, `env`, `enabled`, and `timeoutMs`. HTTP entries accept `url`, `headers`, `enabled`, and `timeoutMs`. Names follow the same lower-case rules as native Xal MCP configuration. Unknown fields and malformed values fail startup.
+
+When the file contains names that are not already configured in Xal, the launch chooser offers four actions:
+
+- **Use for this session** adds the new servers only to the current Xal process.
+- **Add to this project** copies the new definitions into `<git-root>/.<name>/config.json`.
+- **Add globally** copies the new definitions into `<app-home>/config.json`.
+- **Do not use** rejects them for this launch. Xal asks again on the next interactive launch.
+
+Existing Xal server names always win and are never overwritten by `.mcp.json`. After every discovered name has been imported, Xal does not prompt again. Environment references are copied without expansion so secrets are not written into configuration. Noninteractive commands do not use unapproved discovered servers and print a message explaining how to approve them interactively.
+
 ### MCP runtime behavior
 
 Servers connect in parallel during plugin bootstrap. One unavailable server is reported as failed without hiding tools from healthy servers. Discovered tools use names such as `mcp__local-tools__count`, retain their remote input schemas, and pass through normal permission handling. Every remote MCP call is treated as an unsandboxed mutation and invalidates workspace redo history because server annotations are untrusted hints and the tool's effects are external or unknown. Reading a remote resource or resolving a remote prompt also requires approval; listing their already-cached catalogs remains read-only.
 
 Connected resource catalogs, resource templates, and prompts are exposed through `mcp_resources`, `mcp_read_resource`, `mcp_prompts`, and `mcp_get_prompt`. Server instructions join the system prompt. Binary resource and image or audio content is summarized with its media type and byte size because Xal's tool-result boundary is text-only. Tools that require the experimental MCP task protocol, or whose output schema uses an unsupported dialect, are skipped and reported in status. Ordinary and task-optional tools remain available.
 
-Tool-list change notifications refresh registered tools, and `/mcp reconnect [server]` reconnects one server or all servers. Run `/mcp` to see transport, status, and capability counts.
+Tool-list change notifications refresh registered tools, and `/mcp reconnect [server]` reconnects one server or all servers. Run `/mcp` to open a searchable server list with transport, status, and capability counts. Selecting a server offers reconnect and delete actions. Delete requires confirmation, disconnects the server, unregisters its tools, and removes its definition from the project or global Xal configuration file that supplied it. A session-only discovered server is removed only from the current process. If deleting a project override reveals a same-name global definition, that global server becomes effective on the next launch.

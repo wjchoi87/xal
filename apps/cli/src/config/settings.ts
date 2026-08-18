@@ -1,10 +1,9 @@
-import { join } from "node:path"
 import { readJsonFile, writeSecureJson } from "../lib/fs"
 import { asString, asStringArray, isRecord } from "../lib/json"
 import { findProjectRoot } from "../project/root"
 import { isTrusted } from "../project/trust"
 import { isThinkingEffort, type ThinkingEffort } from "../providers/types"
-import { agentHome, projectConfigPath } from "./paths"
+import { projectConfigPath, userConfigPath } from "./paths"
 
 export interface PermissionSettings {
   allow: string[]
@@ -63,10 +62,6 @@ let current: Settings = {
   thinking: {},
 }
 
-function userSettingsPath(): string {
-  return join(agentHome(), "config.json")
-}
-
 export function settings(): Settings {
   return current
 }
@@ -77,7 +72,7 @@ export async function loadSettings(): Promise<Settings> {
 }
 
 export async function saveSettings(patch: Partial<Settings>): Promise<void> {
-  const path = userSettingsPath()
+  const path = userConfigPath()
   const [user, project] = await Promise.all([readSettingsFile(path), readProjectSettings()])
   const nextUser = mergeSettings(user, { ...patch })
   const next = parseSettings(mergeSettings(nextUser, project))
@@ -86,7 +81,7 @@ export async function saveSettings(patch: Partial<Settings>): Promise<void> {
 }
 
 async function readSettings(): Promise<Settings> {
-  const [user, project] = await Promise.all([readSettingsFile(userSettingsPath()), readProjectSettings()])
+  const [user, project] = await Promise.all([readSettingsFile(userConfigPath()), readProjectSettings()])
   return parseSettings(mergeSettings(user, project))
 }
 
