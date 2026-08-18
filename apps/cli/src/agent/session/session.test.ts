@@ -80,9 +80,11 @@ describe("AgentSession", () => {
     ])
   })
 
-  test("executes a tool call and sends its result in the next provider round", async () => {
+  test("updates context usage after each provider round in a tool-driven turn", async () => {
     const toolName = `read_test_${crypto.randomUUID().replaceAll("-", "_")}`
     const executions: Record<string, unknown>[] = []
+    const firstUsage: Usage = { totalInputTokens: 40, cacheReadInputTokens: 10, outputTokens: 4 }
+    const secondUsage: Usage = { totalInputTokens: 55, cacheReadInputTokens: 20, outputTokens: 6 }
     const tool: Tool = {
       name: toolName,
       description: "Read a test value",
@@ -100,9 +102,9 @@ describe("AgentSession", () => {
           type: "item_done",
           item: { type: "tool_call", callId: "call-1", name: toolName, args: { value: 42 } },
         },
-        { type: "done" },
+        { type: "done", usage: firstUsage },
       ]),
-      completedRound("Finished"),
+      completedRound("Finished", secondUsage),
     ])
     const session = harness.createSession(provider)
     const observed: AgentEvent[] = []
@@ -113,7 +115,17 @@ describe("AgentSession", () => {
         observed.push(event)
       })
 
-      expect(outcome).toEqual({ status: "completed", response: "Finished", usage: undefined, context: undefined })
+      expect(outcome).toEqual({
+        status: "completed",
+        response: "Finished",
+        usage: {
+          totalInputTokens: 95,
+          cacheReadInputTokens: 30,
+          cacheWriteInputTokens: 0,
+          outputTokens: 10,
+        },
+        context: secondUsage,
+      })
       expect(executions).toEqual([{ value: 42 }])
       expect(provider.requests).toHaveLength(2)
       expect(provider.requests[0]?.cacheKey).toBe(provider.requests[1]?.cacheKey)
@@ -125,6 +137,17 @@ describe("AgentSession", () => {
         { type: "tool_call", callId: "call-1", name: toolName, args: { value: 42 } },
         { type: "tool_result", callId: "call-1", output: "tool result" },
       ])
+      expect(observed.filter((event) => event.type === "context_updated")).toEqual([
+        { type: "context_updated", context: firstUsage },
+        { type: "context_updated", context: secondUsage },
+      ])
+      expect(
+        observed
+          .filter(
+            (event) => event.type === "context_updated" || event.type === "tool_started" || event.type === "turn_ended",
+          )
+          .map((event) => event.type),
+      ).toEqual(["context_updated", "tool_started", "context_updated", "turn_ended"])
       expect(observed.filter((event) => event.type === "tool_started")).toEqual([
         {
           type: "tool_started",

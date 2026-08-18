@@ -134,6 +134,7 @@ function renderEvent(event: AgentEvent): string | undefined {
     case "elicitation_resolved":
     case "tool_started":
     case "tool_updated":
+    case "context_updated":
       return undefined
   }
   const exhaustive: never = event

@@ -114,6 +114,7 @@ export async function driveTaskToQuiescence(
       case "shell_finished":
       case "tool_finished":
       case "compacted":
+      case "context_updated":
       case "error":
         break
     }

@@ -122,6 +122,7 @@ export type AgentEvent =
       denial?: DenialCause
     }
   | { type: "compacted"; summary: string; replaced: number; tokensBefore?: number }
+  | { type: "context_updated"; context: Usage }
   | { type: "turn_ended"; usage?: Usage; context?: Usage; output?: JsonObject }
   | { type: "turn_failed"; message: string; usage?: Usage; context?: Usage }
   | { type: "turn_interrupted" }

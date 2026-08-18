@@ -81,6 +81,7 @@ export function runAgentTurn(
         case "tool_updated":
         case "tool_finished":
         case "compacted":
+        case "context_updated":
         case "error":
           break
       }
@@ -182,6 +183,7 @@ export function runAgentGoal(
         case "tool_updated":
         case "tool_finished":
         case "compacted":
+        case "context_updated":
         case "error":
           break
       }

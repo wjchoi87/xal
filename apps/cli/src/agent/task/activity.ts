@@ -124,6 +124,7 @@ export function activity(
     case "elicitation_requested":
     case "elicitation_resolved":
     case "compacted":
+    case "context_updated":
       break
   }
   if (state.activity !== previousActivity) updateActivity(state.activity)

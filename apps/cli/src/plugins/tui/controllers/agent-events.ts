@@ -284,6 +284,9 @@ export class AgentEventController {
         statusBar.setTurnOutcome("interrupted")
         scrollback.append({ kind: "info", text: "Interrupted" })
         break
+      case "context_updated":
+        statusBar.setUsage(event.context)
+        break
       case "turn_ended":
         statusBar.setTurnOutcome("completed")
         statusBar.setUsage(event.context)

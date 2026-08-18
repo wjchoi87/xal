@@ -281,6 +281,8 @@ export function redactAgentEvent(event: AgentEvent): AgentEvent {
       return { ...event, title: redactText(event.title), output: redactText(event.output) }
     case "compacted":
       return { ...event, summary: redactText(event.summary) }
+    case "context_updated":
+      return event
     case "turn_ended":
       return { ...event, ...(event.output === undefined ? {} : { output: redactJsonObject(event.output) }) }
     case "turn_failed":

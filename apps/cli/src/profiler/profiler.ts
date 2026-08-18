@@ -387,6 +387,7 @@ function anonymousAgentEvent(event: AgentEvent): AnonymousAgentEvent | undefined
     case "reasoning_summary_delta":
     case "reasoning_delta":
     case "tool_updated":
+    case "context_updated":
       return undefined
   }
 }

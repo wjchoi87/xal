@@ -1290,6 +1290,7 @@ export class AgentSession {
         usage.context = turnUsage
         usage.turn = addUsage(usage.turn, turnUsage)
         this.contextTokens = occupiedContext(turnUsage)
+        this.emit({ type: "context_updated", context: turnUsage })
       },
     }
   }

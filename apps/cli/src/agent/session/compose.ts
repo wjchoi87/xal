@@ -174,6 +174,7 @@ function lastState(loaded: LoadedSession): {
       case "tool_finished":
       case "task_list_updated":
       case "compacted":
+      case "context_updated":
       case "turn_ended":
       case "turn_failed":
       case "turn_interrupted":
