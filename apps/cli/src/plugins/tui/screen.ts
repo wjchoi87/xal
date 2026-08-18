@@ -9,7 +9,6 @@ import type { PermissionMode } from "../../permissions/types"
 import type { ThinkingEffort, UserInput } from "../../providers/types"
 import { protectSecretValue, redactText } from "../../secrets/redactor"
 import type { ElicitationQuestion } from "../../tools/types"
-import { AgentSummary } from "./components/agent-summary"
 import { JobViewer } from "./components/job-viewer"
 import { BackgroundTasks } from "./components/background-tasks"
 import { Composer } from "./components/composer"
@@ -44,7 +43,6 @@ export class Screen {
   readonly view: BoxRenderable
   private readonly mainPanel: BoxRenderable
   readonly scrollback: Scrollback
-  readonly agentSummary: AgentSummary
   readonly jobViewer: JobViewer
   readonly live: LiveTools
   readonly queued: QueuedInputs
@@ -62,7 +60,6 @@ export class Screen {
   private overlaid = false
   private paletteBelow = true
   private reserved = 0
-  private agentActivityDirty = false
   private page: ScreenPage = { kind: "main" }
   private sessionTitle: string | undefined
   private cwd: string
@@ -85,10 +82,6 @@ export class Screen {
       shortcuts.help("display.toggle-details"),
     )
     this.view = column(renderer, { width: "100%", height: "100%", justifyContent: "flex-end" })
-    this.agentSummary = new AgentSummary(renderer, () => {
-      if (this.agentSummary.height > 0) this.agentActivityDirty = true
-      this.syncFooter()
-    })
     this.jobViewer = new JobViewer(renderer, (message) => this.statusBar.setNotice(message))
     this.live = new LiveTools(renderer, () => this.syncFooter(), shortcuts.help("jobs.background"))
     this.queued = new QueuedInputs(renderer, () => this.syncFooter())
@@ -177,7 +170,6 @@ export class Screen {
     )
 
     this.mainPanel = column(renderer, { paddingLeft: 2, paddingRight: 2 })
-    this.mainPanel.add(this.agentSummary.view)
     this.mainPanel.add(this.live.view)
     this.mainPanel.add(this.queued.view)
     this.mainPanel.add(this.taskList.view)
@@ -249,7 +241,6 @@ export class Screen {
     this.statusBar.resetUsage()
     this.statusBar.resetTurnElapsed()
     this.taskList.set([])
-    this.agentActivityDirty = false
     if (!this.tasks.closeViewer()) this.viewJob(undefined)
     this.scrollback.clear()
     this.scrollback.appendHeader({ kind: "banner", model, cwd: compactPath(cwd) })
@@ -318,30 +309,10 @@ export class Screen {
     this.syncFooter()
   }
 
-  settleAgentActivity(): void {
-    if (!this.agentActivityDirty) return
-    this.agentActivityDirty = false
-    if (this.jobViewer.visible) return
-    this.replayAgentActivity()
-  }
-
-  private replayAgentActivity(): void {
-    queueMicrotask(() => {
-      if (this.jobViewer.visible) return
-      this.syncFooter()
-      this.scrollback.replay()
-    })
-  }
-
   private elicitationAvailableHeight(): number {
     const siblingRows = this.jobViewer.visible
       ? STATUS_ROWS + this.tasks.height
-      : this.agentSummary.height +
-        this.live.height +
-        this.queued.height +
-        this.taskList.height +
-        STATUS_ROWS +
-        this.tasks.height
+      : this.live.height + this.queued.height + this.taskList.height + STATUS_ROWS + this.tasks.height
     return Math.max(1, this.renderer.terminalHeight - siblingRows)
   }
 
@@ -394,7 +365,6 @@ export class Screen {
     else this.reserved = Math.max(this.reserved, paletteRows)
     const editing = this.composer.rows + this.shortcutHelp.height + Math.max(paletteRows, this.reserved)
     this.renderer.footerHeight =
-      this.agentSummary.height +
       this.live.height +
       this.queued.height +
       this.taskList.height +
@@ -414,7 +384,6 @@ export class Screen {
       return this.jobViewer.height + this.composer.rows + this.shortcutHelp.height + STATUS_ROWS + this.tasks.height
     }
     return (
-      this.agentSummary.height +
       this.live.height +
       this.queued.height +
       this.taskList.height +

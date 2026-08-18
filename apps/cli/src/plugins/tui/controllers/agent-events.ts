@@ -133,7 +133,6 @@ export class AgentEventController {
         this.screen.dismissElicitation()
         scrollback.endStream()
         live.clear()
-        this.screen.settleAgentActivity()
         break
       case "user_message":
         if (event.messageId) scrollback.checkpoint(event.messageId)
