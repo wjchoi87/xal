@@ -110,7 +110,6 @@ export async function runTurn(
     midWork = true
     interjected = false
     let loopError: Error | undefined
-    let requiresContinuation = false
     let sharedEntries: ToolCallEntry[] = []
     for (const [index, call] of toolCalls.entries()) {
       const entry: ToolCallEntry = restoringCalls
@@ -122,13 +121,7 @@ export async function runTurn(
       }
 
       if (sharedEntries.length > 0) {
-        const outcome = await host.toolRunner.runBatch(
-          { concurrency: "shared", entries: sharedEntries },
-          signal,
-          toolLoops,
-        )
-        loopError = outcome.error
-        requiresContinuation ||= outcome.requiresContinuation
+        loopError = await host.toolRunner.runBatch({ concurrency: "shared", entries: sharedEntries }, signal, toolLoops)
         sharedEntries = []
         const stopReason = host.toolRunner.stopReason(loopError, signal)
         if (stopReason) {
@@ -138,22 +131,14 @@ export async function runTurn(
         }
       }
 
-      const outcome = await host.toolRunner.runBatch({ concurrency: "exclusive", entries: [entry] }, signal, toolLoops)
-      loopError = outcome.error
-      requiresContinuation ||= outcome.requiresContinuation
+      loopError = await host.toolRunner.runBatch({ concurrency: "exclusive", entries: [entry] }, signal, toolLoops)
       const stopReason = host.toolRunner.stopReason(loopError, signal)
       if (!stopReason) continue
       for (const remaining of toolCalls.slice(index + 1)) host.toolRunner.finishSkippedCall(remaining, stopReason)
       break
     }
     if (sharedEntries.length > 0) {
-      const outcome = await host.toolRunner.runBatch(
-        { concurrency: "shared", entries: sharedEntries },
-        signal,
-        toolLoops,
-      )
-      loopError = outcome.error
-      requiresContinuation ||= outcome.requiresContinuation
+      loopError = await host.toolRunner.runBatch({ concurrency: "shared", entries: sharedEntries }, signal, toolLoops)
     }
     if (loopError) throw loopError
     const contract = host.outputContract()
@@ -170,14 +155,6 @@ export async function runTurn(
     if (signal.aborted) {
       host.emit({ type: "turn_interrupted" })
       return
-    }
-
-    if (!requiresContinuation && !host.queuedPromptNext() && !host.asyncResultsQueued()) {
-      const final = items.findLast((item) => item.type === "assistant_message")
-      if (final?.type === "assistant_message") {
-        await endTurn(host, usage, final.text, signal, true)
-        return { usage, usedTools }
-      }
     }
   }
 }

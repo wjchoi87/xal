@@ -70,7 +70,6 @@ interface ToolContract extends ToolDefinition {
   prompt?: string
   available?(ctx: ToolAvailabilityContext): boolean
   title(args: Record<string, unknown>, ctx: ToolCallContext): string
-  requiresContinuation?(args: Record<string, unknown>, ctx: ToolCallContext): boolean
   readOnly?(args: Record<string, unknown>, ctx: ToolCallContext): boolean
   undo?(args: Record<string, unknown>, ctx: ToolCallContext): UndoAction
   sandboxed?(args: Record<string, unknown>, ctx: ToolCallContext): boolean

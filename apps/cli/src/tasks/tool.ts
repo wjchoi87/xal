@@ -40,10 +40,6 @@ export const updateTasksTool: Tool = {
     if (count === 0) return "Clear task list"
     return `Update ${count} ${count === 1 ? "task" : "tasks"}`
   },
-  requiresContinuation(args) {
-    const tasks = parseTaskList(args.tasks)
-    return !tasks || tasks.length === 0 || tasks.some((task) => task.status !== "completed")
-  },
   readOnly() {
     return true
   },

@@ -39,11 +39,6 @@ export interface ToolCallBatch {
   entries: ToolCallEntry[]
 }
 
-export interface ToolCallBatchOutcome {
-  error?: Error
-  requiresContinuation: boolean
-}
-
 export type ToolCallEntry = { type: "call"; call: ToolCallItem } | { type: "outcome"; outcome: ToolCallOutcome }
 
 export interface PreparedToolCall {
@@ -58,7 +53,6 @@ export interface ToolCallOutcome {
   call: ToolCallItem
   title: string
   readOnly: boolean
-  requiresContinuation: boolean
   output: string
   execution?: ProcessExecution
   events: ToolEvent[]
@@ -153,17 +147,10 @@ export class ToolCallRunner {
     events: ToolEvent[] = [],
     execution?: ProcessExecution,
   ): ToolCallOutcome {
-    const tool = this.host.availableTool(call.name)
-    const requiresContinuation =
-      denial !== undefined ||
-      output.startsWith(TOOL_FAILED_PREFIX) ||
-      output.startsWith(TOOL_OUTPUT_UNSAVED_PREFIX) ||
-      (tool?.requiresContinuation?.(call.args, { cwd: this.host.cwd() }) ?? true)
     return {
       call,
       title,
       readOnly,
-      requiresContinuation,
       output,
       events,
       ...(execution ? { execution } : {}),
@@ -198,11 +185,7 @@ export class ToolCallRunner {
     this.finishSkippedCall(entry.call, output)
   }
 
-  async runBatch(
-    batch: ToolCallBatch,
-    signal: AbortSignal,
-    toolLoops: ToolLoopDetector,
-  ): Promise<ToolCallBatchOutcome> {
+  async runBatch(batch: ToolCallBatch, signal: AbortSignal, toolLoops: ToolLoopDetector): Promise<Error | undefined> {
     const profile = profileToolBatchStarted(
       this.host.sessionId(),
       this.host.kind,
@@ -259,10 +242,7 @@ export class ToolCallRunner {
         if (recorded[index]) toolLoops.record(outcome.call, outcome.output)
       }
       profileToolBatchFinished(profile, loopError ? "failed" : signal.aborted ? "interrupted" : "completed")
-      return {
-        ...(loopError ? { error: loopError } : {}),
-        requiresContinuation: outcomes.some((outcome) => outcome?.requiresContinuation ?? true),
-      }
+      return loopError
     } catch (error) {
       profileToolBatchFinished(profile, isAbortError(error) || signal.aborted ? "interrupted" : "failed")
       throw error
