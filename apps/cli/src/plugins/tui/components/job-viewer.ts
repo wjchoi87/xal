@@ -7,9 +7,10 @@ import {
   type TextRenderable,
 } from "@opentui/core"
 import type { BackgroundTask } from "../../../background/registry"
+import { formatTokens } from "../../../lib/format"
 import { compactPath } from "../../../lib/path"
 import { redactText, secretsVersion } from "../../../secrets/redactor"
-import { formatDuration, formatTokens } from "../lib/format"
+import { formatDuration } from "../lib/format"
 import { column, label, row } from "../lib/renderables"
 import { firstLine, sanitize, sliceToWidth, terminalGlyph, truncateToWidth } from "../lib/text"
 import { COLORS } from "../theme/colors"

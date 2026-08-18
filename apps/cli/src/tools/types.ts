@@ -1,7 +1,7 @@
 import type { SessionKind } from "../agent/types"
 import type { PermissionMode } from "../permissions/types"
 import type { PlanUpdatedEvent } from "../plans/types"
-import type { ModelInputModality, Provider, ThinkingEffort, ToolDefinition } from "../providers/types"
+import type { ContextUsage, ModelInputModality, Provider, ThinkingEffort, ToolDefinition } from "../providers/types"
 import type { TaskListUpdatedEvent } from "../tasks/types"
 import type { WorkspaceUndo } from "./undo"
 
@@ -120,6 +120,8 @@ export interface InteractiveToolContext {
   }
   publish(event: ToolEvent): void
   requestInput(request: ElicitationRequest): Promise<ElicitationResult>
+  contextUsage(): Promise<ContextUsage | undefined>
+  restartSession(prompt: string): void
 }
 
 export interface InteractiveTool extends ToolContract {

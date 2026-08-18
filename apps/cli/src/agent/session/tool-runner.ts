@@ -5,7 +5,7 @@ import { modeDefinition } from "../../permissions/modes"
 import { evaluatePolicy } from "../../permissions/service"
 import type { PermissionMode, PermissionScope } from "../../permissions/types"
 import { profileToolBatchFinished, profileToolBatchStarted } from "../../profiler/profiler"
-import type { ModelInputModality, Provider, ThinkingEffort, ToolCallItem } from "../../providers/types"
+import type { ContextUsage, ModelInputModality, Provider, ThinkingEffort, ToolCallItem } from "../../providers/types"
 import { createRedactedStream, redactJsonObject, redactText } from "../../secrets/redactor"
 import { boundToolOutput, TOOL_FAILED_PREFIX, TOOL_OUTPUT_UNSAVED_PREFIX } from "../../tools/output"
 import { isInteractiveTool, isSessionTool } from "../../tools/types"
@@ -100,6 +100,8 @@ export interface ToolRunnerHost {
   requestInput(callId: string, request: ElicitationRequest, signal: AbortSignal): Promise<ElicitationResult>
   requestApproval(resolve: (result: ApprovalResult) => void): void
   changeWorkspace(cwd: string): void
+  contextUsage(): Promise<ContextUsage | undefined>
+  restartSession(prompt: string): void
 }
 
 export class ToolCallRunner {
@@ -354,6 +356,8 @@ export class ToolCallRunner {
               session: { directory: this.host.outputDirectory(), mode: this.host.mode() },
               publish: (event) => this.host.publishToolEvent(event),
               requestInput: (request) => this.host.requestInput(call.callId, request, signal),
+              contextUsage: () => this.host.contextUsage(),
+              restartSession: (prompt) => this.host.restartSession(prompt),
             })
           : isSessionTool(tool)
             ? tool.execute(call.args, {

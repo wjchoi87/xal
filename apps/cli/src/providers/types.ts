@@ -83,6 +83,11 @@ export function occupiedContext(usage: Usage): number {
   return (usage.totalInputTokens ?? 0) + (usage.outputTokens ?? 0)
 }
 
+export interface ContextUsage {
+  tokens: number
+  window?: number
+}
+
 export type ThinkingEffort = "none" | "low" | "medium" | "high" | "xhigh" | "max"
 
 export function isThinkingEffort(value: unknown): value is ThinkingEffort {

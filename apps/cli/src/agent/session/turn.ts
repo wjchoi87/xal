@@ -28,6 +28,7 @@ export interface TurnHost {
   streamRound(usage: TurnUsage): StreamRoundHost
   drainBackgroundResults(): boolean
   drainQueue(signal: AbortSignal, interjected: boolean): Promise<boolean>
+  restartRequested(): boolean
   autoCompact(signal: AbortSignal, provider: Provider, model: string): Promise<void>
   beginCheckpoint(messageId: string, input: UserInput): Promise<void>
   stopAcceptingInput(): void
@@ -155,6 +156,10 @@ export async function runTurn(
     if (signal.aborted) {
       host.emit({ type: "turn_interrupted" })
       return
+    }
+    if (host.restartRequested()) {
+      await endTurn(host, usage, undefined, signal, true)
+      return { usage, usedTools }
     }
   }
 }

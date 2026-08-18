@@ -14,9 +14,11 @@ import type { PermissionMode, PermissionScope } from "../../permissions/types"
 import type { SessionPlan } from "../../plans/types"
 import { profileAgentEvent, profileSessionCreated } from "../../profiler/profiler"
 import { promptCacheKey } from "../../providers/cache"
+import { contextWindow } from "../../providers/catalog"
 import { pendingToolCalls, prepareConversation } from "../../providers/conversation"
 import { occupiedContext } from "../../providers/types"
 import type {
+  ContextUsage,
   ModelInputModality,
   Provider,
   ProviderPrompt,
@@ -132,6 +134,7 @@ export class AgentSession {
   private modeBeforePlan: PermissionMode | undefined
   private plan: SessionPlan | undefined
   private planHandoffActive = false
+  private pendingRestart: string | undefined
   private abortController: AbortController | undefined
   private turnActive = false
   private acceptingQueuedInput = false
@@ -224,7 +227,18 @@ export class AgentSession {
       requestInput: (callId, request, signal) => this.interactions.requestInput(callId, request, signal),
       requestApproval: (resolve) => this.interactions.awaitApproval(resolve),
       changeWorkspace: (cwd) => this.changeWorkspace(cwd),
+      contextUsage: () => this.contextUsage(),
+      restartSession: (prompt) => {
+        this.pendingRestart = prompt
+      },
     }
+  }
+
+  private async contextUsage(): Promise<ContextUsage | undefined> {
+    const tokens = this.contextTokens
+    if (tokens === undefined) return undefined
+    const window = await contextWindow(this.provider, this.selectedProfileId(), this.model)
+    return { tokens, ...(window === undefined ? {} : { window }) }
   }
 
   private turnHost(): TurnHost {
@@ -243,6 +257,7 @@ export class AgentSession {
       streamRound: (usage) => this.streamHost(usage),
       drainBackgroundResults: () => this.drainBackgroundResults(),
       drainQueue: (signal, interjected) => this.drainQueue(signal, interjected),
+      restartRequested: () => this.pendingRestart !== undefined,
       autoCompact: (signal, provider, model) => autoCompact(this.compactionHost(), signal, provider, model),
       beginCheckpoint: async (messageId, input) => {
         this.ensureTitle(input)
@@ -469,6 +484,7 @@ export class AgentSession {
     this.tasks = []
     this.plan = undefined
     this.planHandoffActive = false
+    this.pendingRestart = undefined
     this.goals.reset()
     this.buffer.reset()
     this.acceptingQueuedInput = false
@@ -779,6 +795,8 @@ export class AgentSession {
     this.turnActive = false
     this.acceptingQueuedInput = false
     this.abortController = undefined
+    const restart = this.pendingRestart
+    this.pendingRestart = undefined
 
     if (this.settlePause()) return
 
@@ -801,6 +819,8 @@ export class AgentSession {
       return
     }
 
+    if (restart !== undefined && this.startRestartedTurn(restart)) return
+
     if (this.queue.first !== undefined) {
       this.setState("idle")
       if (this.startNextQueued()) return
@@ -811,6 +831,18 @@ export class AgentSession {
     this.setState("idle")
     if (this.settleBackgroundAgents()) return
     this.queue.flush()
+  }
+
+  private startRestartedTurn(prompt: string): boolean {
+    this.setState("idle")
+    if (!this.reset()) {
+      this.emit({
+        type: "error",
+        message: "could not start a new session for the approved plan because background work is still settling",
+      })
+      return false
+    }
+    return this.send({ text: prompt, images: [] })
   }
 
   private startGoalEvaluation(summary: TurnSummary): boolean {

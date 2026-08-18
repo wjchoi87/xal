@@ -146,6 +146,10 @@ export const safety: Block[] = [
         label: "Approve and build",
         description: "Restore the previous writable mode, or normal mode, and begin implementing.",
       },
+      {
+        label: "Clear context and build",
+        description: "Start a new session that carries only this plan. Context: 45% used.",
+      },
       { label: "Request changes", description: "Keep plan mode active so the proposal can be revised." },
     ],
     hint: "←→ questions · ↑↓ choose · 1-3 select · Enter save · Esc decline",

@@ -7,8 +7,9 @@ import {
   type TextRenderable,
 } from "@opentui/core"
 import { listBackgroundTasks, subscribeBackgroundTasks, type BackgroundAgentTask } from "../../../background/registry"
+import { formatTokens } from "../../../lib/format"
 import { redactText } from "../../../secrets/redactor"
-import { formatDuration, formatTokens } from "../lib/format"
+import { formatDuration } from "../lib/format"
 import { column, label, row } from "../lib/renderables"
 import { spinnerGlyph, spinnerHandle } from "../lib/spinner"
 import { firstLine, terminalGlyph } from "../lib/text"

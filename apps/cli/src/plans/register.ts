@@ -33,6 +33,7 @@ function summarize(output: string): string | undefined {
   const path = asString(result.path)
   if (!path) return undefined
   if (status === "approved") return `approved · ${basename(path)}`
+  if (status === "approved_restarted") return `approved · new session · ${basename(path)}`
   if (status === "revision_requested") return `revision requested · ${basename(path)}`
   if (status === "review_dismissed") return `review dismissed · ${basename(path)}`
   return undefined

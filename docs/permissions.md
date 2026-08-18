@@ -28,9 +28,13 @@ Xal ships three modes, cycled while the session is idle with the `session.next-m
 
 ## Plan mode
 
-`/plan [prompt]` enters plan mode and can submit the planning request in the same command. The agent grounds repository facts with read-only tools, asks structured questions only for material choices that cannot be discovered, and produces a self-contained implementation plan. `submit_plan` saves the complete Markdown as the session-local `plan.md`, renders it for review, and offers approval or revision. Free-form review input becomes revision feedback, and each resubmission replaces the complete proposal.
+`/plan [prompt]` enters plan mode and can submit the planning request in the same command. The agent grounds repository facts with read-only tools, asks structured questions only for material choices that cannot be discovered, and produces a self-contained implementation plan. `submit_plan` saves the complete Markdown as the session-local `plan.md`, renders it for review, and offers three outcomes. Free-form review input becomes revision feedback, and each resubmission replaces the complete proposal.
 
-Approval restores the writable permission mode that was active before planning and begins implementation with the approved plan in context. If the prior mode was read-only, approval uses `normal`. A dismissed review leaves plan mode active and waits for new direction. User-driven mode changes are refused while a turn, approval, or input request is active so one turn cannot silently cross permission boundaries.
+- **Approve and build** restores the writable permission mode that was active before planning and continues in the same conversation with the approved plan in context. If the prior mode was read-only, approval uses `normal`.
+- **Clear context and build** approves the plan, ends the planning conversation, and starts a new session whose first prompt is the approved plan. Planning transcripts are usually long and the implementation does not need them; the option reports how much of the context window the planning conversation occupies so the tradeoff is visible before choosing.
+- **Request changes** keeps plan mode active so the proposal can be revised.
+
+A dismissed review leaves plan mode active and waits for new direction. User-driven mode changes are refused while a turn, approval, or input request is active so one turn cannot silently cross permission boundaries.
 
 ## Custom modes
 

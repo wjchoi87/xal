@@ -12,9 +12,10 @@ import {
   type BackgroundTask,
 } from "../../../background/registry"
 import { describeError } from "../../../lib/error"
+import { formatTokens } from "../../../lib/format"
 import { redactText } from "../../../secrets/redactor"
 import { FOOTER_ICON_WIDTH, FOOTER_RIGHT_PADDING, FOOTER_TEXT_COLUMN } from "../lib/footer-grid"
-import { formatDuration, formatTokens } from "../lib/format"
+import { formatDuration } from "../lib/format"
 import { column, detailPanel, label, row } from "../lib/renderables"
 import { spinnerGlyph, spinnerHandle } from "../lib/spinner"
 import { firstLine, sanitize, sliceToWidth, terminalGlyph } from "../lib/text"
