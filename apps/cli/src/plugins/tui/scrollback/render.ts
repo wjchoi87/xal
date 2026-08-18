@@ -16,7 +16,7 @@ import { commandLabel, settledStatus, type ToolOutcome } from "../components/too
 import { formatTimestamp } from "../lib/format"
 import { column, detailPanel, label, paragraph, row } from "../lib/renderables"
 import { highlightSkillReferences } from "../lib/skill-text"
-import { firstLine, terminalGlyph } from "../lib/text"
+import { displayWidth, firstLine, terminalGlyph, truncateToWidth } from "../lib/text"
 import { renderMarkdown, type RenderedMarkdown } from "../markdown/render"
 import { MAX_OUTPUT_ROWS, renderToolOutput } from "../output/render"
 import { summarizeToolOutput, toolOutputFailed } from "../output/summary"
@@ -169,6 +169,34 @@ function compaction(
   return box
 }
 
+export function backgroundResultHeading(
+  block: BackgroundBlock,
+  expanded: boolean,
+  detailsShortcut: string | undefined,
+  width: number,
+): string {
+  const glyph = `${terminalGlyph("↳", ">")} ${block.id}`
+  if (expanded) {
+    const lines = block.output ? block.output.split("\n").length : 0
+    return `${glyph} · ${firstLine(block.label)} · ${block.status} · ${lines} ${lines === 1 ? "line" : "lines"}`
+  }
+  if (width <= 0) return ""
+  const status = block.status === "completed" ? "" : ` · ${block.status}`
+  const statusWidth = displayWidth(status)
+  const prefix =
+    displayWidth(glyph) + statusWidth <= width
+      ? `${glyph}${status}`
+      : statusWidth > 0 && statusWidth < width
+        ? `${truncateToWidth(glyph, width - statusWidth)}${status}`
+        : truncateToWidth(status.trimStart() || glyph, width)
+  const requestedHint = detailsShortcut ? ` · ${detailsShortcut} to read it` : ""
+  const hint = displayWidth(prefix) + displayWidth(requestedHint) <= width ? requestedHint : ""
+  const preview = firstLine(block.output) || firstLine(block.label)
+  const available = Math.max(0, width - displayWidth(prefix) - displayWidth(hint) - 3)
+  const readable = available >= 4 ? truncateToWidth(preview, available) : ""
+  return `${prefix}${readable ? ` · ${readable}` : ""}${hint}`
+}
+
 function backgroundResult(
   ctx: RenderContext,
   block: BackgroundBlock,
@@ -176,11 +204,9 @@ function backgroundResult(
   detailsShortcut: string | undefined,
 ): Renderable {
   const box = column(ctx)
-  const lines = block.output ? block.output.split("\n").length : 0
-  const hint = expanded || !detailsShortcut ? "" : ` · ${detailsShortcut} to read it`
   box.add(
     paragraph(ctx, {
-      content: `${terminalGlyph("↳", ">")} ${block.id} · ${firstLine(block.label)} · ${block.status} · ${lines} ${lines === 1 ? "line" : "lines"}${hint}`,
+      content: backgroundResultHeading(block, expanded, detailsShortcut, contentWidth(ctx)),
       color: block.status === "completed" ? COLORS.success : COLORS.error,
     }),
   )
@@ -206,6 +232,8 @@ const denialSummary: Record<DenialCause, string> = {
 
 function tool(ctx: RenderContext, block: ToolBlock, expanded: boolean, grouped: boolean): Renderable {
   const toolRenderer = getToolRenderer(block.tool)
+  const detailsVisible = expanded || block.expanded || toolRenderer?.alwaysExpanded
+  const title = detailsVisible ? block.title : (toolRenderer?.compactTitle?.(block.title) ?? block.title)
   const bounded = parseBoundedToolOutput(block.output)
   const coreFailed = toolOutputFailed(block.output, block.execution)
   const failed = coreFailed || (toolRenderer?.failed?.(block.output) ?? false)
@@ -224,7 +252,7 @@ function tool(ctx: RenderContext, block: ToolBlock, expanded: boolean, grouped: 
   head.add(label(ctx, { content: block.readOnly ? ">" : "*", width: 2, color: COLORS.faint }))
   head.add(
     label(ctx, {
-      content: commandLabel(block.tool, block.title),
+      content: commandLabel(block.tool, title),
       flexGrow: 1,
       flexShrink: 1,
       minWidth: 1,
@@ -240,7 +268,7 @@ function tool(ctx: RenderContext, block: ToolBlock, expanded: boolean, grouped: 
   )
   box.add(head)
 
-  if (!(expanded || block.expanded || toolRenderer?.alwaysExpanded) || block.output.length === 0) {
+  if (!detailsVisible || block.output.length === 0) {
     return frame(ctx, box, marginTop)
   }
 

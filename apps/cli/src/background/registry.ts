@@ -62,6 +62,17 @@ export function removeBackgroundTask(id: string): void {
   if (tasks.delete(id)) backgroundTasksChanged("lifecycle")
 }
 
+export function dismissDoneBackgroundAgents(): number {
+  const done = [...tasks.values()].filter((task) => {
+    if (task.kind !== "agent") return false
+    const state = task.state()
+    return !state.running && state.ok
+  })
+  for (const task of done) tasks.delete(task.id)
+  if (done.length > 0) backgroundTasksChanged("lifecycle")
+  return done.length
+}
+
 export function listBackgroundTasks(): BackgroundTask[] {
   return [...tasks.values()]
 }

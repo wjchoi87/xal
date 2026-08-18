@@ -73,8 +73,9 @@ Stopping a job from the TUI is never silent: the result is marked `stopped by th
 ## TUI surfaces
 
 - The status bar shows live counts (`2 agents · 1 job · …`) whenever background work exists.
-- Running agents are summarized above the composer with their current activity, idle time, provider requests, tool count, context tokens, turn-cycle usage and limits, and remaining deadline; queued agents show `queued <time>` until their deadline starts.
-- The navigator at the bottom lists every job: running rows first, then finished rows (newest first). Running agent rows and the full viewer show live turn and deadline metrics. Finished rows stay for 5 minutes so results remain reviewable, and jobs started by a sub-agent are attributed with `⟨agent-id⟩`.
+- Running agents are summarized above the composer by ID and elapsed time; queued agents show `queued <time>` until they start.
+- The navigator at the bottom lists every job: running rows first, then finished rows (newest first). The full viewer shows live activity, timing, context, tool, and turn metrics. Successfully completed agents are dismissed when the primary session returns to idle; failed agents and finished process jobs remain reviewable until dismissed or evicted, and jobs started by a sub-agent are attributed with `⟨agent-id⟩`.
+- Normal transcript mode shows a completed background result as its ID and first report line. Use `display.toggle-details` (default `ctrl+o`) to reveal its assignment, status, line count, report output, and record path.
 
 Open the navigator with `/agents` (alias `/jobs`), the `agents.open` shortcut (default `ctrl+x ctrl+a`), or by pressing `↓` with an empty composer.
 

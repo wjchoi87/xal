@@ -6,19 +6,19 @@ import {
   type TextRenderable,
 } from "@opentui/core"
 import {
+  dismissDoneBackgroundAgents,
   listBackgroundTasks,
   removeBackgroundTask,
   subscribeBackgroundTasks,
   type BackgroundTask,
 } from "../../../background/registry"
 import { describeError } from "../../../lib/error"
-import { formatTokens } from "../../../lib/format"
 import { redactText } from "../../../secrets/redactor"
 import { FOOTER_ICON_WIDTH, FOOTER_RIGHT_PADDING, FOOTER_TEXT_COLUMN } from "../lib/footer-grid"
 import { formatDuration } from "../lib/format"
 import { column, detailPanel, label, row } from "../lib/renderables"
 import { spinnerGlyph, spinnerHandle } from "../lib/spinner"
-import { firstLine, sanitize, sliceToWidth, terminalGlyph } from "../lib/text"
+import { firstLine, sanitize, terminalGlyph } from "../lib/text"
 import { COLORS } from "../theme/colors"
 import { muted, paint } from "../theme/styles"
 
@@ -27,7 +27,6 @@ const PREVIEW_LINES = 8
 const PREVIEW_KEPT_CHARS = 4_000
 const LEFT_PADDING = 2
 const GUTTER = FOOTER_TEXT_COLUMN - LEFT_PADDING
-const wordSegmenter = new Intl.Segmenter(undefined, { granularity: "word" })
 
 export interface BackgroundTasksActions {
   changed(): void
@@ -60,22 +59,6 @@ type NavigatorRow = MainRow | TaskRow
 
 function rowId(entry: NavigatorRow): string {
   return entry.kind === "main" ? "main" : entry.task.id
-}
-
-function promptPreview(prompt: string): string {
-  const line = firstLine(redactText(prompt))
-  let words = 0
-  let end = 0
-  for (const segment of wordSegmenter.segment(line)) {
-    if (!segment.isWordLike) continue
-    words += 1
-    end = segment.index + segment.segment.length
-    if (words === 8) break
-  }
-  const markerEnd = line.slice(end).match(/^[\]>]+/u)?.[0].length ?? 0
-  const head = words === 0 ? sliceToWidth(line, 24) : line.slice(0, end + markerEnd)
-  const preview = head.trim().replace(/[.,;:!?…。，；：！？、"'’”»›]+$/u, "")
-  return `${preview}...`
 }
 
 export class BackgroundTasks {
@@ -231,6 +214,10 @@ export class BackgroundTasks {
       agent.stop().catch((error: unknown) => this.actions.error(describeError(error)))
     }
     return agents.length > 0
+  }
+
+  dismissDoneAgents(): void {
+    dismissDoneBackgroundAgents()
   }
 
   private viewJob(task: BackgroundTask | undefined): void {
@@ -397,17 +384,13 @@ export class BackgroundTasks {
         : state.running || viewed
           ? paint(COLORS.foreground, entry.task.id)
           : muted(entry.task.id)
-      entry.text.content = new StyledText([id, muted(` · ${promptPreview(entry.task.title)}`)])
+      entry.text.content = new StyledText([id])
       const snapshot = entry.task.snapshot()
-      const requests = ` · ${snapshot.providerRequests} requests`
-      const tokens = snapshot.contextTokens ? ` · ↓ ${formatTokens(snapshot.contextTokens)} tokens` : ""
-      const turns = ` · ${snapshot.completedTurns}/${snapshot.turnBudget} turn cycles`
-      const remaining = snapshot.remainingMs === undefined ? "" : ` · ${formatDuration(snapshot.remainingMs)} left`
       const running = snapshot.queued
         ? `queued ${formatDuration(snapshot.queuedMs)}`
         : snapshot.stopping
           ? "stopping"
-          : `${formatDuration(snapshot.elapsedMs)}${requests}${tokens}${turns}${remaining}`
+          : formatDuration(snapshot.elapsedMs)
       entry.status.content = new StyledText([muted(state.running ? running : redactText(state.detail))])
       return
     }

@@ -24,7 +24,7 @@ These values live under `pluginConfig.tui`:
 }
 ```
 
-The `display.toggle-details` shortcut, Ctrl+O by default, temporarily toggles transcript details for the current session without changing `showOutputs`.
+The `display.toggle-details` shortcut, Ctrl+O by default, temporarily toggles transcript details for the current session without changing `showOutputs`. Normal mode keeps task dispatches compact and shows completed background work as its ID plus the first report line. Expanded mode adds assignment metadata, status and line counts, spawned-agent details, and report output. A fully completed task list is dismissed when the session returns to idle; lists with pending or in-progress work remain visible.
 
 ## Keybindings
 

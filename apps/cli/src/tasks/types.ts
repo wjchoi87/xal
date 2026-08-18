@@ -19,6 +19,10 @@ export function isTaskStatus(value: unknown): value is TaskStatus {
   return value === "pending" || value === "in_progress" || value === "completed"
 }
 
+export function taskListCompleted(tasks: TrackedTask[]): boolean {
+  return tasks.length > 0 && tasks.every((task) => task.status === "completed")
+}
+
 function parseTask(value: unknown): TrackedTask | undefined {
   if (!isRecord(value)) return undefined
   const step = asString(value.step)?.trim()

@@ -4,6 +4,7 @@ export interface ToolRenderer {
   tool: string
   alwaysExpanded?: boolean
   maxRows?: number
+  compactTitle?(title: string): string
   summarize?(output: string): string
   failed?(output: string): boolean
   renderOutput?(output: string, width: number): { content: StyledText; rows: number }

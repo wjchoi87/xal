@@ -131,6 +131,8 @@ export class AgentEventController {
         if (event.state !== "idle") break
         this.screen.dismissApproval()
         this.screen.dismissElicitation()
+        this.screen.tasks.dismissDoneAgents()
+        this.screen.taskList.dismissCompleted()
         scrollback.endStream()
         live.clear()
         break

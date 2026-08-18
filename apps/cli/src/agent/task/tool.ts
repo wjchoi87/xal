@@ -9,6 +9,10 @@ import { settings } from "../../config/settings"
 import { contextFrom, tasksFrom, MAX_BATCH_TASKS, MAX_CONTEXT_LENGTH, MAX_TASK_LENGTH } from "./parse"
 import { spawnTask } from "./spawn"
 
+export function compactTaskToolTitle(title: string): string {
+  return title.split(" · ", 1)[0] ?? title
+}
+
 function taskToolTitle(args: Record<string, unknown>): string {
   if (!Array.isArray(args.tasks) || args.tasks.length === 0) return "Dispatch tasks"
   const assignments = args.tasks.flatMap((value) => {
@@ -133,6 +137,7 @@ export function registerTaskAgents(): void {
   registerTool(taskTool)
   registerToolRenderer({
     tool: taskTool.name,
+    compactTitle: compactTaskToolTitle,
     summarize(output) {
       const spawned = /^Spawned (\d+) background/.exec(output)
       if (!spawned) return "dispatched"

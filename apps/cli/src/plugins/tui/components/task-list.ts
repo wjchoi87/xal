@@ -1,5 +1,5 @@
 import { StyledText, type BoxRenderable, type RenderContext } from "@opentui/core"
-import type { TrackedTask } from "../../../tasks/types"
+import { taskListCompleted, type TrackedTask } from "../../../tasks/types"
 import { redactText } from "../../../secrets/redactor"
 import { column, label, row } from "../lib/renderables"
 import { terminalGlyph } from "../lib/text"
@@ -26,6 +26,7 @@ function step(task: TrackedTask): StyledText {
 export class TaskList {
   readonly view: BoxRenderable
   private readonly progress: ReturnType<typeof label>
+  private completed = false
   private rows: BoxRenderable[] = []
   private shown = true
 
@@ -46,6 +47,7 @@ export class TaskList {
   }
 
   set(tasks: TrackedTask[]): void {
+    this.completed = taskListCompleted(tasks)
     for (const task of this.rows) {
       this.view.remove(task)
       task.destroyRecursively()
@@ -63,6 +65,10 @@ export class TaskList {
     this.syncVisibility()
     this.onChange()
     return this.shown
+  }
+
+  dismissCompleted(): void {
+    if (this.completed) this.set([])
   }
 
   private syncVisibility(): void {
