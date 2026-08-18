@@ -108,10 +108,23 @@ function validateModel(provider: Provider, raw: unknown): ModelInfo {
   if (raw.contextWindow !== undefined && (!contextWindow || !Number.isInteger(contextWindow) || contextWindow <= 0)) {
     throw new Error(`${provider.name} returned an invalid context window for ${id}`)
   }
+  const autoCompactTokenLimit =
+    raw.autoCompactTokenLimit === undefined ? undefined : asNumber(raw.autoCompactTokenLimit)
+  if (
+    raw.autoCompactTokenLimit !== undefined &&
+    (!autoCompactTokenLimit ||
+      !Number.isInteger(autoCompactTokenLimit) ||
+      autoCompactTokenLimit <= 0 ||
+      contextWindow === undefined ||
+      autoCompactTokenLimit >= contextWindow)
+  ) {
+    throw new Error(`${provider.name} returned an invalid auto-compaction token limit for ${id}`)
+  }
   return {
     id,
     name,
     contextWindow,
+    autoCompactTokenLimit,
     inputModalities: validateModalities(provider, id, raw.inputModalities),
     thinking: validateThinking(provider, id, raw.thinking),
   }

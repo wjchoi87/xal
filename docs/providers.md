@@ -96,6 +96,8 @@ The `openai` plugin registers both OpenAI providers: `openai` for OpenAI Platfor
 | `contextWindow` | Positive integer | `260000`       | Context-window cap for ChatGPT and assumed context window for OpenAI models. |
 | `clientName`    | string           | `codex_cli_rs` | Client name used in both providers' request user agent.                      |
 
+When GPT-5.6 Sol is available, `/model` also lists `gpt-5.6-sol-1m`. ChatGPT profiles that advertise fast service also list `gpt-5.6-sol-1m-fast`. Both synthetic models use the same `gpt-5.6-sol` wire model with a one-million-token context budget and start automatic compaction at 900,000 tokens; the fast variant additionally requests priority service. Choose them only when your OpenAI access supports the documented larger context window. The ordinary Sol entries keep Xal's tuned default cap.
+
 ### OpenAI API
 
 Run `xal connect openai`, name the profile, and paste an API key created in the OpenAI Platform. Xal validates the key against `https://api.openai.com/v1/models` before storing it. Requests stream through `https://api.openai.com/v1/responses` with response storage disabled. API profiles are independent from ChatGPT subscription profiles and use the `openai` provider ID in configuration, thinking preferences, and replay data.

@@ -57,6 +57,7 @@ export interface ModelInfo {
   id: string
   name: string
   contextWindow?: number
+  autoCompactTokenLimit?: number
   inputModalities: ModelInputModality[]
   thinking?: ThinkingOptions
 }

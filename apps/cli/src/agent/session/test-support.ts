@@ -85,11 +85,20 @@ export class ScriptedProvider implements Provider {
   constructor(
     private readonly rounds: ProviderRound[],
     private readonly contextWindow?: number,
+    private readonly autoCompactTokenLimit?: number,
   ) {}
 
   async listModels(): Promise<ModelCatalog> {
     return {
-      models: [{ id: "test-model", name: "Test model", contextWindow: this.contextWindow, inputModalities: ["text"] }],
+      models: [
+        {
+          id: "test-model",
+          name: "Test model",
+          contextWindow: this.contextWindow,
+          autoCompactTokenLimit: this.autoCompactTokenLimit,
+          inputModalities: ["text"],
+        },
+      ],
       source: "runtime",
     }
   }

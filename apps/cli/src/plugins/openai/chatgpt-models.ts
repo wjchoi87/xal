@@ -16,6 +16,7 @@ import {
 import { chatGptFetch } from "./chatgpt-client"
 import { PROVIDER_NAME } from "./chatgpt-oauth"
 import { contextWindowCap } from "./context-window"
+import { resolveLargeContextModel, withLargeContextVariant } from "./model-variants"
 
 const MODEL_CATALOG_COMPATIBILITY_VERSION = "1.0.0"
 const FAST_MODEL_SUFFIX = "-fast"
@@ -206,9 +207,13 @@ function capped(models: ChatGptModel[]): ChatGptModel[] {
   }))
 }
 
-function withFastVariants(models: ChatGptModel[]): ModelInfo[] {
+function withVariants(models: ChatGptModel[]): ModelInfo[] {
   return models.flatMap(({ supportsFast, ...model }) =>
-    supportsFast ? [model, { ...model, id: `${model.id}${FAST_MODEL_SUFFIX}`, name: `${model.name} - fast` }] : [model],
+    withLargeContextVariant([model]).flatMap((variant) =>
+      supportsFast
+        ? [variant, { ...variant, id: `${variant.id}${FAST_MODEL_SUFFIX}`, name: `${variant.name} - fast` }]
+        : [variant],
+    ),
   )
 }
 
@@ -217,10 +222,10 @@ async function refreshModels(profileId: string): Promise<ModelCatalog> {
     const models = await discoverModels(profileId)
     try {
       await writeSecureJson(cachePath(profileId), { models })
-      return { models: withFastVariants(capped(models)), source: "runtime" }
+      return { models: withVariants(capped(models)), source: "runtime" }
     } catch (error) {
       return {
-        models: withFastVariants(capped(models)),
+        models: withVariants(capped(models)),
         source: "runtime",
         warning: `models were discovered, but the cache could not be updated: ${describeError(error)}`,
       }
@@ -230,20 +235,20 @@ async function refreshModels(profileId: string): Promise<ModelCatalog> {
       const cached = await readCache(profileId)
       if (cached) {
         return {
-          models: withFastVariants(capped(cached)),
+          models: withVariants(capped(cached)),
           source: "cache",
           warning: `live discovery failed: ${describeError(discoveryError)} — using cached models`,
         }
       }
     } catch (cacheError) {
       return {
-        models: withFastVariants(capped(BUNDLED_MODELS)),
+        models: withVariants(capped(BUNDLED_MODELS)),
         source: "bundled",
         warning: `live discovery failed: ${describeError(discoveryError)}; cache failed: ${describeError(cacheError)} — using bundled models`,
       }
     }
     return {
-      models: withFastVariants(capped(BUNDLED_MODELS)),
+      models: withVariants(capped(BUNDLED_MODELS)),
       source: "bundled",
       warning: `live discovery failed: ${describeError(discoveryError)} — using bundled models`,
     }
@@ -254,7 +259,7 @@ export async function listModels(profileId: string, refresh: boolean): Promise<M
   if (refresh) return refreshModels(profileId)
   try {
     const cached = await readCache(profileId)
-    if (cached) return { models: withFastVariants(capped(cached)), source: "cache" }
+    if (cached) return { models: withVariants(capped(cached)), source: "cache" }
   } catch (cacheError) {
     const refreshed = await refreshModels(profileId)
     if (refreshed.warning) return refreshed
@@ -272,6 +277,9 @@ export async function defaultModel(): Promise<string> {
 }
 
 export function resolveModel(model: string): { model: string; serviceTier?: "priority" } {
-  if (!model.endsWith(FAST_MODEL_SUFFIX)) return { model }
-  return { model: model.slice(0, -FAST_MODEL_SUFFIX.length), serviceTier: "priority" }
+  if (!model.endsWith(FAST_MODEL_SUFFIX)) return { model: resolveLargeContextModel(model) }
+  return {
+    model: resolveLargeContextModel(model.slice(0, -FAST_MODEL_SUFFIX.length)),
+    serviceTier: "priority",
+  }
 }

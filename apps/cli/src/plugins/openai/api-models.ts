@@ -7,6 +7,7 @@ import type { ModelCatalog, ModelInfo, ThinkingOptions } from "../../providers/t
 import { apiKey } from "./api-auth"
 import { openAiFetch, raiseForStatus } from "./api-client"
 import { contextWindowCap } from "./context-window"
+import { withLargeContextVariant } from "./model-variants"
 
 const CACHE_VERSION = 1
 const DISCOVERY_TIMEOUT_MS = 15_000
@@ -81,6 +82,10 @@ function modelInfo(id: string): ModelInfo {
   }
 }
 
+function modelInfos(ids: string[]): ModelInfo[] {
+  return withLargeContextVariant(ids.map(modelInfo))
+}
+
 function parseModels(raw: unknown): string[] {
   if (!isRecord(raw) || !Array.isArray(raw.data)) throw new Error("OpenAI models response was invalid")
   const ids: string[] = []
@@ -120,7 +125,7 @@ async function readCache(profileId: string): Promise<string[] | undefined> {
 async function refreshModels(profileId: string): Promise<ModelCatalog> {
   try {
     const ids = await discoverModels(profileId)
-    const models = ids.map(modelInfo)
+    const models = modelInfos(ids)
     try {
       await writeSecureJson(cachePath(profileId), { version: CACHE_VERSION, models: ids })
       return { models, source: "runtime" }
@@ -147,7 +152,7 @@ async function refreshModels(profileId: string): Promise<ModelCatalog> {
       })
     }
     return {
-      models: cached.map(modelInfo),
+      models: modelInfos(cached),
       source: "cache",
       warning: `live discovery failed: ${describeError(discoveryError)}; using cached models`,
     }
@@ -158,7 +163,7 @@ export async function listModels(profileId: string, refresh: boolean): Promise<M
   if (refresh) return refreshModels(profileId)
   try {
     const cached = await readCache(profileId)
-    if (cached) return { models: cached.map(modelInfo), source: "cache" }
+    if (cached) return { models: modelInfos(cached), source: "cache" }
   } catch (cacheError) {
     const refreshed = await refreshModels(profileId)
     if (refreshed.warning) return refreshed

@@ -76,6 +76,15 @@ describe("OpenAI model catalog", () => {
     expect(requests).toEqual([{ path: "/models", key: "sk-test" }])
   })
 
+  test("adds the synthetic 1M Sol model when the underlying model is available", async () => {
+    responses.push(modelsResponse(["gpt-5.6-sol"]))
+
+    const models = (await listModels("profile-1", true)).models
+
+    expect(models.map((model) => model.id)).toEqual(["gpt-5.6-sol", "gpt-5.6-sol-1m"])
+    expect(models[1]).toMatchObject({ contextWindow: 1_000_000, autoCompactTokenLimit: 900_000 })
+  })
+
   test("advertises model-specific reasoning ranges", async () => {
     responses.push(modelsResponse(["gpt-5.6", "gpt-5.5", "gpt-5.4", "gpt-5.4-pro"]))
 

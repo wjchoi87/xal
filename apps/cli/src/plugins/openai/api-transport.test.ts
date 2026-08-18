@@ -150,6 +150,14 @@ describe("OpenAI Responses transport", () => {
     expect(sentBody()).not.toHaveProperty("tool_choice")
   })
 
+  test("sends the synthetic 1M Sol model as its underlying wire model", async () => {
+    responses.push(sse([{ type: "response.completed", response: {} }]))
+
+    await collect(streamResponse("profile-1", request({ model: "gpt-5.6-sol-1m" })))
+
+    expect(sentBody().model).toBe("gpt-5.6-sol")
+  })
+
   test("preserves every OpenAI reasoning effort accepted by the catalog", async () => {
     for (const effort of ["none", "xhigh", "max"] as const) {
       requests.length = 0

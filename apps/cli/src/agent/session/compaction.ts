@@ -239,8 +239,11 @@ export async function autoCompact(
 ): Promise<void> {
   if (host.compactionFailures() >= MAX_COMPACTION_FAILURES) return
   const tokens = host.contextTokens() ?? estimateHistoryTokens(activeHistory(host.history()))
-  const window = await contextWindow(provider, host.profileId(), model)
-  if (window === undefined || tokens < window * COMPACTION_TRIGGER_RATIO) return
+  const info = await findModel(provider, host.profileId(), model)
+  const tokenLimit =
+    info?.autoCompactTokenLimit ??
+    (info?.contextWindow === undefined ? undefined : info.contextWindow * COMPACTION_TRIGGER_RATIO)
+  if (tokenLimit === undefined || tokens < tokenLimit) return
 
   try {
     await runCompaction(host, signal, provider, model, "auto")

@@ -2,6 +2,7 @@ import type { JsonObject } from "../../lib/json"
 import type { StreamEvent, StreamRequest, ThinkingEffort } from "../../providers/types"
 import { apiKey } from "./api-auth"
 import { openAiFetch, PROVIDER_ID, PROVIDER_NAME, raiseForStatus } from "./api-client"
+import { resolveLargeContextModel } from "./model-variants"
 import { responseEvents } from "./responses-stream"
 import { buildInput } from "./wire"
 
@@ -22,7 +23,7 @@ function requestReasoning(effort: ThinkingEffort | undefined): JsonObject {
 
 function buildBody(request: StreamRequest): string {
   return JSON.stringify({
-    model: request.model,
+    model: resolveLargeContextModel(request.model),
     store: false,
     stream: true,
     instructions: request.instructions,

@@ -172,6 +172,28 @@ describe("ChatGPT transport", () => {
     })
   })
 
+  test("sends the synthetic 1M Sol model as its underlying wire model", async () => {
+    responses.push(sse([{ type: "response.completed", response: {} }]))
+
+    await collect(streamResponse("test-profile", { ...request(), model: "gpt-5.6-sol-1m" }))
+
+    const body = requests[0]?.init.body
+    if (typeof body !== "string") throw new Error("ChatGPT request body was not a string")
+    const sent = JSON.parse(body)
+    expect(sent).toMatchObject({ model: "gpt-5.6-sol" })
+    expect(sent).not.toHaveProperty("service_tier")
+  })
+
+  test("sends the synthetic fast 1M Sol model with priority service", async () => {
+    responses.push(sse([{ type: "response.completed", response: {} }]))
+
+    await collect(streamResponse("test-profile", { ...request(), model: "gpt-5.6-sol-1m-fast" }))
+
+    const body = requests[0]?.init.body
+    if (typeof body !== "string") throw new Error("ChatGPT request body was not a string")
+    expect(JSON.parse(body)).toMatchObject({ model: "gpt-5.6-sol", service_tier: "priority" })
+  })
+
   test("surfaces streamed failures with their retry classification", async () => {
     responses.push(
       sse([

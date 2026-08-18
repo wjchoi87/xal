@@ -232,7 +232,8 @@ describe("AgentSession control flow", () => {
         completedRound("Automatic summary"),
         completedRound("Continued after automatic compaction"),
       ],
-      100,
+      200,
+      90,
     )
     const session = harness.createSession(provider)
     const observed: AgentEvent[] = []
