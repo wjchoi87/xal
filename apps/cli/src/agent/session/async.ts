@@ -1,4 +1,5 @@
 import {
+  incompleteAgentTranscript,
   listJobs,
   readProcessOutput,
   reapOwnerJobs,
@@ -42,7 +43,9 @@ function formatAgentResult(job: BackgroundAgentJob): AgentBackgroundResult {
       ? `${outcome.report}\n\nOutcome: ${job.detail}`
       : outcome.status === "completed"
         ? outcome.report
-        : job.detail
+        : outcome.status === "timed_out"
+          ? `${job.detail}${incompleteAgentTranscript(job)}`
+          : job.detail
   return {
     kind: "agent",
     id: job.id,

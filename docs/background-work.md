@@ -58,20 +58,22 @@ A running foreground `bash` command can be promoted to a background job at any m
 
 The model manages jobs with five tools:
 
-| Tool         | Purpose                                                                                                               |
-| ------------ | --------------------------------------------------------------------------------------------------------------------- |
-| `job_output` | Read new process output or collect an agent report explicitly; `wait` blocks up to 600s for output or exit.           |
-| `job_status` | Inspect one job or list all: queue state, activity, idle and elapsed time, turn usage and limits, remaining deadline. |
-| `job_send`   | Queue guidance into a running task agent's current turn.                                                              |
-| `job_extend` | Add up to 60 runtime minutes, 100 soft-budget turns, or both to a queued or running task agent per call.              |
-| `job_kill`   | Stop a job. A process that ignores the graceful stop is hard-killed after 2 seconds.                                  |
+| Tool         | Purpose                                                                                                             |
+| ------------ | ------------------------------------------------------------------------------------------------------------------- |
+| `job_output` | Read process output or collect an agent report; agent waits return at a supervision checkpoint before the deadline. |
+| `job_status` | Inspect queue state, activity, provider requests, tools, turn cycles, context, timing, and remaining deadline.      |
+| `job_send`   | Queue guidance into a running task agent's current turn.                                                            |
+| `job_extend` | Add up to 60 runtime minutes, 100 soft-budget turns, or both to a queued or running task agent per call.            |
+| `job_kill`   | Stop a job. A process that ignores the graceful stop is hard-killed after 2 seconds.                                |
+
+An explicit `job_output` wait cannot consume a task agent's whole runtime budget. It reserves a supervision window of up to one minute and returns with live status so the parent can inspect, extend, steer, or stop the task; a wait started while queued may return earlier because its runtime deadline has not started. If an agent still times out, collection includes a bounded transcript tail labeled as incomplete alongside the durable task-record path.
 
 Stopping a job from the TUI is never silent: the result is marked `stopped by the user` and still delivered so the model knows what happened. A task agent remains unsettled until its runner has finished cleanup and saved its task record.
 
 ## TUI surfaces
 
 - The status bar shows live counts (`2 agents · 1 job · …`) whenever background work exists.
-- Running agents are summarized above the composer with their current activity, idle time, tool count, context tokens, turn usage and limits, and remaining deadline; queued agents show `queued <time>` until their deadline starts.
+- Running agents are summarized above the composer with their current activity, idle time, provider requests, tool count, context tokens, turn-cycle usage and limits, and remaining deadline; queued agents show `queued <time>` until their deadline starts.
 - The navigator at the bottom lists every job: running rows first, then finished rows (newest first). Running agent rows and the full viewer show live turn and deadline metrics. Finished rows stay for 5 minutes so results remain reviewable, and jobs started by a sub-agent are attributed with `⟨agent-id⟩`.
 
 Open the navigator with `/agents` (alias `/jobs`), the `agents.open` shortcut (default `ctrl+x ctrl+a`), or by pressing `↓` with an empty composer.
@@ -94,10 +96,10 @@ The viewer takes over the screen and follows the job's output live. While it is 
 
 Every field in the top-level `agents` object must be an integer and is validated strictly.
 
-| Option                  | Default | Range   | Description                                             |
-| ----------------------- | ------- | ------- | ------------------------------------------------------- |
-| `agents.maxConcurrent`  | `4`     | `1–8`   | Task agents running at once; further tasks queue.       |
-| `agents.timeoutMinutes` | `10`    | `1–60`  | Hard deadline per task agent.                           |
-| `agents.maxTurns`       | `24`    | `1–100` | Soft turn budget; agents are told to wrap up beyond it. |
+| Option                  | Default | Range   | Description                                                 |
+| ----------------------- | ------- | ------- | ----------------------------------------------------------- |
+| `agents.maxConcurrent`  | `4`     | `1–8`   | Task agents running at once; further tasks queue.           |
+| `agents.timeoutMinutes` | `10`    | `1–60`  | Hard deadline per task agent.                               |
+| `agents.maxTurns`       | `24`    | `1–100` | Soft completed turn-cycle budget; agents wrap up beyond it. |
 
 Set these values in the top-level `agents` object. See [Configuration](/docs/configs) for file locations and merge behavior.

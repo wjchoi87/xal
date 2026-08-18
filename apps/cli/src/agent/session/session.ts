@@ -101,6 +101,7 @@ export class AgentSession {
   private checkpoints: ConversationCheckpoint[] = []
   private readonly redoStack = new RedoStack()
   private contextTokens: number | undefined
+  private providerRequests = 0
   private compactionFailures = 0
   private tasks: TrackedTask[] = []
   private readonly listeners = new Set<(event: AgentEvent) => void>()
@@ -263,6 +264,7 @@ export class AgentSession {
       prompt: (model) => this.providerPrompt(model),
       contextTokens: () => this.contextTokens,
       compactionFailures: () => this.compactionFailures,
+      onRequestStarted: () => this.recordProviderRequest(),
       recordFailure: () => {
         this.compactionFailures += 1
       },
@@ -311,6 +313,10 @@ export class AgentSession {
 
   get currentContextTokens(): number | undefined {
     return this.contextTokens
+  }
+
+  get providerRequestCount(): number {
+    return this.providerRequests
   }
 
   get currentPlan(): SessionPlan | undefined {
@@ -1265,6 +1271,10 @@ export class AgentSession {
     })
   }
 
+  private recordProviderRequest(): void {
+    this.providerRequests += 1
+  }
+
   private streamHost(usage: TurnUsage): StreamRoundHost {
     return {
       kind: this.kind,
@@ -1275,6 +1285,7 @@ export class AgentSession {
       pushItem: (item) => this.pushItem(item),
       buildRequest: (provider, model, thinking, signal) => this.buildStreamRequest(provider, model, thinking, signal),
       redactOutputItem: redactProviderOutputItem,
+      onRequestStarted: () => this.recordProviderRequest(),
       onUsage: (turnUsage) => {
         usage.context = turnUsage
         usage.turn = addUsage(usage.turn, turnUsage)

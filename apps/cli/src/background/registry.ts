@@ -28,6 +28,7 @@ export interface BackgroundAgentSnapshot {
   completedTurns: number
   turnBudget: number
   turnLimit: number
+  providerRequests: number
   toolCount: number
   contextTokens?: number
 }

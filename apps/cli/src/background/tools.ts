@@ -1,8 +1,10 @@
 import {
   acknowledgeDelivery,
+  agentSupervisionWaitMs,
   collectAgentOutcome,
   extendAgentBudget,
   getJob,
+  incompleteAgentTranscript,
   jobStatus,
   listJobs,
   readProcessOutput,
@@ -16,6 +18,7 @@ import {
   type BackgroundJob,
   type BackgroundProcessJob,
 } from "./jobs"
+import { listBackgroundTasks, type BackgroundAgentSnapshot } from "./registry"
 import { asNumber, asString } from "../lib/json"
 import type { SessionTool } from "../tools/types"
 
@@ -60,12 +63,19 @@ async function processOutput(job: BackgroundProcessJob, wait: number, signal: Ab
   return `${unread || "(no new output)"}\n(${jobStatus(job)})${record}`
 }
 
-async function agentOutput(job: BackgroundAgentJob, wait: number, signal: AbortSignal): Promise<string> {
+export async function collectAgentOutput(job: BackgroundAgentJob, wait: number, signal: AbortSignal): Promise<string> {
+  const requestedWaitMs = wait * 1_000
+  const waitMs = agentSupervisionWaitMs(job, requestedWaitMs)
+  const supervisionCheckpoint = waitMs < requestedWaitMs
   const reservation = wait > 0 && !job.done ? reserveDelivery(job) : undefined
-  await waitForAgentCompletion(job, wait * 1_000, signal)
+  await waitForAgentCompletion(job, waitMs, signal)
   if (!job.done) {
     if (reservation !== undefined) releaseDelivery(job, reservation)
-    return `(still running: ${job.activity})`
+    const checkpoint =
+      supervisionCheckpoint && !signal.aborted
+        ? "\nSupervision checkpoint reached before the task deadline. Use job_status, then job_extend to add time or job_kill to stop it before waiting again."
+        : ""
+    return `${agentStatus(job, Date.now())}${checkpoint}`
   }
 
   const outcome = collectAgentOutcome(job, reservation)
@@ -75,8 +85,9 @@ async function agentOutput(job: BackgroundAgentJob, wait: number, signal: AbortS
       return `${outcome.report}\n(${jobStatus(job)})${record}`
     case "failed":
     case "interrupted":
-    case "timed_out":
       return `(${jobStatus(job)})${record}`
+    case "timed_out":
+      return `${agentStatus(job, Date.now())}${incompleteAgentTranscript(job)}${record}`
     case "already_collected":
       return `(report already collected; ${jobStatus(job)})${record}`
   }
@@ -100,6 +111,11 @@ function duration(ms: number): string {
   return remainder === 0 ? `${minutes}m` : `${minutes}m ${remainder}s`
 }
 
+function agentSnapshot(job: BackgroundAgentJob): BackgroundAgentSnapshot | undefined {
+  const task = listBackgroundTasks().find((candidate) => candidate.kind === "agent" && candidate.id === job.id)
+  return task?.kind === "agent" ? task.snapshot() : undefined
+}
+
 function agentStatus(job: BackgroundAgentJob, now: number): string {
   const state = job.done ? job.detail : job.phase
   const queuedMs = (job.runningAt ?? job.finishedAt ?? now) - job.startedAt
@@ -109,14 +125,18 @@ function agentStatus(job: BackgroundAgentJob, now: number): string {
       ? `queued ${duration(queuedMs)}`
       : `${duration((job.finishedAt ?? now) - job.runningAt)}${queued}`
   const activity = job.done ? "" : ` · activity: ${job.activity} · idle ${duration(now - job.lastActivityAt)}`
-  const turns = ` · turns ${job.completedTurns}/${job.turnBudget} (limit ${job.turnLimit})`
+  const snapshot = agentSnapshot(job)
+  const progress = snapshot
+    ? ` · provider requests ${snapshot.providerRequests} · tools ${snapshot.toolCount}${snapshot.contextTokens ? ` · context ${snapshot.contextTokens} tokens` : ""}`
+    : ""
+  const turns = ` · turn cycles ${job.completedTurns}/${job.turnBudget} (limit ${job.turnLimit})`
   const deadline =
     job.done || job.phase === "stopping"
       ? ""
       : job.deadlineAt === undefined
         ? ` · runtime budget ${duration(job.timeoutMs)}`
         : ` · deadline in ${duration(job.deadlineAt - now)}`
-  return `${job.id} [${state}] ${timing}${activity}${turns}${deadline}\n  ${job.task.split("\n", 1)[0]}`
+  return `${job.id} [${state}] ${timing}${activity}${progress}${turns}${deadline}\n  ${job.task.split("\n", 1)[0]}`
 }
 
 function statusOutput(id: string | undefined, ownerId: string): string {
@@ -135,7 +155,7 @@ function statusOutput(id: string | undefined, ownerId: string): string {
 export const jobOutputTool: SessionTool = {
   name: "job_output",
   description:
-    "Collect a background job explicitly. For a process, returns new output and waits for new output or exit. Task-agent results normally deliver automatically; explicitly collecting one waits for completion, returns its report once, and suppresses duplicate automatic delivery. Prefer one long wait over repeated short polls.",
+    "Collect a background job explicitly. For a process, returns new output and waits for output or exit; prefer one long wait over repeated short polls. Task-agent results normally deliver automatically. An explicit task-agent wait returns before its deadline with a supervision checkpoint so you can inspect, extend, steer, or stop it, and collecting a finished report suppresses duplicate automatic delivery.",
   parameters: {
     type: "object",
     properties: {
@@ -162,7 +182,7 @@ export const jobOutputTool: SessionTool = {
       case "process":
         return { output: await processOutput(job, wait, ctx.signal) }
       case "agent":
-        return { output: await agentOutput(job, wait, ctx.signal) }
+        return { output: await collectAgentOutput(job, wait, ctx.signal) }
     }
   },
 }

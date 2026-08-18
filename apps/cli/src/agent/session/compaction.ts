@@ -190,6 +190,7 @@ export interface CompactionHost {
   prompt(model: string): ProviderPrompt
   contextTokens(): number | undefined
   compactionFailures(): number
+  onRequestStarted(): void
   recordFailure(): void
   replaceHistory(item: CompactionItem): void
   setState(state: AgentState): void
@@ -211,6 +212,7 @@ export async function runCompaction(
 
   host.setState("compacting")
   const target = await resolveCompactionTarget(provider, profileId, model)
+  host.onRequestStarted()
   const summary = await summarizeHistory({
     provider,
     profileId,

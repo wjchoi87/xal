@@ -380,10 +380,11 @@ export class JobViewer {
     const snapshot = task.snapshot()
     if (snapshot.queued) return `queued ${formatDuration(snapshot.queuedMs)}`
     if (snapshot.stopping) return "stopping"
+    const requests = ` · ${snapshot.providerRequests} provider requests`
     const tokens = snapshot.contextTokens ? ` · ↓ ${formatTokens(snapshot.contextTokens)} tokens` : ""
-    const turns = ` · turn ${snapshot.completedTurns}/${snapshot.turnBudget} (${snapshot.turnLimit} max)`
+    const turns = ` · turn cycle ${snapshot.completedTurns}/${snapshot.turnBudget} (${snapshot.turnLimit} max)`
     const remaining = snapshot.remainingMs === undefined ? "" : ` · ${formatDuration(snapshot.remainingMs)} left`
-    return `${formatDuration(snapshot.elapsedMs)}${tokens}${turns}${remaining} · idle ${formatDuration(snapshot.idleMs)}`
+    return `${formatDuration(snapshot.elapsedMs)}${requests}${tokens}${turns}${remaining} · idle ${formatDuration(snapshot.idleMs)}`
   }
 
   refresh(): void {

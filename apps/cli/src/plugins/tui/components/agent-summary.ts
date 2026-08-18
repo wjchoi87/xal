@@ -117,14 +117,15 @@ export class AgentSummary {
       entry.branch.content = `${terminalGlyph(last ? "└" : "├", last ? "`" : "|")} `
       entry.title.content = firstLine(redactText(agent.title))
       const toolCount = `${snapshot.toolCount} tool ${snapshot.toolCount === 1 ? "use" : "uses"}`
+      const requests = ` · ${snapshot.providerRequests} provider ${snapshot.providerRequests === 1 ? "request" : "requests"}`
       const tokens = snapshot.contextTokens ? ` · ${formatTokens(snapshot.contextTokens)} tokens` : ""
-      const turns = ` · turn ${snapshot.completedTurns}/${snapshot.turnBudget} (${snapshot.turnLimit} max)`
+      const turns = ` · turn cycle ${snapshot.completedTurns}/${snapshot.turnBudget} (${snapshot.turnLimit} max)`
       const remaining = snapshot.remainingMs === undefined ? "" : ` · ${formatDuration(snapshot.remainingMs)} left`
       entry.metrics.content = snapshot.queued
         ? `queued ${formatDuration(snapshot.queuedMs)}`
         : snapshot.stopping
           ? "stopping"
-          : `${toolCount}${tokens}${turns}${remaining}`
+          : `${toolCount}${requests}${tokens}${turns}${remaining}`
       entry.activity.content = redactText(
         `${terminalGlyph("└", "`")} ${snapshot.activity} · idle ${formatDuration(snapshot.idleMs)}`,
       )

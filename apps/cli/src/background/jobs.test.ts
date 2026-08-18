@@ -3,6 +3,7 @@ import { REDACTION_MARKER, replaceSecretValues } from "../secrets/redactor"
 import { createJobLog } from "./log"
 import {
   acknowledgeDelivery,
+  agentSupervisionWaitMs,
   appendAgentTranscript,
   appendProcessOutput,
   attachJobLog,
@@ -17,6 +18,7 @@ import {
   readProcessOutput,
   reapOwnerJobs,
   registerDeliverySink,
+  startAgentJob,
   stopJob,
   suppressDelivery,
   waitForAgentCompletion,
@@ -125,6 +127,33 @@ test("agent completion and abort wake completion waiters", async () => {
   await abortedWait
   expect(waitingForAbort).toBe(false)
   expect(aborted.done).toBe(false)
+})
+
+test("reserves a supervision window before a queued agent starts", () => {
+  const job = agentJob("test-queued-agent-supervision-window")
+
+  expect(agentSupervisionWaitMs(job, 60_000, 1_000_000)).toBe(48_000)
+})
+
+test("reserves a supervision window before an agent deadline", () => {
+  const job = agentJob("test-agent-supervision-window")
+  startAgentJob(job)
+  const now = 1_000_000
+  job.deadlineAt = now + 55_000
+
+  expect(agentSupervisionWaitMs(job, 60_000, now)).toBe(43_000)
+  expect(agentSupervisionWaitMs(job, 10_000, now)).toBe(10_000)
+  expect(agentSupervisionWaitMs(job, 0, now)).toBe(0)
+})
+
+test("uses at most a one-minute supervision window for longer agent budgets", () => {
+  const job = agentJob("test-agent-long-supervision-window")
+  startAgentJob(job)
+  const now = 1_000_000
+  job.timeoutMs = 10 * 60_000
+  job.deadlineAt = now + 9 * 60_000
+
+  expect(agentSupervisionWaitMs(job, 10 * 60_000, now)).toBe(8 * 60_000)
 })
 
 test("redacts secrets split across process and agent output chunks", async () => {

@@ -250,6 +250,7 @@ describe("AgentSession control flow", () => {
       context: undefined,
     })
     expect(provider.requests).toHaveLength(3)
+    expect(session.providerRequestCount).toBe(3)
     expect(provider.requests[1]?.input.slice(0, -1)).toEqual([
       { type: "user_message", text: "Fill the context", images: [] },
       { type: "assistant_message", text: longResponse },

@@ -265,6 +265,7 @@ describe("AgentSession", () => {
 
     expect(outcome.status).toBe("completed")
     expect(provider.requests).toHaveLength(2)
+    expect(session.providerRequestCount).toBe(2)
     expect(observed.filter((event) => event.type === "retry_scheduled")).toEqual([
       {
         type: "retry_scheduled",

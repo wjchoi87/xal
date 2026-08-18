@@ -128,6 +128,7 @@ function registerTask(
         completedTurns: job.completedTurns,
         turnBudget: job.turnBudget,
         turnLimit: job.turnLimit,
+        providerRequests: child()?.providerRequestCount ?? 0,
         toolCount: state.toolCalls.size,
         contextTokens: child()?.currentContextTokens,
       }

@@ -82,6 +82,7 @@ export interface StreamRoundHost {
     signal: AbortSignal,
   ): StreamRequest
   redactOutputItem(item: ProviderOutputItem): ProviderOutputItem
+  onRequestStarted(): void
   onUsage(usage: Usage): void
 }
 
@@ -102,6 +103,7 @@ export async function streamProviderTurn(
   let attempt = 1
 
   while (true) {
+    host.onRequestStarted()
     const profile = profileProviderRequestStarted(
       host.sessionId(),
       host.kind,

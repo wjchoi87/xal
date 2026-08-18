@@ -10,6 +10,8 @@ const MAX_PENDING_CHARS = 256_000
 const BUFFER_HEAD_CHARS = 100_000
 const BUFFER_TAIL_CHARS = 300_000
 const STOP_WAIT_MS = 2_000
+const MAX_AGENT_SUPERVISION_MARGIN_MS = 60_000
+const PARTIAL_AGENT_TRANSCRIPT_CHARS = 4_000
 const SETTLED_RETENTION_MS = 5 * 60 * 1_000
 
 export type DeliveryState = "none" | "reserved" | "pending" | "in_flight" | "delivered" | "suppressed" | "dead_lettered"
@@ -262,6 +264,14 @@ export function appendAgentTranscript(job: BackgroundAgentJob, text: string): vo
   if (job.done) return
   job.lastActivityAt = Date.now()
   appendTranscript(job, redactorOf(job).write(text))
+}
+
+export function incompleteAgentTranscript(job: BackgroundAgentJob): string {
+  const transcript = job.transcript.text().trim()
+  if (!transcript) return ""
+  const omitted = transcript.length > PARTIAL_AGENT_TRANSCRIPT_CHARS
+  const tail = omitted ? transcript.slice(-PARTIAL_AGENT_TRANSCRIPT_CHARS) : transcript
+  return `\nIncomplete transcript tail${omitted ? " (earlier output omitted)" : ""}:\n${tail}`
 }
 
 export function setAgentActivity(job: BackgroundAgentJob, activity: string): void {
@@ -643,6 +653,16 @@ export async function waitForProcessOutput(
     job.waiters.add(done)
     signal?.addEventListener("abort", done)
   })
+}
+
+export function agentSupervisionWaitMs(job: BackgroundAgentJob, requestedMs: number, now = Date.now()): number {
+  if (requestedMs <= 0) return Math.max(0, requestedMs)
+  const supervisionMargin = Math.min(MAX_AGENT_SUPERVISION_MARGIN_MS, Math.floor(job.timeoutMs / 5))
+  const untilCheckpoint =
+    job.deadlineAt === undefined
+      ? Math.max(0, job.timeoutMs - supervisionMargin)
+      : Math.max(0, job.deadlineAt - now - supervisionMargin)
+  return Math.min(requestedMs, untilCheckpoint)
 }
 
 export async function waitForAgentCompletion(
