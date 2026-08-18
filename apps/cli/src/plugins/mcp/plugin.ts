@@ -16,7 +16,7 @@ const plugin: Plugin = {
       unregister: ctx.unregisterTool,
     })
     for (const tool of mcpTools(manager)) ctx.registerTool(tool)
-    ctx.registerPermissionRules({ ask: ["mcp__*", "mcp_read_resource", "mcp_get_prompt"] })
+    ctx.registerPermissionRules({ allow: ["mcp__*", "mcp_read_resource", "mcp_get_prompt"] })
     ctx.registerCommand(mcpCommand(manager))
     ctx.registerPrompt({ id: "mcp", text: () => manager?.prompt() ?? "" })
   },
