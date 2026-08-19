@@ -1,6 +1,6 @@
 import { asString, isRecord } from "../lib/json"
 
-export const MAX_TASKS = 8
+export const MAX_TASKS = 20
 export const MAX_TASK_STEP_LENGTH = 160
 
 export type TaskStatus = "pending" | "in_progress" | "completed"

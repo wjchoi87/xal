@@ -32,7 +32,7 @@ export interface TurnHost {
   autoCompact(signal: AbortSignal, provider: Provider, model: string): Promise<void>
   beginCheckpoint(messageId: string, input: UserInput): Promise<void>
   stopAcceptingInput(): void
-  completeTasks(): void
+  drainTaskReminder(): void
 }
 
 export interface TurnSummary {
@@ -68,6 +68,7 @@ export async function runTurn(
       toolLoops.reset()
       interjected = midWork
     }
+    if (resumedCalls.length === 0) host.drainTaskReminder()
 
     let items: HistoryItem[] = []
     let toolCalls = resumedCalls
@@ -103,7 +104,7 @@ export async function runTurn(
         continue
       }
       const final = items.findLast((item) => item.type === "assistant_message")
-      await endTurn(host, usage, final?.type === "assistant_message" ? final.text : undefined, signal, true)
+      await endTurn(host, usage, final?.type === "assistant_message" ? final.text : undefined, signal)
       return { usage, usedTools }
     }
 
@@ -148,7 +149,7 @@ export async function runTurn(
         contract.reset()
         continue
       }
-      await endTurn(host, usage, contract.output, signal, true)
+      await endTurn(host, usage, contract.output, signal)
       return { usage, usedTools }
     }
     if (contract?.exhausted) throw contract.failure()
@@ -158,7 +159,7 @@ export async function runTurn(
       return
     }
     if (host.restartRequested()) {
-      await endTurn(host, usage, undefined, signal, true)
+      await endTurn(host, usage, undefined, signal)
       return { usage, usedTools }
     }
   }
@@ -225,7 +226,7 @@ export async function runDirectShell(host: TurnHost, input: UserInput, signal: A
     host.emit({ type: "turn_interrupted" })
     return
   }
-  await endTurn(host, {}, outcome.output, signal, false)
+  await endTurn(host, {}, outcome.output, signal)
 }
 
 async function endTurn(
@@ -233,7 +234,6 @@ async function endTurn(
   usage: TurnUsage,
   output: string | JsonObject | undefined,
   signal: AbortSignal,
-  completeTasks: boolean,
 ): Promise<void> {
   host.stopAcceptingInput()
   await runTurnEndHooks(
@@ -245,7 +245,6 @@ async function endTurn(
     host.hookContext(signal),
     host.hookReporter,
   )
-  if (completeTasks) host.completeTasks()
   host.emit({
     type: "turn_ended",
     usage: usage.turn,

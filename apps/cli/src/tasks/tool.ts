@@ -34,11 +34,14 @@ export const updateTasksTool: Tool = {
     additionalProperties: false,
   },
   prompt:
-    "Use update_tasks for work with several distinct steps, when the user lists multiple requests, or when new instructions arrive mid-task; skip it for single-step or conversational work. Keep steps short and concrete, with exactly one in_progress while work remains. Replace the whole list and report the current truthful state, completing every step that has actually finished since the previous update. Send progress updates alongside substantive tool calls when practical, never in a provider response whose only purpose is task bookkeeping. Do not add a final-report step or call update_tasks only to complete the list. A successful final answer automatically completes the current list after the answer is ready.",
+    "Create a task list with update_tasks before starting work that needs several distinct steps, when the user gives multiple requests, or when new instructions arrive mid-task; skip it for single-step or conversational work. Keep steps short and concrete. Replace the whole list on every call and keep it truthful: set a step to in_progress before working on it, and mark it completed immediately after it is actually done — never batch completions and never complete a step ahead of the work. When the plan changes, rewrite the list before continuing; removing a step is how a step is cancelled. A call whose only purpose is updating the list is fine. Do not repeat the list in your prose; the interface already displays it.",
   title(args) {
     const count = Array.isArray(args.tasks) ? args.tasks.length : 0
     if (count === 0) return "Clear task list"
     return `Update ${count} ${count === 1 ? "task" : "tasks"}`
+  },
+  available(ctx) {
+    return ctx.kind === "primary"
   },
   readOnly() {
     return true
