@@ -76,13 +76,19 @@ describe("OpenAI model catalog", () => {
     expect(requests).toEqual([{ path: "/models", key: "sk-test" }])
   })
 
-  test("adds the synthetic 1M Sol model when the underlying model is available", async () => {
-    responses.push(modelsResponse(["gpt-5.6-sol"]))
+  test("adds synthetic 1M models for the GPT-5.6 family", async () => {
+    responses.push(modelsResponse(["gpt-5.6-sol", "gpt-5.6-terra"]))
 
     const models = (await listModels("profile-1", true)).models
 
-    expect(models.map((model) => model.id)).toEqual(["gpt-5.6-sol", "gpt-5.6-sol-1m"])
+    expect(models.map((model) => model.id)).toEqual([
+      "gpt-5.6-sol",
+      "gpt-5.6-sol-1m",
+      "gpt-5.6-terra",
+      "gpt-5.6-terra-1m",
+    ])
     expect(models[1]).toMatchObject({ contextWindow: 1_000_000, autoCompactTokenLimit: 900_000 })
+    expect(models[3]).toMatchObject({ contextWindow: 1_000_000, autoCompactTokenLimit: 900_000 })
   })
 
   test("advertises model-specific reasoning ranges", async () => {
@@ -94,15 +100,15 @@ describe("OpenAI model catalog", () => {
       options: ["none", "low", "medium", "high", "xhigh", "max"],
       default: "medium",
     })
-    expect(models[1]?.thinking).toEqual({
+    expect(models[2]?.thinking).toEqual({
       options: ["none", "low", "medium", "high", "xhigh"],
       default: "medium",
     })
-    expect(models[2]?.thinking).toEqual({
+    expect(models[3]?.thinking).toEqual({
       options: ["none", "low", "medium", "high", "xhigh"],
       default: "none",
     })
-    expect(models[3]?.thinking).toEqual({ options: ["medium", "high", "xhigh"], default: "medium" })
+    expect(models[4]?.thinking).toEqual({ options: ["medium", "high", "xhigh"], default: "medium" })
   })
 
   test("reuses the profile cache when live discovery fails", async () => {
@@ -123,7 +129,7 @@ describe("OpenAI model catalog", () => {
     await listModels("profile-2", true)
     requests.length = 0
 
-    expect((await listModels("profile-1", false)).models.map((model) => model.id)).toEqual(["gpt-5.6"])
+    expect((await listModels("profile-1", false)).models.map((model) => model.id)).toEqual(["gpt-5.6", "gpt-5.6-1m"])
     expect((await listModels("profile-2", false)).models.map((model) => model.id)).toEqual(["gpt-4.1"])
     expect(requests).toHaveLength(0)
   })

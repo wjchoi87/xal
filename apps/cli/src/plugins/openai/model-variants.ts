@@ -1,25 +1,27 @@
 import type { ModelInfo } from "../../providers/types"
 
-const LARGE_CONTEXT_MODEL = "gpt-5.6-sol"
-const LARGE_CONTEXT_VARIANT = `${LARGE_CONTEXT_MODEL}-1m`
+const LARGE_CONTEXT_SUFFIX = "-1m"
 
-export function withLargeContextVariant(models: ModelInfo[]): ModelInfo[] {
-  return models.flatMap((model) =>
-    model.id === LARGE_CONTEXT_MODEL
-      ? [
-          model,
-          {
-            ...model,
-            id: LARGE_CONTEXT_VARIANT,
-            name: `${model.name} - 1M context`,
-            contextWindow: 1_000_000,
-            autoCompactTokenLimit: 900_000,
-          },
-        ]
-      : [model],
-  )
+export interface LargeContextModel extends ModelInfo {
+  maxContextWindow?: number
+}
+
+export function withLargeContextVariant(models: LargeContextModel[]): ModelInfo[] {
+  return models.flatMap(({ maxContextWindow, ...model }) => {
+    if (maxContextWindow === undefined || maxContextWindow <= (model.contextWindow ?? 0)) return [model]
+    return [
+      model,
+      {
+        ...model,
+        id: `${model.id}${LARGE_CONTEXT_SUFFIX}`,
+        name: `${model.name} - 1M context`,
+        contextWindow: maxContextWindow,
+        autoCompactTokenLimit: Math.floor(maxContextWindow * 0.9),
+      },
+    ]
+  })
 }
 
 export function resolveLargeContextModel(model: string): string {
-  return model === LARGE_CONTEXT_VARIANT ? LARGE_CONTEXT_MODEL : model
+  return model.endsWith(LARGE_CONTEXT_SUFFIX) ? model.slice(0, -LARGE_CONTEXT_SUFFIX.length) : model
 }

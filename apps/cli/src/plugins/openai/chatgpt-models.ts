@@ -16,12 +16,12 @@ import {
 import { chatGptFetch } from "./chatgpt-client"
 import { PROVIDER_NAME } from "./chatgpt-oauth"
 import { contextWindowCap } from "./context-window"
-import { resolveLargeContextModel, withLargeContextVariant } from "./model-variants"
+import { type LargeContextModel, resolveLargeContextModel, withLargeContextVariant } from "./model-variants"
 
 const MODEL_CATALOG_COMPATIBILITY_VERSION = "1.0.0"
 const FAST_MODEL_SUFFIX = "-fast"
 
-interface ChatGptModel extends ModelInfo {
+interface ChatGptModel extends LargeContextModel {
   supportsFast: boolean
 }
 
@@ -30,6 +30,7 @@ const BUNDLED_MODELS: ChatGptModel[] = [
     id: "gpt-5.6-luna",
     name: "GPT-5.6-Luna",
     contextWindow: 272_000,
+    maxContextWindow: 872_000,
     inputModalities: ["text", "image"],
     thinking: { options: ["low", "medium", "high", "xhigh", "max"], default: "medium" },
     supportsFast: true,
@@ -38,6 +39,7 @@ const BUNDLED_MODELS: ChatGptModel[] = [
     id: "gpt-5.6-sol",
     name: "GPT-5.6-Sol",
     contextWindow: 272_000,
+    maxContextWindow: 872_000,
     inputModalities: ["text", "image"],
     thinking: { options: ["low", "medium", "high", "xhigh", "max"], default: "low" },
     supportsFast: true,
@@ -46,6 +48,7 @@ const BUNDLED_MODELS: ChatGptModel[] = [
     id: "gpt-5.6-terra",
     name: "GPT-5.6-Terra",
     contextWindow: 272_000,
+    maxContextWindow: 872_000,
     inputModalities: ["text", "image"],
     thinking: { options: ["low", "medium", "high", "xhigh", "max"], default: "medium" },
     supportsFast: true,
@@ -133,6 +136,7 @@ function parseRuntimeModel(raw: unknown): { model: ChatGptModel; priority: numbe
       id,
       name,
       contextWindow: positiveInteger(raw.context_window) ?? positiveInteger(raw.max_context_window),
+      maxContextWindow: positiveInteger(raw.max_context_window),
       inputModalities: inputModalities(raw.input_modalities),
       thinking: runtimeThinking(raw.supported_reasoning_levels, raw.default_reasoning_level),
       supportsFast: runtimeSupportsFast(raw),
@@ -178,6 +182,7 @@ function parseCachedModel(raw: unknown): ChatGptModel | undefined {
     id,
     name,
     contextWindow: positiveInteger(raw.contextWindow),
+    maxContextWindow: positiveInteger(raw.maxContextWindow),
     inputModalities: inputModalities(raw.inputModalities),
     thinking: parseCachedThinking(raw.thinking),
     supportsFast,

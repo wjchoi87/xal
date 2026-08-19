@@ -7,7 +7,7 @@ import type { ModelCatalog, ModelInfo, ThinkingOptions } from "../../providers/t
 import { apiKey } from "./api-auth"
 import { openAiFetch, raiseForStatus } from "./api-client"
 import { contextWindowCap } from "./context-window"
-import { withLargeContextVariant } from "./model-variants"
+import { type LargeContextModel, withLargeContextVariant } from "./model-variants"
 
 const CACHE_VERSION = 1
 const DISCOVERY_TIMEOUT_MS = 15_000
@@ -71,12 +71,13 @@ function contextWindow(id: string): number {
   return contextWindowCap()
 }
 
-function modelInfo(id: string): ModelInfo {
+function modelInfo(id: string): LargeContextModel {
   const thinking = reasoning(id)
   return {
     id,
     name: id,
     contextWindow: contextWindow(id),
+    ...(id.toLowerCase().startsWith("gpt-5.6") ? { maxContextWindow: 1_000_000 } : {}),
     inputModalities: ["text", "image"],
     ...(thinking ? { thinking } : {}),
   }

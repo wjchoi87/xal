@@ -8,6 +8,7 @@ mock.module("../../lib/fs", () => ({
           id: "gpt-5.6-sol",
           name: "GPT-5.6-Sol",
           contextWindow: 272_000,
+          maxContextWindow: 872_000,
           inputModalities: ["text", "image"],
           thinking: { options: ["low", "medium", "high", "xhigh", "max"], default: "low" },
           supportsFast: true,
@@ -28,7 +29,7 @@ mock.module("./chatgpt-oauth", () => ({ PROVIDER_NAME: "ChatGPT" }))
 
 const { listModels } = await import("./chatgpt-models")
 
-test("adds regular and fast 1M Sol models to the ChatGPT catalog", async () => {
+test("adds regular and fast 1M models to the ChatGPT catalog", async () => {
   const models = (await listModels("profile-1", false)).models
 
   expect(models.map((model) => model.id)).toEqual([
@@ -37,6 +38,6 @@ test("adds regular and fast 1M Sol models to the ChatGPT catalog", async () => {
     "gpt-5.6-sol-1m",
     "gpt-5.6-sol-1m-fast",
   ])
-  expect(models[2]).toMatchObject({ contextWindow: 1_000_000, autoCompactTokenLimit: 900_000 })
-  expect(models[3]).toMatchObject({ contextWindow: 1_000_000, autoCompactTokenLimit: 900_000 })
+  expect(models[2]).toMatchObject({ contextWindow: 872_000, autoCompactTokenLimit: 784_800 })
+  expect(models[3]).toMatchObject({ contextWindow: 872_000, autoCompactTokenLimit: 784_800 })
 })

@@ -22,6 +22,7 @@ import { registerTrustClis } from "./project/cli"
 import { findProjectRoot } from "./project/root"
 import { ensureWorkspaceTrust } from "./project/trust"
 import { prepareProjectMcp } from "./plugins/mcp/project"
+import { refreshModelCatalogs } from "./providers/catalog"
 import { registerProviderClis } from "./providers/cli"
 import { registerProviderCommands } from "./providers/commands"
 import { registerSessionClis } from "./sessions/cli"
@@ -133,6 +134,7 @@ async function main(input: string[]): Promise<void> {
       return
     }
     void bootstrapPlugins()
+    void refreshModelCatalogs().catch((error) => ctx.error(describeError(error)))
     await ui.start()
     return
   }

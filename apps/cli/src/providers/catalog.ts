@@ -54,6 +54,7 @@ export async function listConnectTargets(): Promise<ConnectTarget[]> {
 interface CatalogCacheEntry {
   token: symbol
   catalog?: ModelCatalog
+  settled?: ModelCatalog
   lookup: Promise<ModelCatalog>
   pending: boolean
 }
@@ -157,7 +158,8 @@ export function clearModelCatalog(profileId: string): void {
 export function modelCatalog(provider: Provider, profileId: string, refresh = false): Promise<ModelCatalog> {
   const key = catalogKey(provider, profileId)
   const cached = catalogs.get(key)
-  if (cached && (!refresh || cached.pending)) return cached.lookup
+  if (cached && !refresh) return cached.settled ? Promise.resolve(cached.settled) : cached.lookup
+  if (cached?.pending) return cached.lookup
   const previous = cached?.catalog
   const token = Symbol(key)
   const lookup = Promise.resolve()
@@ -177,12 +179,27 @@ export function modelCatalog(provider: Provider, profileId: string, refresh = fa
       }
       return { models: [], source: "runtime", warning: `model catalog failed: ${describeError(error)}` }
     })
-    .finally(() => {
+    .then((catalog) => {
       const current = catalogs.get(key)
-      if (current?.token === token) current.pending = false
+      if (current?.token === token) {
+        current.settled = catalog
+        current.pending = false
+      }
+      return catalog
     })
-  catalogs.set(key, { token, catalog: previous, lookup, pending: true })
+  catalogs.set(key, { token, catalog: previous, settled: cached?.settled, lookup, pending: true })
   return lookup
+}
+
+export async function refreshModelCatalogs(): Promise<void> {
+  await Promise.all(
+    (await listProfiles()).map(async (profile) => {
+      const provider = getProvider(profile.provider)
+      if (!provider) return
+      await modelCatalog(provider, profile.id)
+      await modelCatalog(provider, profile.id, true)
+    }),
+  )
 }
 
 export async function contextWindow(provider: Provider, profileId: string, model: string): Promise<number | undefined> {
