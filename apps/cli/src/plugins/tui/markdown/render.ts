@@ -138,8 +138,6 @@ function quoteLines(quoted: string[], style: Styler): Line[] {
 }
 
 function codeLines(language: string, source: string[], style: Styler): Line[] {
-  const bar = `${terminalGlyph("│", "|")} `
-  const inner = Math.max(1, style.columns - displayWidth(bar))
   const expanded = source.map((line) => line.replaceAll("\t", "    "))
   const diff = language === "diff" || language === "patch" ? classifyDiff(expanded) : undefined
   const highlighted = diff ? undefined : highlightCode(expanded, language)
@@ -150,11 +148,11 @@ function codeLines(language: string, source: string[], style: Styler): Line[] {
     const changed = diff?.[index]
     for (const line of packCode(
       tokens,
-      inner,
+      style.columns,
       (kind) => (changed ? lineColor(changed.kind) : CODE_COLORS[kind]),
       style,
     )) {
-      lines.push([style.chunk(bar, COLORS.border), ...line])
+      lines.push(line)
     }
   }
 
