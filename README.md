@@ -7,38 +7,6 @@ A terminal coding harness with a headless agent core where every capability, is 
 
 Powered by [OpenTUI](https://github.com/anomalyco/opentui)
 
-## Features
-
-- Terminal UI
-- Headless mode
-- Multiple providers
-  - OpenAI API
-  - OpenAI ChatGPT
-  - GitHub Copilot
-  - xAI
-  - DeepSeek
-  - Alibaba Cloud
-  - Anthropic plugin
-  - More coming
-- Model discovery
-- Connection profiles
-- Thinking controls
-- Plugins and hooks
-- MCP servers
-- Language servers
-- Project instructions
-- Custom commands
-- Skills
-- Permission modes
-- Plan mode
-- Secret redaction
-- Background sessions
-- Task agents
-- Background processes
-- Custom keybindings
-- Terminal notifications
-- Goals
-
 ## Install the beta
 
 Install the latest beta release on macOS, Linux, or Windows from a POSIX shell:
@@ -79,8 +47,6 @@ Local development requires Bun 1.3.14 and Rust 1.92.0. The first development or 
 bun install
 bun dev
 ```
-
-Run `bun native:benchmark` to compare the Rust secret matcher with the previous TypeScript path on the host. Compare compiled startup with `bun native:benchmark:startup <baseline-executable> <current-executable>`.
 
 ## License
 
