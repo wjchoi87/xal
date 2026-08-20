@@ -4,7 +4,7 @@ Connect a built-in or plugin-provided model service, select a model, and configu
 
 ## Built-in providers
 
-Built-in provider IDs are `anthropic`, `google`, `openai`, `openai-chatgpt`, `openrouter`, `github-copilot`, `xai`, `deepseek`, and `alibaba-cloud`. `claude` is an alias for `anthropic`, `gemini` is an alias for `google`, `chatgpt` is an alias for `openai-chatgpt`, `copilot` is an alias for `github-copilot`, `grok` is an alias for `xai`, and `dashscope` is an alias for `alibaba-cloud`.
+Built-in provider IDs are `anthropic`, `google`, `openai`, `openai-chatgpt`, `openrouter`, `github-copilot`, `xai`, `deepseek`, `alibaba-cloud`, `minimax`, and `minimax-coding-plan`. `claude` is an alias for `anthropic`, `gemini` is an alias for `google`, `chatgpt` is an alias for `openai-chatgpt`, `copilot` is an alias for `github-copilot`, `grok` is an alias for `xai`, and `dashscope` is an alias for `alibaba-cloud`.
 
 The only built-in UI ID is `tui`. Plugins may register more providers, aliases, and UIs.
 
@@ -29,7 +29,7 @@ GitHub Copilot discovers the models enabled for each connected subscription and 
 
 Anthropic discovers models from its authenticated `/models` endpoint and layers bundled context windows, output limits, and thinking options over the result because that endpoint reports none of them. Google Gemini discovers models from `/models`, keeps the ones that support `generateContent`, and reads each context window from the reported input token limit. OpenRouter discovers its full catalog from `/models` and reads context window, input modalities, and reasoning support directly from the response, so no bundled metadata is layered over it. Each of the three falls back to a small bundled catalog and reports the failure when live discovery is unavailable.
 
-xAI discovers models from its authenticated `/models` endpoint, hides the image, speech, and voice models that the chat endpoint rejects, and layers bundled context windows and thinking options over the result because that endpoint reports neither. The account's credential decides what the endpoint returns, so a Grok subscription and an API key each see their own catalog. DeepSeek discovers models from its authenticated `/models` endpoint and reports when it must use bundled model metadata. Alibaba Cloud uses a bundled catalog of Qwen models shared by Model Studio and Coding Plan.
+xAI discovers models from its authenticated `/models` endpoint, hides the image, speech, and voice models that the chat endpoint rejects, and layers bundled context windows and thinking options over the result because that endpoint reports neither. The account's credential decides what the endpoint returns, so a Grok subscription and an API key each see their own catalog. DeepSeek discovers models from its authenticated `/models` endpoint and reports when it must use bundled model metadata. Alibaba Cloud uses a bundled catalog of Qwen models shared by Model Studio and Coding Plan. MiniMax and MiniMax Coding Plan use the bundled minimax.io catalog.
 
 ## Anthropic
 
@@ -59,6 +59,14 @@ Configure options under `pluginConfig.alibaba-cloud`:
 | `clientName` | string | Package application name                                 | Client name used in the provider request user agent.                                  |
 
 Alibaba Cloud Model Studio API keys are region-specific. Set `baseUrl` to the OpenAI-compatible API Host shown when the key is created. Coding Plan keys use `https://coding-intl.dashscope.aliyuncs.com/v1`. `/connect` stores the key without making a billable model request; the first turn validates that the key, endpoint, and selected model are compatible.
+
+## MiniMax
+
+`pluginConfig.minimax.clientName` is a non-empty string used in the provider request user agent. It defaults to the package application name. MiniMax currently has no other configuration options.
+
+Use `minimax` for standard minimax.io API billing and `minimax-coding-plan` for a minimax.io Coding Plan. Both providers use the official Anthropic-compatible endpoint at `https://api.minimax.io/anthropic/v1` and have separate connection profiles. Run `xal connect minimax` or `xal connect minimax-coding-plan`, then paste the matching API key. Connection stores the key without making a billable model request.
+
+The bundled catalog includes MiniMax M3 and the M2 family, including the high-speed M2.5 and M2.7 variants. M3 supports image input and exposes a thinking on/off control. Its Anthropic-compatible interface defaults thinking off, so Xal explicitly requests adaptive thinking unless `none` is selected. M2 models reason natively without an effort dial and use MiniMax's recommended sampling values.
 
 ## GitHub Copilot
 

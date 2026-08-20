@@ -8,6 +8,7 @@ import google from "./google/plugin"
 import files from "./files/plugin"
 import githubCopilot from "./github-copilot/plugin"
 import memory from "./memory/plugin"
+import minimax from "./minimax/plugin"
 import openai from "./openai/plugin"
 import openrouter from "./openrouter/plugin"
 import promptCommands from "./prompt-commands/plugin"
@@ -33,6 +34,7 @@ export const builtinPlugins: Plugin[] = [
   google,
   deepseek,
   alibabaCloud,
+  minimax,
   githubCopilot,
   openai,
   openrouter,

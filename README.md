@@ -18,6 +18,7 @@ Powered by [OpenTUI](https://github.com/anomalyco/opentui)
   - xAI
   - DeepSeek
   - Alibaba Cloud
+  - MiniMax and MiniMax Coding Plan
   - Anthropic plugin
   - More coming
 - Model discovery
