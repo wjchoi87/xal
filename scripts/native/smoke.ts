@@ -2,6 +2,27 @@ import { chmod, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function isTransientRemovalError(error: unknown): boolean {
+  if (!isRecord(error) || typeof error.code !== "string") return false
+  return ["EBUSY", "EMFILE", "ENFILE", "ENOTEMPTY", "EPERM"].includes(error.code)
+}
+
+async function removeTemporaryDirectory(directory: string): Promise<void> {
+  for (let attempt = 0; attempt < 40; attempt++) {
+    try {
+      await rm(directory, { recursive: true, force: true })
+      return
+    } catch (error) {
+      if (!isTransientRemovalError(error) || attempt === 39) throw error
+      await Bun.sleep(250)
+    }
+  }
+}
+
 async function execute(executable: string, args: string[], cwd: string, env?: Record<string, string>): Promise<string> {
   const timeoutMs = 30_000
   const child = Bun.spawn([executable, ...args], {
@@ -86,7 +107,7 @@ async function main(): Promise<void> {
       throw new Error("standalone plugin redaction smoke output mismatch")
     }
   } finally {
-    await rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+    await removeTemporaryDirectory(directory)
   }
 }
 

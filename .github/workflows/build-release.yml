@@ -180,8 +180,25 @@ jobs:
               fi
             '
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload artifact
+        id: upload
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
         with:
           name: binary-${{ matrix.asset }}
           path: dist/${{ matrix.asset }}
           if-no-files-found: error
+
+      - name: Wait to retry artifact upload
+        if: steps.upload.outcome == 'failure'
+        shell: bash
+        run: sleep 10
+
+      - name: Retry artifact upload
+        if: steps.upload.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}
+          if-no-files-found: error
+          overwrite: true
