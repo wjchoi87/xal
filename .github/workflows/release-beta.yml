@@ -29,6 +29,8 @@ jobs:
 
       - run: bun install --frozen-lockfile
       - run: bun checks
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
 
       - name: Resolve beta version
         id: version

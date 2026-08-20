@@ -1,0 +1,43 @@
+name: Checks
+
+on:
+  pull_request:
+
+concurrency:
+  group: checks-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.92.0
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: checks
+          cache-on-failure: true
+          workspaces: . -> target
+
+      - run: bun install --frozen-lockfile
+
+      - run: bun checks
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

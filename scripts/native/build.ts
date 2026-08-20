@@ -395,15 +395,15 @@ async function stageArtifact(manifestPath: string): Promise<void> {
   }
 }
 
-async function compile(target: NativeTarget, version: string, outfile: string): Promise<void> {
+async function compile(target: NativeTarget, version: string, outfile: string, portable: boolean): Promise<void> {
   if (!version) throw new Error("Version must not be empty")
   if (!outfile) throw new Error("Output path must not be empty")
-  const manifestPath = await ensureTarget(target, true)
+  const manifestPath = await ensureTarget(target, portable)
   await mkdir(dirname(STAGING_LOCK), { recursive: true })
   await acquireCompileLock()
   try {
     await rm(STAGED_ADDON, { force: true })
-    await verifyArtifactManifest(manifestPath, await nativeInputs(target, true))
+    await verifyArtifactManifest(manifestPath, await nativeInputs(target, portable))
     await stageArtifact(manifestPath)
     await run(
       [
@@ -442,7 +442,11 @@ async function main(): Promise<void> {
     return
   }
   if (command === "compile-host" && first !== undefined && second !== undefined && third === undefined) {
-    await compile(hostNativeTarget(), first, second)
+    await compile(hostNativeTarget(), first, second, true)
+    return
+  }
+  if (command === "compile-host-check" && first !== undefined && second !== undefined && third === undefined) {
+    await compile(hostNativeTarget(), first, second, false)
     return
   }
   if (
@@ -452,11 +456,11 @@ async function main(): Promise<void> {
     third !== undefined &&
     extra === undefined
   ) {
-    await compile(nativeTarget(first), second, third)
+    await compile(nativeTarget(first), second, third, true)
     return
   }
   throw new Error(
-    "Usage: bun scripts/native/build.ts ensure | target <rust-target> | compile-host <version> <outfile> | compile <rust-target> <version> <outfile>",
+    "Usage: bun scripts/native/build.ts ensure | target <rust-target> | compile-host <version> <outfile> | compile-host-check <version> <outfile> | compile <rust-target> <version> <outfile>",
   )
 }
 
