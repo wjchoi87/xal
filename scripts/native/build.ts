@@ -16,7 +16,6 @@ const NATIVE_ROOT = join(ROOT, "apps/cli/.native")
 const STAGED_ADDON = join(ROOT, "apps/cli/src/native/xal-native.node")
 const STAGING_LOCK = join(ROOT, "apps/cli/src/native/.compile.lock")
 const BUILD_MODE = "release"
-const BUN_VERSION = "1.3.14"
 const CARGO_ZIGBUILD_VERSION = "0.20.1"
 
 interface NativeInputs extends ExpectedArtifactMetadata {
@@ -399,8 +398,6 @@ async function stageArtifact(manifestPath: string): Promise<void> {
 async function compile(target: NativeTarget, version: string, outfile: string): Promise<void> {
   if (!version) throw new Error("Version must not be empty")
   if (!outfile) throw new Error("Output path must not be empty")
-  if (Bun.version !== BUN_VERSION)
-    throw new Error(`Bun ${BUN_VERSION} is required to compile releases, found ${Bun.version}`)
   const manifestPath = await ensureTarget(target, true)
   await mkdir(dirname(STAGING_LOCK), { recursive: true })
   await acquireCompileLock()

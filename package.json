@@ -29,7 +29,7 @@
   },
   "devDependencies": {
     "prettier": "^3.9.6",
-    "turbo": "^2.10.10",
-    "wrangler": "^4.123.0"
+    "turbo": "^2.10.11",
+    "wrangler": "^4.124.0"
   }
 }
