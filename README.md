@@ -7,6 +7,8 @@ A terminal coding harness with a headless agent core where every capability, is 
 
 Powered by [OpenTUI](https://github.com/anomalyco/opentui)
 
+<img width="2466" height="1368" alt="image" src="https://github.com/user-attachments/assets/0a3fb15d-2d39-4843-8510-249d32eeee5c" />
+
 ## Install the beta
 
 Install the latest beta release on macOS, Linux, or Windows from a POSIX shell:
