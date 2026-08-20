@@ -1,8 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import { ImeCommitBarrier, isImeCommit } from "./composer"
 
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 function waitForBarrier(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 60))
+  return wait(60)
 }
 
 describe("ImeCommitBarrier", () => {
@@ -41,18 +45,18 @@ describe("ImeCommitBarrier", () => {
   })
 
   test("re-arms the flush whenever an IME commit is observed", async () => {
-    const barrier = new ImeCommitBarrier()
+    const barrier = new ImeCommitBarrier(100)
     const events: string[] = []
 
     barrier.enqueue(() => events.push(" "))
-    await new Promise((resolve) => setTimeout(resolve, 10))
+    barrier.observeCommit()
+    await wait(25)
     expect(events).toEqual([])
 
     barrier.observeCommit()
-    await new Promise((resolve) => setTimeout(resolve, 10))
+    await wait(85)
     expect(events).toEqual([])
 
-    barrier.observeCommit()
     await waitForBarrier()
 
     expect(events).toEqual([" "])

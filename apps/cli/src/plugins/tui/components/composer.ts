@@ -46,8 +46,13 @@ interface PastedImage {
 const IME_COMMIT_SETTLE_MS = 20
 
 export class ImeCommitBarrier {
+  private readonly settleMs: number
   private actions: (() => void)[] = []
   private timer: ReturnType<typeof setTimeout> | undefined
+
+  constructor(settleMs = IME_COMMIT_SETTLE_MS) {
+    this.settleMs = settleMs
+  }
 
   get pending(): boolean {
     return this.actions.length > 0
@@ -74,7 +79,7 @@ export class ImeCommitBarrier {
     this.timer = setTimeout(() => {
       this.timer = undefined
       for (const action of this.actions.splice(0)) action()
-    }, IME_COMMIT_SETTLE_MS)
+    }, this.settleMs)
   }
 }
 
