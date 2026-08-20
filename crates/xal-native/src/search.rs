@@ -148,6 +148,7 @@ pub(crate) fn walk_files(
             files.push(entry.into_path());
         }
     }
+    files.sort();
     Ok(files)
 }
 
@@ -497,6 +498,7 @@ mod tests {
             .expect("visible fixture should be written");
         let cancelled = Arc::new(AtomicBool::new(false));
         let files = walk_files(&root, &cancelled, None).expect("walk should succeed");
+        assert!(files.windows(2).all(|paths| paths[0] <= paths[1]));
         assert!(files.iter().any(|path| path.ends_with(".hidden")));
         assert!(!files.iter().any(|path| path.ends_with("ignored.txt")));
         fs::remove_dir_all(root).expect("fixture should be removed");
