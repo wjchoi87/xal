@@ -1,12 +1,12 @@
 import { spawn } from "node:child_process"
 import { chmod, rename, unlink, writeFile } from "node:fs/promises"
 import { basename, dirname, join } from "node:path"
-import { appInfo } from "../app-info"
+import { appInfo, formatAppVersion } from "../app-info"
 import { registerCli } from "../cli/registry"
 import type { Cli, CliContext } from "../cli/types"
-import { isMissingPathError } from "../lib/error"
-import { asString, isRecord } from "../lib/json"
+import { describeError, isMissingPathError } from "../lib/error"
 import { isStandalone } from "../lib/process"
+import { linuxLibc } from "../native/targets"
 import { downloadArtifact } from "./download"
 
 function parseArgs(args: string[]): { help: boolean } {
@@ -53,12 +53,6 @@ async function resolveRelease(): Promise<{ base: string; version: string }> {
   return { base, version }
 }
 
-function linuxLibc(): "" | "-musl" {
-  const report: unknown = process.report?.getReport()
-  if (!isRecord(report) || !isRecord(report.header)) throw new Error("could not detect the Linux C library")
-  return asString(report.header.glibcVersionRuntime) ? "" : "-musl"
-}
-
 function artifactName(): string {
   if (process.arch !== "x64" && process.arch !== "arm64") {
     throw new Error(`unsupported architecture: ${process.arch}`)
@@ -68,7 +62,7 @@ function artifactName(): string {
     case "darwin":
       return `${appInfo.name}-darwin-${process.arch}`
     case "linux":
-      return `${appInfo.name}-linux-${process.arch}${linuxLibc()}`
+      return `${appInfo.name}-linux-${process.arch}${linuxLibc() === "musl" ? "-musl" : ""}`
     case "win32":
       return `${appInfo.name}-windows-${process.arch}.exe`
     default:
@@ -84,16 +78,32 @@ function expectedChecksum(checksums: string, artifact: string): string {
   throw new Error(`release checksums do not contain ${artifact}`)
 }
 
+async function verifyInvocation(path: string, argument: string, version: string): Promise<void> {
+  const child = Bun.spawn([path, argument], { stdout: "pipe", stderr: "pipe" })
+  let timedOut = false
+  const timeout = setTimeout(() => {
+    timedOut = true
+    child.kill()
+  }, 30_000)
+  timeout.unref()
+  try {
+    const [exitCode, stdout, stderr] = await Promise.all([
+      child.exited,
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+    ])
+    if (timedOut) throw new Error(`downloaded executable ${argument} verification timed out`)
+    if (exitCode === 0 && stdout.trim() === formatAppVersion(version)) return
+    const detail = stderr.trim() || stdout.trim() || `exit code ${exitCode}`
+    throw new Error(`downloaded executable ${argument} verification failed: ${detail}`)
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
 async function verifyExecutable(path: string, version: string): Promise<void> {
-  const child = Bun.spawn([path, "--version"], { stdout: "pipe", stderr: "pipe" })
-  const [exitCode, stdout, stderr] = await Promise.all([
-    child.exited,
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-  ])
-  if (exitCode === 0 && stdout.trim() === `${appInfo.name} ${version}`) return
-  const detail = stderr.trim() || stdout.trim() || `exit code ${exitCode}`
-  throw new Error(`downloaded executable failed verification: ${detail}`)
+  await verifyInvocation(path, "--version", version)
+  await verifyInvocation(path, "--native-self-check", version)
 }
 
 function batchPath(path: string): string {
@@ -142,9 +152,15 @@ async function runUpdate(args: string[], ctx: CliContext): Promise<void> {
   if (!isStandalone()) throw new Error("xal update is only available in an installed xal binary")
 
   const { base, version } = await resolveRelease()
-  if (version === appInfo.version) {
-    ctx.print(`${appInfo.name} ${version} is already up to date (beta)`)
-    return
+  const repairing = version === appInfo.version
+  if (repairing) {
+    try {
+      await verifyInvocation(process.execPath, "--native-self-check", version)
+      ctx.print(`${appInfo.name} ${version} is already up to date (beta)`)
+      return
+    } catch (error) {
+      ctx.error(`native self-check failed; repairing ${appInfo.name} ${version}: ${describeError(error)}`)
+    }
   }
 
   const artifact = artifactName()
@@ -174,7 +190,11 @@ async function runUpdate(args: string[], ctx: CliContext): Promise<void> {
     }
 
     await rename(downloaded, executable)
-    ctx.print(`updated ${appInfo.name} ${appInfo.version} → ${version} (beta)`)
+    ctx.print(
+      repairing
+        ? `repaired ${appInfo.name} ${version} (beta)`
+        : `updated ${appInfo.name} ${appInfo.version} → ${version} (beta)`,
+    )
   } finally {
     if (!replacementScheduled) await removeDownload(downloaded)
   }
