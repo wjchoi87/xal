@@ -416,6 +416,8 @@ async function compile(target: NativeTarget, version: string, outfile: string): 
         "--minify",
         `--target=${target.bunTarget}`,
         "--define",
+        "XAL_STANDALONE=true",
+        "--define",
         `XAL_VERSION=${JSON.stringify(version)}`,
         join(ROOT, "apps/cli/src/index.ts"),
         `--outfile=${resolve(outfile)}`,

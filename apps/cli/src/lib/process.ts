@@ -1,8 +1,10 @@
 import type { ChildProcess } from "node:child_process"
 import { linuxLibc } from "../native/targets"
 
+declare const XAL_STANDALONE: boolean | undefined
+
 export function isStandalone(): boolean {
-  return Bun.main.startsWith("/$bunfs/")
+  return typeof XAL_STANDALONE === "boolean" && XAL_STANDALONE
 }
 
 export function selfCommand(args: string[]): string[] {
