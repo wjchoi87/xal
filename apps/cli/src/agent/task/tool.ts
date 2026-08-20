@@ -30,7 +30,7 @@ function taskToolTitle(args: Record<string, unknown>): string {
 export const taskTool: SessionTool = {
   name: "task",
   get description() {
-    return `Dispatch a batch of independent tasks to background agents. The call returns agent ids immediately, runs up to ${settings().agents.maxConcurrent} agents at once, queues the rest, and automatically delivers each result back into this session. Agents start without conversation history. Read agents cannot modify files; write agents use the shared checkout or an isolated Git worktree.`
+    return `Dispatch a batch of independent tasks to background agents after delegation is authorized. Use only for concrete, bounded assignments that can run independently alongside useful local work; otherwise continue locally. The call returns agent ids immediately, runs up to ${settings().agents.maxConcurrent} agents at once, queues the rest, and automatically delivers each result back into this session. Agents start without conversation history. Read agents cannot modify files; write agents use the shared checkout or an isolated Git worktree.`
   },
   parameters: {
     type: "object",
@@ -85,7 +85,7 @@ export const taskTool: SessionTool = {
     additionalProperties: false,
   },
   prompt:
-    "Use task for substantial independent work that can proceed while you continue. Dispatch related work together in one tasks batch and put shared background and cross-task contracts in context. Give every task exact targets, explicit non-goals, and observable acceptance criteria. Give concurrent shared write tasks disjoint files; use worktree isolation when edits may overlap. Isolated changes stay in the reported checkout and branch until you integrate them, then remove the checkout with worktree_remove. Agents start blank, so do not rely on conversation history. Results auto-deliver into your session; do not poll them. Continue useful non-overlapping work or end the current response while they run. Use job_status to inspect a task's activity and remaining time or turn budget when a supervision decision is needed, job_send to redirect it, job_extend to add time or turns before its budget expires, and job_kill when it is no longer useful. Explicit job_output waits return before an agent deadline; inspect its status and extend or stop it at that checkpoint instead of immediately waiting again. Never work on a dispatched task's files or duplicate its work while it runs.",
+    "When delegation is authorized, use task only for concrete, bounded work that can proceed independently alongside useful local work; otherwise continue locally. Use the smallest useful batch and dispatch multiple tasks only when they are genuinely independent. Put shared background and cross-task contracts in context. Give every task exact targets, explicit non-goals, and observable acceptance criteria. Give concurrent shared write tasks disjoint files; use worktree isolation when edits may overlap. Isolated changes stay in the reported checkout and branch until you integrate them, then remove the checkout with worktree_remove. Agents start blank, so do not rely on conversation history. Results auto-deliver into your session; do not poll them. Continue useful non-overlapping work or end the current response while they run. Use job_status to inspect a task's activity and remaining time or turn budget when a supervision decision is needed, job_send to redirect it, job_extend to add time or turns before its budget expires, and job_kill when it is no longer useful. Explicit job_output waits return before an agent deadline; inspect its status and extend or stop it at that checkpoint instead of immediately waiting again. Never work on a dispatched task's files or duplicate its work while it runs.",
   sessionAware: true,
   available(ctx) {
     return ctx.kind === "primary" && ctx.interactive
@@ -119,6 +119,13 @@ export function registerTaskAgents(): void {
     evaluate(request) {
       if (request.tool !== taskTool.name || request.readOnly) return undefined
       return "ask"
+    },
+  })
+  registerPrompt({
+    id: "task-delegation-policy",
+    text(prompt) {
+      if (prompt.kind !== "primary" || !prompt.tools.some((tool) => tool.name === taskTool.name)) return ""
+      return "Task agents are an available capability, not the default workflow. Do not dispatch task agents unless the user or applicable AGENTS.md or skill instructions explicitly ask for sub-agents, delegation, or parallel agent work. Requests for depth, thoroughness, research, investigation, or detailed codebase analysis do not authorize delegation."
     },
   })
   registerPrompt({

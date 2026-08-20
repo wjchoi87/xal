@@ -34,6 +34,8 @@ A background session stays an ordinary session. Once the worker cleanly releases
 
 ## Task agents
 
+Task agents are available for explicit delegation, not as the primary model's default workflow. The primary model is instructed to dispatch them only when the user or applicable `AGENTS.md` or skill instructions ask for sub-agents, delegation, or parallel agent work. Requests for depth, thoroughness, research, investigation, or detailed codebase analysis alone do not authorize delegation.
+
 The `task` tool dispatches a batch of up to 8 independent assignments. Each assignment becomes its own agent session that starts without conversation history: the batch's shared `context` plus the assignment text is everything it knows. The call returns agent ids immediately; up to `agents.maxConcurrent` agents run at once and the rest queue.
 
 Each task declares its `access`:

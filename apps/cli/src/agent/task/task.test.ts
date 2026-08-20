@@ -7,9 +7,11 @@ import { bashTool } from "../../tools/bash/tool"
 import { registerTool, unregisterTool } from "../../tools/registry"
 import type { Tool } from "../../tools/types"
 import type { AgentEvent, BackgroundResult } from "../events"
+import { registerBasePrompt } from "../prompt/base"
 import {
   completedRound,
   runSettledTurn,
+  ScriptedProvider,
   setupAgentSessionTests,
   toolRound,
   type AgentSessionTestHarness,
@@ -21,6 +23,7 @@ let harness: AgentSessionTestHarness
 
 beforeAll(async () => {
   harness = await setupAgentSessionTests("sub-agent-test-")
+  registerBasePrompt()
   registerTaskAgents()
 })
 
@@ -34,6 +37,25 @@ function modelCatalog(): ModelCatalog {
     source: "runtime",
   }
 }
+
+test("requires explicit delegation after describing the task tool", async () => {
+  const provider = new ScriptedProvider([completedRound("Done.")])
+  const session = harness.createSession(provider, { interactive: true })
+
+  const outcome = await runSettledTurn(session, { text: "Inspect the project.", images: [] })
+  const request = provider.requests[0]
+  if (!request) throw new Error("provider request was not recorded")
+  const operationalGuidance = "When delegation is authorized, use task only for concrete, bounded work"
+  const delegationPolicy = "Task agents are an available capability, not the default workflow."
+
+  expect(outcome.status).toBe("completed")
+  expect(request.tools.some((tool) => tool.name === "task")).toBe(true)
+  expect(request.instructions).toContain(operationalGuidance)
+  expect(request.instructions).toContain(delegationPolicy)
+  expect(request.instructions.indexOf(delegationPolicy)).toBeGreaterThan(
+    request.instructions.indexOf(operationalGuidance),
+  )
+})
 
 test("inherits deny rules and durably delivers a bounded task report", async () => {
   const deniedToolName = `denied_mutation_${crypto.randomUUID().replaceAll("-", "_")}`
