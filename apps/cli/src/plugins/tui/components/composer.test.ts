@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { ImeCommitBarrier, isImeCommit } from "./composer"
 
 function waitForBarrier(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 20))
+  return new Promise((resolve) => setTimeout(resolve, 60))
 }
 
 describe("ImeCommitBarrier", () => {
@@ -12,6 +12,7 @@ describe("ImeCommitBarrier", () => {
 
     expect(isImeCommit({ sequence: commit, ctrl: false, meta: false })).toBe(true)
     barrier.enqueue(() => events.push(" "))
+    barrier.observeCommit()
     setTimeout(() => events.push(commit), 0)
     await waitForBarrier()
 
@@ -32,10 +33,29 @@ describe("ImeCommitBarrier", () => {
     barrier.enqueue(() => events.push("newline"))
     barrier.enqueue(() => events.push("submit"))
     barrier.enqueue(() => events.push("next-input"))
+    barrier.observeCommit()
     setTimeout(() => events.push("commit"), 0)
     await waitForBarrier()
 
     expect(events).toEqual(["commit", "space", "newline", "submit", "next-input"])
+  })
+
+  test("re-arms the flush whenever an IME commit is observed", async () => {
+    const barrier = new ImeCommitBarrier()
+    const events: string[] = []
+
+    barrier.enqueue(() => events.push(" "))
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(events).toEqual([])
+
+    barrier.observeCommit()
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(events).toEqual([])
+
+    barrier.observeCommit()
+    await waitForBarrier()
+
+    expect(events).toEqual([" "])
   })
 
   test("clears pending actions", async () => {

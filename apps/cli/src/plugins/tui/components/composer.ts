@@ -43,10 +43,11 @@ interface PastedImage {
   image: ImageInput
 }
 
+const IME_COMMIT_SETTLE_MS = 20
+
 export class ImeCommitBarrier {
   private actions: (() => void)[] = []
-  private firstTimer: ReturnType<typeof setTimeout> | undefined
-  private secondTimer: ReturnType<typeof setTimeout> | undefined
+  private timer: ReturnType<typeof setTimeout> | undefined
 
   get pending(): boolean {
     return this.actions.length > 0
@@ -54,22 +55,26 @@ export class ImeCommitBarrier {
 
   enqueue(action: () => void): void {
     this.actions.push(action)
-    if (this.firstTimer !== undefined || this.secondTimer !== undefined) return
-    this.firstTimer = setTimeout(() => {
-      this.firstTimer = undefined
-      this.secondTimer = setTimeout(() => {
-        this.secondTimer = undefined
-        for (const action of this.actions.splice(0)) action()
-      }, 0)
-    }, 0)
+    this.arm()
+  }
+
+  observeCommit(): void {
+    if (!this.pending) return
+    this.arm()
   }
 
   clear(): void {
-    if (this.firstTimer !== undefined) clearTimeout(this.firstTimer)
-    if (this.secondTimer !== undefined) clearTimeout(this.secondTimer)
-    this.firstTimer = undefined
-    this.secondTimer = undefined
+    if (this.timer !== undefined) clearTimeout(this.timer)
+    this.timer = undefined
     this.actions = []
+  }
+
+  private arm(): void {
+    if (this.timer !== undefined) clearTimeout(this.timer)
+    this.timer = setTimeout(() => {
+      this.timer = undefined
+      for (const action of this.actions.splice(0)) action()
+    }, IME_COMMIT_SETTLE_MS)
   }
 }
 
@@ -191,11 +196,22 @@ export class Composer {
         if (key.name === "space" && !key.ctrl && !key.meta && !key.super && !key.hyper) {
           key.preventDefault()
           this.imeCommit.enqueue(() => {
+            if (!this.input.isDestroyed) this.input.insertText(key.sequence)
+          })
+          return
+        }
+        if (isImeCommit(key)) {
+          this.imeCommit.observeCommit()
+          return
+        }
+        if (key.name === "space" && !key.ctrl && !key.meta && !key.super && !key.hyper) {
+          key.preventDefault()
+          this.imeCommit.enqueue(() => {
             if (!this.input.isDestroyed) this.input.insertText(" ")
           })
           return
         }
-        if (!this.imeCommit.pending || isImeCommit(key)) return
+        if (!this.imeCommit.pending) return
         key.preventDefault()
         this.imeCommit.enqueue(() => {
           if (!this.input.isDestroyed) this.input.handleKeyPress(key)
