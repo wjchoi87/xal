@@ -25,9 +25,15 @@ async function removeTemporaryDirectory(directory: string): Promise<void> {
 
 async function execute(executable: string, args: string[], cwd: string, env?: Record<string, string>): Promise<string> {
   const timeoutMs = 30_000
+  const environment = { ...process.env }
+  for (const [name, value] of Object.entries(env ?? {})) {
+    const inherited = Object.keys(environment).find((candidate) => candidate.toUpperCase() === name.toUpperCase())
+    if (inherited) delete environment[inherited]
+    environment[name] = value
+  }
   const child = Bun.spawn([executable, ...args], {
     cwd,
-    env: { ...process.env, ...env },
+    env: environment,
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
@@ -85,7 +91,7 @@ async function main(): Promise<void> {
     if ((await execute(executable, ["--version"], project)) !== expectedVersion) {
       throw new Error("standalone version smoke output mismatch")
     }
-    const nativeEnvironment = { TMPDIR: nativeTemp, TEMP: nativeTemp, TMP: nativeTemp }
+    const nativeEnvironment = { TMPDIR: nativeTemp, TEMP: nativeTemp, TMP: nativeTemp, PATH: nativeTemp }
     const selfChecks = await Promise.all(
       Array.from({ length: 4 }, () => execute(executable, ["--native-self-check"], project, nativeEnvironment)),
     )

@@ -1,0 +1,31 @@
+name: Release checks
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/build-release.yml
+      - .github/workflows/release-checks.yml
+      - Cargo.lock
+      - Cargo.toml
+      - rust-toolchain.toml
+      - bun.lock
+      - package.json
+      - apps/cli/package.json
+      - apps/cli/src/**
+      - crates/**
+      - scripts/native/**
+      - vendor/rmcp/**
+
+concurrency:
+  group: release-checks-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    uses: ./.github/workflows/build-release.yml
+    with:
+      ref: ${{ github.event.pull_request.head.sha }}
+      version: 0.0.0-check
