@@ -104,6 +104,10 @@ export interface SessionToolContext {
     workspaceUndo: WorkspaceUndo
     changeWorkspace(cwd: string): void
   }
+  activity: {
+    pending: boolean
+    signal: AbortSignal
+  }
   signal: AbortSignal
   update(text: string): void
 }
