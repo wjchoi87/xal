@@ -32,6 +32,7 @@ Global memory is stored at `<app-home>/MEMORY.md`. On Unix, Xal creates it with 
 | `profile`      | `string`   | Selected connection      | Internal ID of the named provider profile used for new sessions.            |
 | `model`        | `string`   | Provider default         | Model ID used for new sessions.                                             |
 | `ui`           | `string`   | `"tui"`                  | UI ID started when Xal runs without a command.                              |
+| `mode`         | `string`   | `"normal"`               | Permission mode used for new TUI and headless sessions.                     |
 | `permissions`  | `object`   | `{}`                     | Global rules described in [Permissions and security](/docs/permissions).    |
 | `modes`        | `object`   | `{}`                     | [Custom permission modes](/docs/permissions#custom-modes) keyed by name.    |
 | `goal`         | `object`   | `{}`                     | Evaluator models described in [Goals](/docs/goals).                         |
@@ -42,7 +43,9 @@ Global memory is stored at `<app-home>/MEMORY.md`. On Unix, Xal creates it with 
 
 The `profile` value is managed by `/connect` and `/model`. Profile names remain user-facing and may be renamed without changing this ID.
 
-Malformed `permissions`, `modes`, `goal`, `redaction`, or `agents` configuration fails startup instead of silently running without those rules.
+`mode` accepts `normal`, `plan`, `yolo`, or a name defined under `modes`. A command-line `--mode` overrides the configured default for that session.
+
+Malformed `mode`, `permissions`, `modes`, `goal`, `redaction`, or `agents` configuration fails startup instead of silently running without those rules.
 
 Built-in configuration is documented with the feature that consumes it:
 
@@ -81,6 +84,7 @@ Every option is optional. This example shows how the top-level sections fit toge
   "provider": "openai-chatgpt",
   "model": "gpt-5.6-terra",
   "ui": "tui",
+  "mode": "normal",
   "permissions": {
     "allow": ["bash(git status*)"],
     "ask": ["bash(git push*)"],
