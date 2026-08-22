@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { ConversationItem } from "../../providers/types"
-import { buildInput, parseOutputItem, parseSseEvent } from "./wire"
+import { buildResponseInput, parseOutputItem, parseSseEvent } from "../../providers/responses"
 
 const target = { provider: "openai", model: "model-a" }
 const providerName = "OpenAI"
@@ -39,6 +39,12 @@ describe("OpenAI Responses wire conversion", () => {
         outputTokens: 3,
       },
     })
+    expect(
+      parseSseEvent({
+        type: "response.incomplete",
+        response: { incomplete_details: { reason: "max_output_tokens" } },
+      }),
+    ).toEqual({ type: "failure", message: "response incomplete: max_output_tokens", retryable: false })
     expect(
       parseSseEvent({
         type: "response.failed",
@@ -119,7 +125,7 @@ describe("OpenAI Responses wire conversion", () => {
       { type: "tool_result", callId: "call-id", output: "contents" },
     ]
 
-    expect(buildInput(items, target)).toEqual([
+    expect(buildResponseInput(items, target)).toEqual([
       {
         role: "user",
         content: [
