@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { homedir } from "node:os"
-import { commandEscapesWorkspace, commandSubjects } from "../shell/risk"
+import { commandEscapesWorkspace, commandSubjects } from "./risk"
 
 const cwd = "/workspace/project"
 
@@ -71,6 +71,17 @@ describe("commandEscapesWorkspace", () => {
     for (const command of ["rm $FILE", 'rm "$HOME/file"', "cd $DIR", "rm ~otheruser/file"]) {
       expect(commandEscapesWorkspace(command, cwd)).toBe(true)
     }
+  })
+
+  test("scopes split-string risk to env wrapper options", () => {
+    expect(commandEscapesWorkspace("sort -S 1G input.txt", cwd)).toBe(false)
+    expect(commandEscapesWorkspace("ssh -S socket host", cwd)).toBe(false)
+    expect(commandEscapesWorkspace("printf 'env -S ignored'", cwd)).toBe(false)
+    expect(commandEscapesWorkspace("env -- printf -S ignored", cwd)).toBe(false)
+    expect(commandEscapesWorkspace("env printf -S ignored", cwd)).toBe(false)
+    expect(commandEscapesWorkspace("env -S 'rm /etc/hosts'", cwd)).toBe(true)
+    expect(commandEscapesWorkspace("env -u HOME -S 'rm /etc/hosts'", cwd)).toBe(true)
+    expect(commandEscapesWorkspace("command env --split-string='rm /etc/hosts'", cwd)).toBe(true)
   })
 
   test("sees through quoting and wrappers", () => {

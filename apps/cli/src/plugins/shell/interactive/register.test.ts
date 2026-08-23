@@ -1,12 +1,18 @@
 import { describe, expect, test } from "bun:test"
-import { setUserRules } from "../../permissions/rules"
-import { evaluatePolicy } from "../../permissions/service"
-import type { PermissionRequest } from "../../permissions/types"
-import { sandboxAvailable } from "../shell/sandbox"
-import { registerInteractiveShell } from "./register"
+import { contributeRules, setUserRules } from "../../../permissions/rules"
+import { evaluatePolicy, registerPolicyRule } from "../../../permissions/service"
+import type { PermissionRequest } from "../../../permissions/types"
+import { sandboxAvailable } from "../sandbox"
+import { registerInteractiveShell } from "../plugin"
 import { execCommandTool, workdirEscapesWorkspace, writeStdinTool } from "./tool"
 
-registerInteractiveShell()
+registerInteractiveShell({
+  registerPermissionRules: contributeRules,
+  registerPolicyRule,
+  registerPrompt() {},
+  registerTool() {},
+  registerToolSessionDisposer() {},
+})
 
 function request(overrides: Partial<PermissionRequest>): PermissionRequest {
   return {
@@ -93,6 +99,21 @@ describe("interactive shell policy", () => {
         request({ tool: writeStdinTool.name, args: { session_id: 1, chars: "" }, subject: "", readOnly: true }),
       ),
     ).toBe("allow")
+  })
+
+  test("asks before every supported force-push form", async () => {
+    for (const command of [
+      "git push --force origin main",
+      "git push -f origin main",
+      "git push origin main --force",
+      "git push origin main -f",
+      "git push +main",
+      "git push origin +main",
+    ]) {
+      expect(await evaluatePolicy(request({ args: { cmd: command }, subject: command }))).toBe("ask")
+    }
+    const regularPush = "git push origin main"
+    expect(await evaluatePolicy(request({ args: { cmd: regularPush }, subject: regularPush }))).toBe("allow")
   })
 
   test("preserves deny rules across interactive command paths", async () => {
