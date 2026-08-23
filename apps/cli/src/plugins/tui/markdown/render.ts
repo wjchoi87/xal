@@ -128,13 +128,9 @@ function listLines(items: ListItem[], style: Styler): Line[] {
 }
 
 function quoteLines(quoted: string[], style: Styler): Line[] {
-  const bar = `${terminalGlyph("│", "|")} `
-  const inner = Math.max(1, style.columns - displayWidth(bar))
   const lines: Line[] = []
   for (const text of quoted) {
-    for (const line of wrap(style.inline(text, COLORS.faint, TextAttributes.ITALIC), inner)) {
-      lines.push([style.chunk(bar, COLORS.border), ...line])
-    }
+    lines.push(...wrap(style.inline(text, COLORS.faint, TextAttributes.ITALIC), style.columns))
   }
   return lines
 }
