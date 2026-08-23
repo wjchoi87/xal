@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { homedir } from "node:os"
-import { commandEscapesWorkspace } from "./risk"
+import { commandEscapesWorkspace, commandSubjects } from "../shell/risk"
 
 const cwd = "/workspace/project"
 
@@ -49,6 +49,13 @@ describe("commandEscapesWorkspace", () => {
       "echo pwned > /etc/hosts",
       "tee /etc/hosts",
       "sort < input.txt > /etc/out",
+      "bash -c -- 'rm /etc/hosts'",
+      "bash -c -- '-x; rm /etc/hosts' argv0",
+      "bash -c -O extglob -- 'rm /etc/hosts' argv0",
+      "bash -xcO extglob 'rm /etc/hosts'",
+      "bash -c 'rm /etc/hosts'",
+      "bash -c -x -- 'rm /etc/hosts'",
+      "bash -c",
     ]) {
       expect(commandEscapesWorkspace(command, cwd)).toBe(true)
     }
@@ -74,5 +81,6 @@ describe("commandEscapesWorkspace", () => {
     expect(commandEscapesWorkspace("xargs rm", cwd)).toBe(true)
     expect(commandEscapesWorkspace("xargs -n 1 rm -f", cwd)).toBe(true)
     expect(commandEscapesWorkspace("xargs mkdir", cwd)).toBe(false)
+    expect(commandSubjects("bash -xcO extglob 'rm /etc/hosts'")).toContain("rm /etc/hosts")
   })
 })

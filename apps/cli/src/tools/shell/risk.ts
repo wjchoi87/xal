@@ -25,6 +25,8 @@ const WRAPPERS = new Set(["builtin", "command", "env", "exec", "nohup", "nice", 
 
 const SUPPORTED_SHELLS = new Set(["sh", "bash", "dash", "ksh", "mksh", "zsh"])
 
+const SHELL_VALUE_OPTIONS = new Set(["-O", "+O", "-o", "+o", "--init-file", "--rcfile"])
+
 const XARGS_VALUE_OPTIONS = new Set([
   "-a",
   "--arg-file",
@@ -234,6 +236,11 @@ function commandStringOption(word: string): boolean {
   return word.startsWith("-") && !word.startsWith("--") && word.slice(1).includes("c")
 }
 
+function groupedShellValueOptions(word: string): number {
+  if ((!word.startsWith("-") && !word.startsWith("+")) || word.startsWith("--")) return 0
+  return [...word.slice(1)].filter((option) => option === "O" || option === "o").length
+}
+
 function embeddedCommands(words: Word[]): EmbeddedCommands {
   const segments: string[] = []
   for (let index = 0; index < words.length; index++) {
@@ -247,7 +254,33 @@ function embeddedCommands(words: Word[]): EmbeddedCommands {
       for (let option = index + 1; option < words.length; option++) {
         const word = words[option]!
         if (!commandStringOption(word.text)) continue
-        script = words[option + 1]
+        let operand = option + 1
+        const groupedValues = groupedShellValueOptions(word.text)
+        if (groupedValues > 0 && !words[operand + groupedValues - 1]) return { segments, unsafe: true }
+        operand += groupedValues
+        while (operand < words.length) {
+          const candidate = words[operand]!.text
+          if (candidate === "--") {
+            operand += 1
+            break
+          }
+          if (SHELL_VALUE_OPTIONS.has(candidate)) {
+            if (!words[operand + 1]) return { segments, unsafe: true }
+            operand += 2
+            continue
+          }
+          if (candidate.startsWith("--init-file=") || candidate.startsWith("--rcfile=")) {
+            operand += 1
+            continue
+          }
+          if (candidate.startsWith("--")) return { segments, unsafe: true }
+          if (!candidate.startsWith("-") && !candidate.startsWith("+")) break
+          const candidateValues = groupedShellValueOptions(candidate)
+          if (!words[operand + candidateValues]) return { segments, unsafe: true }
+          operand += candidateValues + 1
+        }
+        script = words[operand]
+        if (!script) return { segments, unsafe: true }
         break
       }
     }
