@@ -41,6 +41,34 @@ test("normal background results keep failures visible and stay on one row", () =
   expect(displayWidth(narrow)).toBeLessThanOrEqual(30)
 })
 
+test("user bubbles preserve composer line breaks", async () => {
+  const setup = await createTestRenderer({
+    width: 80,
+    height: 24,
+    footerHeight: 1,
+    screenMode: "split-footer",
+    externalOutputMode: "capture-stdout",
+  })
+
+  try {
+    const scrollback = new Scrollback(
+      setup.renderer,
+      0,
+      () => {},
+      { showOutputs: false, showThinking: false },
+      undefined,
+    )
+    scrollback.append({ kind: "user", text: "first line\n\n$implement second line", imageCount: 0, sentAt: 0 })
+
+    const rows = setup.externalOutput.take().flatMap((commit) => commit.rows)
+    expect(rows[2]).toStartWith("   first line")
+    expect(rows[3]).toBe("")
+    expect(rows[4]?.trim()).toBe("$implement second line")
+  } finally {
+    setup.renderer.destroy()
+  }
+})
+
 test("compaction state is visible in the transcript as soon as it starts", async () => {
   const setup = await createTestRenderer({
     width: 80,

@@ -128,13 +128,23 @@ function banner(ctx: RenderContext, block: BannerBlock): Renderable {
 function bubble(ctx: RenderContext, block: UserBlock, userBackground: RGBA): Renderable {
   const box = row(ctx, { alignItems: "flex-start", padding: 1, ...background(userBackground) })
   const images = Array.from({ length: block.imageCount }, (_, index) => `[Image #${index + 1}]`).join(" ")
-  box.add(
-    paragraph(ctx, {
-      content: highlightSkillReferences([block.text, images].filter(Boolean).join("\n")),
-      flexGrow: 1,
-      background: userBackground,
-    }),
-  )
+  const content = column(ctx, {
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 0,
+    minWidth: 1,
+    ...background(userBackground),
+  })
+  for (const line of [block.text, images].filter(Boolean).join("\n").split("\n")) {
+    content.add(
+      paragraph(ctx, {
+        content: highlightSkillReferences(line),
+        minHeight: 1,
+        background: userBackground,
+      }),
+    )
+  }
+  box.add(content)
   box.add(
     label(ctx, {
       content: formatTimestamp(block.sentAt),
