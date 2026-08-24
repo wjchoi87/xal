@@ -9,6 +9,7 @@ import {
 } from "@opentui/core"
 import type { SelectOption } from "../../../commands/types"
 import { fuzzyScores } from "../lib/fuzzy"
+import { ImeCommitBarrier, imeKeyDown } from "../lib/ime"
 import { column, label, row } from "../lib/renderables"
 import { displayWidth, terminalGlyph, truncateToWidth } from "../lib/text"
 import { COLORS } from "../theme/colors"
@@ -40,6 +41,7 @@ export class Picker {
   readonly view: BoxRenderable
   private readonly list: BoxRenderable
   private readonly input: InputRenderable
+  private readonly imeCommit = new ImeCommitBarrier()
   private readonly marker: TextRenderable
   private readonly cursors: TextRenderable[] = []
   private readonly rows: TextRenderable[] = []
@@ -80,7 +82,20 @@ export class Picker {
     })
     const gutter = column(ctx, { width: 2, flexShrink: 0 })
     this.list = column(ctx, { flexGrow: 1, flexShrink: 1, minWidth: 1 })
-    this.input = new InputRenderable(ctx, { ...inputColors() })
+    this.input = new InputRenderable(ctx, {
+      ...inputColors(),
+      onKeyDown: (key) => {
+        imeKeyDown(key, {
+          barrier: this.imeCommit,
+          insert: (text) => {
+            if (!this.input.isDestroyed) this.input.insertText(text)
+          },
+          fallback: (event) => {
+            if (!this.input.isDestroyed) this.input.handleKeyPress(event)
+          },
+        })
+      },
+    })
     this.marker = label(ctx, {
       content: terminalGlyph("◆", "*"),
       width: 2,
@@ -149,10 +164,18 @@ export class Picker {
       return true
     }
     if (name === "escape") {
+      if (this.imeCommit.pending) {
+        this.imeCommit.enqueue(() => this.handleKey(name))
+        return true
+      }
       this.hide()
       return true
     }
     if (name === "return" || name === "enter") {
+      if (this.imeCommit.pending) {
+        this.imeCommit.enqueue(() => this.handleKey(name))
+        return true
+      }
       this.confirm()
       return true
     }
@@ -160,6 +183,7 @@ export class Picker {
   }
 
   private close(): void {
+    this.imeCommit.clear()
     this.view.visible = false
     this.input.blur()
   }

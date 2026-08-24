@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { ImeCommitBarrier, isImeCommit } from "./composer"
+import { ImeCommitBarrier, isImeCommit } from "../lib/ime"
 
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))

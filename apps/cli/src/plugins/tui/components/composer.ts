@@ -6,7 +6,6 @@ import {
   SyntaxStyle,
   TextareaRenderable,
   TextAttributes,
-  type KeyEvent,
   type PasteEvent,
   type RenderContext,
   type TextRenderable,
@@ -17,6 +16,7 @@ import type { ImageInput, UserInput } from "../../../providers/types"
 import { findSkillReferences, type SkillQuery } from "../../../skills/references"
 import { fileMention, type FileQuery } from "../file-search"
 import { FOOTER_ICON_WIDTH } from "../lib/footer-grid"
+import { ImeCommitBarrier, imeKeyDown } from "../lib/ime"
 import { label, row } from "../lib/renderables"
 import type { MessageHistory } from "../message-history"
 import { COLORS, resolveColor } from "../theme/colors"
@@ -41,50 +41,6 @@ interface PastedImage {
   kind: "pasted-image"
   number: number
   image: ImageInput
-}
-
-const IME_COMMIT_SETTLE_MS = 20
-
-export class ImeCommitBarrier {
-  private readonly settleMs: number
-  private actions: (() => void)[] = []
-  private timer: ReturnType<typeof setTimeout> | undefined
-
-  constructor(settleMs = IME_COMMIT_SETTLE_MS) {
-    this.settleMs = settleMs
-  }
-
-  get pending(): boolean {
-    return this.actions.length > 0
-  }
-
-  enqueue(action: () => void): void {
-    this.actions.push(action)
-    this.arm()
-  }
-
-  observeCommit(): void {
-    if (!this.pending) return
-    this.arm()
-  }
-
-  clear(): void {
-    if (this.timer !== undefined) clearTimeout(this.timer)
-    this.timer = undefined
-    this.actions = []
-  }
-
-  private arm(): void {
-    if (this.timer !== undefined) clearTimeout(this.timer)
-    this.timer = setTimeout(() => {
-      this.timer = undefined
-      for (const action of this.actions.splice(0)) action()
-    }, this.settleMs)
-  }
-}
-
-export function isImeCommit(key: Pick<KeyEvent, "sequence" | "ctrl" | "meta" | "super" | "hyper">): boolean {
-  return !key.ctrl && !key.meta && !key.super && !key.hyper && /[^\u0000-\u007f]/.test(key.sequence)
 }
 
 function sameInput(left: UserInput, right: UserInput): boolean {
@@ -198,28 +154,14 @@ export class Composer {
       onContentChange: () => this.change(),
       onCursorChange: () => this.notifyCompletion(),
       onKeyDown: (key) => {
-        if (key.name === "space" && !key.ctrl && !key.meta && !key.super && !key.hyper) {
-          key.preventDefault()
-          this.imeCommit.enqueue(() => {
-            if (!this.input.isDestroyed) this.input.insertText(key.sequence)
-          })
-          return
-        }
-        if (isImeCommit(key)) {
-          this.imeCommit.observeCommit()
-          return
-        }
-        if (key.name === "space" && !key.ctrl && !key.meta && !key.super && !key.hyper) {
-          key.preventDefault()
-          this.imeCommit.enqueue(() => {
-            if (!this.input.isDestroyed) this.input.insertText(" ")
-          })
-          return
-        }
-        if (!this.imeCommit.pending) return
-        key.preventDefault()
-        this.imeCommit.enqueue(() => {
-          if (!this.input.isDestroyed) this.input.handleKeyPress(key)
+        imeKeyDown(key, {
+          barrier: this.imeCommit,
+          insert: (text) => {
+            if (!this.input.isDestroyed) this.input.insertText(text)
+          },
+          fallback: (event) => {
+            if (!this.input.isDestroyed) this.input.handleKeyPress(event)
+          },
         })
       },
       onSubmit: () =>
