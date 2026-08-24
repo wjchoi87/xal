@@ -11,6 +11,7 @@ import {
   type TextRenderable,
 } from "@opentui/core"
 import type { ElicitationAnswer, ElicitationQuestion } from "../../../tools/types"
+import { ImeCommitBarrier, imeKeyDown } from "../lib/ime"
 import { column, label, paragraph, row } from "../lib/renderables"
 import { terminalGlyph } from "../lib/text"
 import { COLORS } from "../theme/colors"
@@ -82,6 +83,7 @@ export class ElicitationPopover {
   private readonly choiceRows: ChoiceRow[] = []
   private readonly inputRow: BoxRenderable
   private readonly input: InputRenderable
+  private readonly imeCommit = new ImeCommitBarrier()
   private readonly review: ScrollBoxRenderable
   private readonly reviewRows: ReviewRow[] = []
   private readonly submitRow: TextRenderable
@@ -174,6 +176,17 @@ export class ElicitationPopover {
       flexGrow: 1,
       flexShrink: 1,
       minWidth: 1,
+      onKeyDown: (key) => {
+        imeKeyDown(key, {
+          barrier: this.imeCommit,
+          insert: (text) => {
+            if (!this.input.isDestroyed) this.input.insertText(text)
+          },
+          fallback: (event) => {
+            if (!this.input.isDestroyed) this.input.handleKeyPress(event)
+          },
+        })
+      },
       ...inputColors(),
     })
     inputLine.add(this.input)
@@ -348,6 +361,12 @@ export class ElicitationPopover {
 
   private handleTextKey(name: string): boolean {
     if (name === "escape") {
+      if (this.imeCommit.pending) {
+        this.imeCommit.enqueue(() => {
+          this.handleTextKey(name)
+        })
+        return true
+      }
       this.enteringText = false
       this.input.value = ""
       this.input.blur()
@@ -357,6 +376,12 @@ export class ElicitationPopover {
       return true
     }
     if (name === "return" || name === "enter") {
+      if (this.imeCommit.pending) {
+        this.imeCommit.enqueue(() => {
+          this.handleTextKey(name)
+        })
+        return true
+      }
       const value = this.input.value.trim()
       if (value) this.save(value)
       return true
@@ -544,6 +569,7 @@ export class ElicitationPopover {
 
   private close(): void {
     const changed = this.view.visible
+    this.imeCommit.clear()
     this.view.visible = false
     this.input.blur()
     this.input.value = ""

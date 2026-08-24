@@ -7,6 +7,7 @@ import {
   type TextRenderable,
 } from "@opentui/core"
 import { label, row } from "../lib/renderables"
+import { ImeCommitBarrier, isImeCommit } from "../lib/ime"
 import { COLORS } from "../theme/colors"
 import { background, border, muted, paint } from "../theme/styles"
 
@@ -17,6 +18,7 @@ export class SecretInput {
   private readonly masked: TextRenderable
   private value = ""
   private maskedValue = true
+  private readonly imeCommit = new ImeCommitBarrier()
   private settle: ((value: string | undefined) => void) | undefined
 
   get visible(): boolean {
@@ -67,10 +69,18 @@ export class SecretInput {
   handleKey(key: KeyEvent): boolean {
     if (!this.visible) return false
     if (key.name === "escape") {
+      if (this.imeCommit.pending) {
+        this.imeCommit.enqueue(() => this.handleKey(key))
+        return true
+      }
       this.close(undefined)
       return true
     }
     if (key.name === "return" || key.name === "enter") {
+      if (this.imeCommit.pending) {
+        this.imeCommit.enqueue(() => this.handleKey(key))
+        return true
+      }
       this.close(this.value)
       return true
     }
@@ -80,11 +90,35 @@ export class SecretInput {
       return true
     }
     if (key.name === "backspace" || key.name === "delete") {
+      if (this.imeCommit.pending) {
+        this.imeCommit.enqueue(() => this.handleKey(key))
+        return true
+      }
       this.value = Array.from(this.value).slice(0, -1).join("")
       this.render()
       return true
     }
     if (key.ctrl || key.meta || !key.sequence || /[\u0000-\u001f\u007f]/.test(key.sequence)) return true
+    if (key.name === "space") {
+      this.imeCommit.enqueue(() => {
+        this.value += key.sequence
+        this.render()
+      })
+      return true
+    }
+    if (isImeCommit(key)) {
+      this.imeCommit.observeCommit()
+      this.value += key.sequence
+      this.render()
+      return true
+    }
+    if (this.imeCommit.pending) {
+      this.imeCommit.enqueue(() => {
+        this.value += key.sequence
+        this.render()
+      })
+      return true
+    }
     this.value += key.sequence
     this.render()
     return true
@@ -100,6 +134,7 @@ export class SecretInput {
   private close(value: string | undefined): void {
     const settle = this.settle
     this.settle = undefined
+    this.imeCommit.clear()
     this.value = ""
     this.masked.content = ""
     if (this.view.visible) {
