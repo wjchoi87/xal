@@ -34,8 +34,9 @@ test("loads skills from every root and lets a later root shadow an earlier name"
     await writeSkill(user, "review", "name: review\ndescription: user review", "review body")
     await writeSkill(project, "deploy", "name: deploy\ndescription: project deploy", "project body")
 
-    const skills = await loadSkills(roots([user, "user"], [project, "project"]))
+    const { skills, failures } = await loadSkills(roots([user, "user"], [project, "project"]))
 
+    expect(failures).toEqual([])
     expect(skills.map((skill) => skill.name)).toEqual(["deploy", "review"])
     expect(skills[0]).toMatchObject({ source: "project", description: "project deploy", body: "project body" })
     expect(skills[1]).toMatchObject({ source: "user", description: "user review" })
@@ -46,30 +47,65 @@ test("ignores a missing root and finds skills nested below it", async () => {
   await withSkillsRoot(async (root) => {
     await writeSkill(join(root, "present", "vendor", "pack"), "audit", "name: audit\ndescription: audits", "body")
 
-    const skills = await loadSkills(roots([join(root, "absent"), "user"], [join(root, "present"), "project"]))
+    const { skills, failures } = await loadSkills(
+      roots([join(root, "absent"), "user"], [join(root, "present"), "project"]),
+    )
 
+    expect(failures).toEqual([])
     expect(skills.map((skill) => skill.name)).toEqual(["audit"])
   })
 })
 
-test("rejects skill documents that break the frontmatter contract", async () => {
+test("repairs common plain scalar YAML and accepts relaxed skill metadata", async () => {
   await withSkillsRoot(async (root) => {
-    const cases: [string, string, string][] = [
-      ["no-frontmatter", "", "body without frontmatter"],
-      ["bad-name", "name: Bad_Name\ndescription: fine", "body"],
-      ["mismatched", "name: other\ndescription: fine", "body"],
-      ["empty-body", "name: empty-body\ndescription: fine", ""],
-      ["no-description", "name: no-description", "body"],
-      ["broken-yaml", "name: [unclosed\ndescription: fine", "body"],
-    ]
+    await writeSkill(
+      root,
+      "release-swift",
+      "description: Cut a release (Swift app): pick a version\nargument-hint: <duration: e.g. 7d>\ntags: [next,@release]\nmetadata:\n  notes: |-\n    Keep this: unchanged",
+      "",
+    )
+    await writeSkill(root, "directory-name", "name:  Display   Name\ndescription:  Multiple\n  words", "body")
 
-    for (const [name, frontmatter, body] of cases) {
+    const { skills, failures } = await loadSkills(roots([root, "user"]))
+
+    expect(failures).toEqual([])
+    expect(skills).toHaveLength(2)
+    expect(skills.find((skill) => skill.path.endsWith("directory-name/SKILL.md"))).toMatchObject({
+      name: "Display Name",
+      description: "Multiple words",
+      body: "body",
+    })
+    expect(skills.find((skill) => skill.path.endsWith("release-swift/SKILL.md"))).toMatchObject({
+      name: "release-swift",
+      description: "Cut a release (Swift app): pick a version",
+      body: "",
+    })
+  })
+})
+
+test("skips structurally invalid skill documents without dropping valid skills", async () => {
+  await withSkillsRoot(async (root) => {
+    const invalidDocuments: [string, string][] = [
+      ["no-frontmatter", "body without frontmatter"],
+      ["no-description", "---\nname: no-description\n---\nbody"],
+      ["invalid-yaml", '---\nname: invalid-yaml\ndescription: "unterminated\n---\nbody'],
+      ["long-name", `---\nname: ${"x".repeat(65)}\ndescription: fine\n---\nbody`],
+    ]
+    for (const [name, document] of invalidDocuments) {
       const directory = join(root, name)
-      await mkdir(join(directory, name), { recursive: true })
-      const path = join(directory, name, "SKILL.md")
-      await writeFile(path, frontmatter ? `---\n${frontmatter}\n---\n\n${body}\n` : `${body}\n`)
-      await expect(loadSkills(roots([directory, "user"]))).rejects.toThrow(path)
+      await mkdir(directory, { recursive: true })
+      await writeFile(join(directory, "SKILL.md"), document)
     }
+    await writeSkill(root, "valid", `name: valid\ndescription: ${"x".repeat(1_025)}`, "body")
+
+    const { skills, failures } = await loadSkills(roots([root, "user"]))
+
+    expect(skills.map((skill) => skill.name)).toEqual(["valid"])
+    expect(skills[0]?.description).toHaveLength(1_025)
+    expect(failures).toHaveLength(invalidDocuments.length)
+    expect(failures.find((failure) => failure.path.endsWith("invalid-yaml/SKILL.md"))?.reason).toContain(
+      "invalid YAML frontmatter",
+    )
   })
 })
 
@@ -88,7 +124,8 @@ test("reads supporting files inside the skill directory", async () => {
     await mkdir(join(directory, "references"), { recursive: true })
     await writeFile(join(directory, "references", "steps.md"), "step one")
 
-    const [skill] = await loadSkills(roots([root, "user"]))
+    const { skills } = await loadSkills(roots([root, "user"]))
+    const [skill] = skills
 
     expect(await listSkillFiles(skill!)).toEqual(["references/steps.md"])
     expect(await readSkillResource(skill!, "references/steps.md")).toBe("step one")
@@ -103,7 +140,8 @@ test("refuses to read a resource that escapes the skill directory", async () => 
     await symlink(outside, join(directory, "escape.txt"))
     await symlink(root, join(directory, "escape-dir"))
 
-    const [skill] = await loadSkills(roots([join(root, "skills"), "user"]))
+    const { skills } = await loadSkills(roots([join(root, "skills"), "user"]))
+    const [skill] = skills
 
     await expect(readSkillResource(skill!, "../outside.txt")).rejects.toThrow("must stay inside the skill directory")
     await expect(readSkillResource(skill!, outside)).rejects.toThrow("must be relative to the skill directory")
@@ -122,7 +160,8 @@ test("refuses to read a binary supporting file", async () => {
     const directory = await writeSkill(root, "deploy", "name: deploy\ndescription: deploys", "body")
     await writeFile(join(directory, "blob.bin"), Buffer.from([0x68, 0x00, 0x69]))
 
-    const [skill] = await loadSkills(roots([root, "user"]))
+    const { skills } = await loadSkills(roots([root, "user"]))
+    const [skill] = skills
 
     await expect(readSkillResource(skill!, "blob.bin")).rejects.toThrow("skill file is binary: blob.bin")
   })
