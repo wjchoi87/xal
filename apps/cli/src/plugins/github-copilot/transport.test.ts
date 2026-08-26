@@ -86,7 +86,20 @@ describe("GitHub Copilot transport", () => {
       ]),
     )
 
-    const events = await collect(streamResponse("profile-1", request()))
+    const events = await collect(
+      streamResponse(
+        "profile-1",
+        request({
+          input: [
+            {
+              type: "user_message",
+              text: "inspect",
+              images: [{ mediaType: "image/png", data: "YWJjZA==" }],
+            },
+          ],
+        }),
+      ),
+    )
 
     expect(requests).toHaveLength(1)
     expect(requests[0]!.path).toBe("/responses")
@@ -96,13 +109,22 @@ describe("GitHub Copilot transport", () => {
       accept: "text/event-stream",
       "openai-intent": "conversation-edits",
       "x-initiator": "user",
+      "copilot-vision-request": "true",
     })
     expect(JSON.parse(String(requests[0]!.init.body))).toEqual({
       model: "gpt-5.6-luna",
       store: false,
       stream: true,
       instructions: "Answer precisely",
-      input: [{ role: "user", content: [{ type: "input_text", text: "inspect" }] }],
+      input: [
+        {
+          role: "user",
+          content: [
+            { type: "input_text", text: "inspect" },
+            { type: "input_image", image_url: "data:image/png;base64,YWJjZA==" },
+          ],
+        },
+      ],
       reasoning: { effort: "max", summary: "auto" },
       include: ["reasoning.encrypted_content"],
       tools: [
@@ -149,13 +171,39 @@ describe("GitHub Copilot transport", () => {
       ),
     )
 
-    const events = await collect(streamResponse("profile-1", request({ model: "claude-sonnet-4.6", thinking: "high" })))
+    const events = await collect(
+      streamResponse(
+        "profile-1",
+        request({
+          model: "claude-sonnet-4.6",
+          thinking: "high",
+          input: [
+            {
+              type: "user_message",
+              text: "inspect",
+              images: [{ mediaType: "image/jpeg", data: "YWJjZA==" }],
+            },
+          ],
+        }),
+      ),
+    )
 
     expect(requests[0]!.path).toBe("/chat/completions")
+    expect(new Headers(requests[0]!.init.headers).get("copilot-vision-request")).toBe("true")
     expect(JSON.parse(String(requests[0]!.init.body))).toMatchObject({
       model: "claude-sonnet-4.6",
       reasoning_effort: "high",
       stream: true,
+      messages: [
+        { role: "system", content: "Answer precisely" },
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "inspect" },
+            { type: "image_url", image_url: { url: "data:image/jpeg;base64,YWJjZA==" } },
+          ],
+        },
+      ],
     })
     expect(events).toEqual([
       { type: "text_delta", text: "done" },
@@ -173,5 +221,13 @@ describe("GitHub Copilot transport", () => {
       },
       { type: "done", usage: { totalInputTokens: 4, cacheReadInputTokens: undefined, outputTokens: 1 } },
     ])
+  })
+
+  test("omits the vision header when a turn carries no image attachments", async () => {
+    responses.push(sse([{ type: "response.completed", response: { usage: {} } }]))
+
+    await collect(streamResponse("profile-1", request()))
+
+    expect(new Headers(requests[0]!.init.headers).get("copilot-vision-request")).toBeNull()
   })
 })
