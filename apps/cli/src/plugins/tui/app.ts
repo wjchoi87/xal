@@ -170,8 +170,7 @@ export async function startTui(events: EventService, config: TuiConfig, options:
     screen.scrollback.reflow()
   }
   renderer.on(CliRenderEvents.RESIZE, () => {
-    const widthChanged = renderer.terminalWidth !== lastWidth
-    if (!widthChanged && renderer.terminalHeight === lastHeight) return
+    if (renderer.terminalWidth === lastWidth && renderer.terminalHeight === lastHeight) return
     lastWidth = renderer.terminalWidth
     lastHeight = renderer.terminalHeight
     if (editing) {
@@ -179,7 +178,6 @@ export async function startTui(events: EventService, config: TuiConfig, options:
       return
     }
     syncLayout()
-    if (!widthChanged) return
     clearTimeout(replayTimer)
     replayTimer = setTimeout(() => {
       replayTimer = undefined

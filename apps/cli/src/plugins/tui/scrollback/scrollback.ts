@@ -73,7 +73,6 @@ export class Scrollback {
   private origin: number
   private active = true
   private deferred = false
-  private reflowedWidth: number
   private readonly maxRows: number
   private userBackground = userMessageBackground(COLORS.background)
 
@@ -88,7 +87,6 @@ export class Scrollback {
     this.expanded = config.showOutputs
     this.reasoningVisible = config.showThinking
     this.maxRows = config.scrollbackRows
-    this.reflowedWidth = renderer.terminalWidth
   }
 
   get rows(): number {
@@ -242,7 +240,6 @@ export class Scrollback {
   }
 
   reflow(): void {
-    if (this.renderer.terminalWidth === this.reflowedWidth) return
     this.replay()
   }
 
@@ -259,7 +256,6 @@ export class Scrollback {
       streaming.surface?.destroy()
       this.stream = undefined
     }
-    this.reflowedWidth = this.renderer.terminalWidth
     const blocks = this.blocks.filter((block) => block !== streaming?.block && this.visible(block))
     const start = this.transcriptStart(blocks, streaming?.block)
     const retained = blocks.slice(start)

@@ -203,6 +203,37 @@ test("a rebuild clears saved scrollback and re-prints one capped batch", async (
   }
 })
 
+test("a height-only resize re-prints the transcript", async () => {
+  const setup = await createTestRenderer({
+    width: 80,
+    height: 24,
+    footerHeight: 1,
+    screenMode: "split-footer",
+    externalOutputMode: "capture-stdout",
+  })
+
+  try {
+    await setup.renderer.setupTerminal()
+    const scrollback = new Scrollback(
+      setup.renderer,
+      0,
+      () => {},
+      { showOutputs: false, showThinking: false, scrollbackRows: 20 },
+      undefined,
+    )
+    scrollback.append({ kind: "info", text: "survives vertical resize" })
+    setup.externalOutput.clear()
+
+    setup.resize(80, 30)
+    scrollback.reflow()
+
+    const rows = setup.externalOutput.take().flatMap((commit) => commit.rows)
+    expect(rows.some((row) => row.includes("survives vertical resize"))).toBe(true)
+  } finally {
+    setup.renderer.destroy()
+  }
+})
+
 test("session replay defers emission and lands as one viewport batch", async () => {
   const setup = await createTestRenderer({
     width: 80,
