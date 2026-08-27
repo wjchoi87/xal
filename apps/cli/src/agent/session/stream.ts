@@ -2,11 +2,12 @@ import { setTimeout as sleep } from "node:timers/promises"
 import {
   profileProviderFirstEvent,
   profileProviderRequestFinished,
+  profileProviderRequestShape,
   profileProviderRequestStarted,
   type ProviderRequestProfile,
 } from "../../profiler/profiler"
 import { isProviderError, ProviderError } from "../../providers/errors"
-import type { Provider, ProviderOutputItem, StreamRequest, ThinkingEffort, Usage } from "../../providers/types"
+import type { Provider, ProviderOutputItem, StreamRequest, Usage } from "../../providers/types"
 import { createRedactedStream, type RedactedStream } from "../../secrets/redactor"
 import type { AgentEvent } from "../events"
 import { OutputLoopDetector, type OutputLoop } from "./loop-detection"
@@ -74,16 +75,9 @@ export interface StreamRoundHost {
   sessionId(): string
   profileId(): string
   emit(event: AgentEvent): void
-  pushItem(item: ProviderOutputItem): void
-  buildRequest(
-    provider: Provider,
-    model: string,
-    thinking: ThinkingEffort | undefined,
-    signal: AbortSignal,
-  ): StreamRequest
+  commitProviderRound(items: ProviderOutputItem[], usage: Usage | undefined, request: StreamRequest): void
   redactOutputItem(item: ProviderOutputItem): ProviderOutputItem
   onRequestStarted(): void
-  onUsage(usage: Usage): void
 }
 
 interface StreamRound {
@@ -97,8 +91,7 @@ export async function streamProviderTurn(
   host: StreamRoundHost,
   signal: AbortSignal,
   provider: Provider,
-  model: string,
-  thinking: ThinkingEffort | undefined,
+  request: StreamRequest,
 ): Promise<ProviderOutputItem[] | undefined> {
   let attempt = 1
 
@@ -109,14 +102,16 @@ export async function streamProviderTurn(
       host.kind,
       "turn",
       provider.id,
-      model,
-      thinking,
+      request.model,
+      request.thinking,
       attempt,
     )
     const round: StreamRound = { received: false, items: [], profile }
     try {
-      await consumeStream(host, signal, provider, model, thinking, round)
+      await consumeStream(host, provider, request, round)
       profileProviderRequestFinished(profile, "completed", round.usage)
+      host.buffer.flush()
+      host.commitProviderRound(round.items, round.usage, request)
       return round.items
     } catch (error) {
       profileProviderRequestFinished(
@@ -126,7 +121,7 @@ export async function streamProviderTurn(
       )
       if (isAbortError(error) || signal.aborted) {
         host.buffer.flush()
-        for (const item of round.items.filter((item) => item.type === "assistant_message")) host.pushItem(item)
+        host.commitProviderRound(round.items, round.usage, request)
         host.emit({ type: "turn_interrupted" })
         return undefined
       }
@@ -138,6 +133,7 @@ export async function streamProviderTurn(
         attempt >= MAX_PROVIDER_ATTEMPTS
       ) {
         host.buffer.flush()
+        host.commitProviderRound(round.items, round.usage, request)
         throw error
       }
 
@@ -164,10 +160,8 @@ export async function streamProviderTurn(
 
 async function consumeStream(
   host: StreamRoundHost,
-  signal: AbortSignal,
   provider: Provider,
-  model: string,
-  thinking: ThinkingEffort | undefined,
+  request: StreamRequest,
   round: StreamRound,
 ): Promise<void> {
   const outputLoops = {
@@ -191,7 +185,8 @@ async function consumeStream(
   }
 
   const rawReasoning = createRedactedStream()
-  for await (const event of provider.stream(host.profileId(), host.buildRequest(provider, model, thinking, signal))) {
+  profileProviderRequestShape(round.profile, request)
+  for await (const event of provider.stream(host.profileId(), request)) {
     if (!round.received) profileProviderFirstEvent(round.profile, event.type)
     round.received = true
     switch (event.type) {
@@ -246,7 +241,6 @@ async function consumeStream(
         finishLoop(outputLoops.reasoning, "reasoning summary")
         finishLoop(outputLoops.rawReasoning, "reasoning")
         round.usage = event.usage
-        if (round.usage) host.onUsage(round.usage)
         break
       }
     }

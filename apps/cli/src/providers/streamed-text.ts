@@ -2,6 +2,7 @@ import type { SessionKind } from "../agent/types"
 import {
   profileProviderFirstEvent,
   profileProviderRequestFinished,
+  profileProviderRequestShape,
   profileProviderRequestStarted,
   type ProviderPhase,
 } from "../profiler/profiler"
@@ -24,7 +25,20 @@ export interface StreamedTextResult {
   usage: Usage | undefined
 }
 
+export class StreamedTextAttemptError extends Error {
+  readonly receivedEvent: boolean
+  readonly attempt: number
+
+  constructor(cause: unknown, receivedEvent: boolean, attempt: number) {
+    super(cause instanceof Error ? cause.message : String(cause), { cause })
+    this.name = cause instanceof Error && cause.name === "AbortError" ? cause.name : "StreamedTextAttemptError"
+    this.receivedEvent = receivedEvent
+    this.attempt = attempt
+  }
+}
+
 export async function collectStreamedText(input: StreamedTextRequest): Promise<StreamedTextResult> {
+  const attempt = input.attempt ?? 1
   const profile = profileProviderRequestStarted(
     input.request.sessionId,
     input.kind ?? "primary",
@@ -32,14 +46,16 @@ export async function collectStreamedText(input: StreamedTextRequest): Promise<S
     input.provider.id,
     input.request.model,
     input.request.thinking,
-    input.attempt ?? 1,
+    attempt,
   )
   let streamed = ""
   let settled = ""
   let received = false
   let usage: Usage | undefined
   try {
-    for await (const event of input.provider.stream(input.profileId, redactStreamRequest(input.request))) {
+    const request = redactStreamRequest(input.request)
+    profileProviderRequestShape(profile, request)
+    for await (const event of input.provider.stream(input.profileId, request)) {
       if (!received) {
         received = true
         profileProviderFirstEvent(profile, event.type)
@@ -60,6 +76,6 @@ export async function collectStreamedText(input: StreamedTextRequest): Promise<S
         : "failed",
       usage,
     )
-    throw error
+    throw new StreamedTextAttemptError(error, received, attempt)
   }
 }
