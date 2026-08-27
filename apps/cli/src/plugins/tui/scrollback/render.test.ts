@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test"
 import { createTestRenderer } from "@opentui/core/testing"
+import { appInfo } from "../../../app-info"
 import { displayWidth, terminalGlyph } from "../lib/text"
 import type { BackgroundBlock } from "./blocks"
 import { backgroundResultHeading } from "./render"
@@ -12,6 +13,39 @@ const completed: BackgroundBlock = {
   status: "completed",
   output: "sleeper 2 is back\nFull task record: /tmp/sleeper2.md",
 }
+
+test("startup banner places the terminal mark beside session details", async () => {
+  const setup = await createTestRenderer({
+    width: 80,
+    height: 24,
+    footerHeight: 1,
+    screenMode: "split-footer",
+    externalOutputMode: "capture-stdout",
+  })
+
+  try {
+    const scrollback = new Scrollback(
+      setup.renderer,
+      0,
+      () => {},
+      { showOutputs: false, showThinking: false, scrollbackRows: 20 },
+      undefined,
+    )
+    scrollback.appendHeader({ kind: "banner", model: "claude-sonnet-4", cwd: "~/Projects/xal" })
+
+    const rows = setup.externalOutput.take().flatMap((commit) => commit.rows)
+    const cursor = terminalGlyph("█", "|")
+    const mark = cursor === "█" ? ["▀█▄  ▄█▀", "  ████  ", "▄█▀  ▀█▄"] : ["\\      /", "   XX   ", "/      \\"]
+    expect(rows).toEqual([
+      "",
+      `  ${mark[0]} ${cursor}  v${appInfo.version}`,
+      `  ${mark[1]} ${cursor}  claude-sonnet-4`,
+      `  ${mark[2]} ${cursor}  ~/Projects/xal`,
+    ])
+  } finally {
+    setup.renderer.destroy()
+  }
+})
 
 test("background results use the first report line in normal mode", () => {
   expect(backgroundResultHeading(completed, false, "Ctrl+O", 100)).toBe(

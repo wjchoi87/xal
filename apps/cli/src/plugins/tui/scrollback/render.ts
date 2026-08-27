@@ -1,6 +1,6 @@
 import {
   bold,
-  t,
+  StyledText,
   TextAttributes,
   type Renderable,
   type RenderContext,
@@ -117,11 +117,24 @@ function frame(ctx: RenderContext, child: Renderable, marginTop = 1): Renderable
   return box
 }
 
+function bannerMarkLine(unicode: string, fallback: string): StyledText {
+  const fallbackGlyphs = Array.from(fallback)
+  const line = Array.from(unicode, (glyph, index) => terminalGlyph(glyph, fallbackGlyphs[index] ?? " ")).join("")
+  return new StyledText([bold(paint(COLORS.foreground, `${line} `)), paint(COLORS.warning, terminalGlyph("█", "|"))])
+}
+
 function banner(ctx: RenderContext, block: BannerBlock): Renderable {
-  const box = column(ctx)
-  box.add(label(ctx, { content: t`${bold(paint(COLORS.accent, appInfo.name))} ${muted(`v${appInfo.version}`)}` }))
-  box.add(label(ctx, { content: block.model, color: COLORS.faint }))
-  box.add(label(ctx, { content: block.cwd, color: COLORS.faint }))
+  const box = row(ctx, { alignItems: "flex-start" })
+  const mark = column(ctx, { width: 10, flexShrink: 0, marginRight: 2 })
+  mark.add(label(ctx, { content: bannerMarkLine("▀█▄  ▄█▀", "\\      /") }))
+  mark.add(label(ctx, { content: bannerMarkLine("  ████  ", "   XX   ") }))
+  mark.add(label(ctx, { content: bannerMarkLine("▄█▀  ▀█▄", "/      \\") }))
+  const details = column(ctx, { flexGrow: 1, flexShrink: 1, minWidth: 1 })
+  details.add(label(ctx, { content: new StyledText([muted(`v${appInfo.version}`)]) }))
+  details.add(label(ctx, { content: block.model, color: COLORS.faint }))
+  details.add(label(ctx, { content: block.cwd, color: COLORS.faint }))
+  box.add(mark)
+  box.add(details)
   return box
 }
 
