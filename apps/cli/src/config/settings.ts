@@ -49,6 +49,7 @@ export interface Settings {
   agents: AgentSettings
   pluginConfig: Record<string, Record<string, unknown>>
   thinking: Record<string, Record<string, ThinkingEffort>>
+  contextWindows: Record<string, Record<string, number>>
 }
 
 const AGENT_DEFAULTS: AgentSettings = { maxConcurrent: 4, timeoutMinutes: 10, maxTurns: 24 }
@@ -63,6 +64,7 @@ let current: Settings = {
   agents: { ...AGENT_DEFAULTS },
   pluginConfig: {},
   thinking: {},
+  contextWindows: {},
 }
 
 export function settings(): Settings {
@@ -135,6 +137,13 @@ function strictStringArray(value: unknown, path: string): string[] {
   return asStringArray(value)
 }
 
+function strictPositiveInteger(value: unknown, path: string): number {
+  if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+    throw new Error(`${path} must be a positive integer`)
+  }
+  return value
+}
+
 export function parseGoalSettings(value: unknown): GoalSettings {
   if (value === undefined) return { evaluatorModels: {} }
   if (!isRecord(value)) throw new Error("goal must be an object")
@@ -192,6 +201,15 @@ function parseSettings(raw: Record<string, unknown>): Settings {
       thinking[provider] = efforts
     }
   }
+  const contextWindows: Record<string, Record<string, number>> = {}
+  for (const [provider, models] of Object.entries(sectionRecord(raw, "contextWindows"))) {
+    if (!isRecord(models)) throw new Error(`contextWindows.${provider} must be an object`)
+    const windows: Record<string, number> = {}
+    for (const [model, value] of Object.entries(models)) {
+      windows[model] = strictPositiveInteger(value, `contextWindows.${provider}.${model}`)
+    }
+    contextWindows[provider] = windows
+  }
   return {
     plugins,
     provider: asString(raw.provider),
@@ -229,5 +247,6 @@ function parseSettings(raw: Record<string, unknown>): Settings {
     },
     pluginConfig,
     thinking,
+    contextWindows,
   }
 }
