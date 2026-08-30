@@ -68,10 +68,6 @@ export interface ToolCallContext {
   cwd: string
 }
 
-export interface ToolPermissionContext extends ToolCallContext {
-  sessionId: string
-}
-
 interface ToolContract extends ToolDefinition {
   available?(ctx: ToolAvailabilityContext): boolean
   title(args: Record<string, unknown>, ctx: ToolCallContext): string
@@ -80,7 +76,7 @@ interface ToolContract extends ToolDefinition {
   sandboxed?(args: Record<string, unknown>, ctx: ToolCallContext): boolean
   concurrency?(args: Record<string, unknown>, ctx: ToolCallContext): ToolConcurrency
   allowRepeatedCalls?(args: Record<string, unknown>, ctx: ToolCallContext): boolean
-  permission?(args: Record<string, unknown>, ctx: ToolPermissionContext): ToolPermission
+  permission?(args: Record<string, unknown>, ctx: ToolCallContext): ToolPermission
 }
 
 export interface ToolExecutionContext extends ToolCallContext {
